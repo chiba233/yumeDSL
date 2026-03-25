@@ -621,6 +621,10 @@ type ErrorCode =
 
 ## Changelog
 
+### 0.1.6
+
+- Just update Markdown.
+
 ### 0.1.5
 
 - Add `createParser()` factory for pre-bound options
