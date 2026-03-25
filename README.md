@@ -1,19 +1,32 @@
 # yume-rich-text
 
-A zero-dependency, recursive rich-text DSL parser with **pluggable tag handlers** and **configurable syntax**.
+A zero-dependency, recursive rich-text DSL parser with pluggable tag handlers and configurable syntax.
 
-The core package provides only the parsing engine. Tag definitions (bold, link, code-block, etc.) are **not** included — you register your own handlers, or install a companion handler package.
+The core package provides only the parsing engine — no built-in tags.
+You define your own tags, or install a companion handler package.
+
+## Features
+
+- Zero dependencies
+- Recursive parsing
+- Pluggable tag handlers
+- Inline / Raw / Block tag forms
+- Configurable syntax tokens
+- Graceful degradation for unknown tags
+- Depth-limited parsing
+- Custom error reporting
+- Utility helpers for pipe arguments and token processing
 
 ## Install
 
 ```bash
-npm install yume-rich-text
+npm install yume-dsl-rich-text
 ```
 
 ## Quick Start
 
 ```ts
-import { parseRichText } from "yume-rich-text";
+import { parseRichText } from "yume-dsl-rich-text";
 
 const tokens = parseRichText("Hello $$bold(world)$$!", {
   handlers: {
@@ -22,58 +35,69 @@ const tokens = parseRichText("Hello $$bold(world)$$!", {
     },
   },
 });
-// → [
+
+// [
 //   { type: "text", value: "Hello ", id: "rt-0" },
-//   { type: "bold", value: [{ type: "text", value: "world", id: "rt-1" }], id: "rt-2" },
+//   {
+//     type: "bold",
+//     value: [{ type: "text", value: "world", id: "rt-1" }],
+//     id: "rt-2"
+//   },
 //   { type: "text", value: "!", id: "rt-3" },
 // ]
 ```
 
-Tags that are **not** registered in `handlers` degrade to plain text — no crash, no error.
+Unregistered tags degrade to plain text instead of throwing or crashing.
 
 ---
 
 ## DSL Syntax
 
-Default syntax uses `$$` as the tag prefix. Three tag forms are supported:
+By default, the DSL uses `$$` as the tag prefix.
+
+Three forms are supported:
 
 ### Inline
 
-```
+```text
 $$tagName(content)$$
 ```
 
-Content is parsed recursively and may contain nested tags.
+Inline content is parsed recursively, so nesting works naturally.
 
-```
+```text
 $$bold(Hello $$italic(world)$$)$$
 ```
 
-### Raw (no inner parsing)
+### Raw
 
-```
+```text
 $$tagName(arg)%
 raw content preserved as-is
 %end$$
 ```
 
-The close marker `%end$$` **must** sit on its own line.
+Raw content is not recursively parsed.
 
-### Block (parsed content)
+The close marker `%end$$` must be on its own line.
 
-```
+### Block
+
+```text
 $$tagName(arg)*
-block content — parsed recursively
+block content parsed recursively
 *end$$
 ```
 
-The close marker `*end$$` **must** sit on its own line. Blocks support nesting.
+Block content is parsed recursively.
+
+The close marker `*end$$` must be on its own line.
 
 ### Pipe Parameters
 
-Inside tag arguments, `|` splits parameters:
+Inside arguments, `|` separates parameters.
 
-```
+```text
 $$link(https://example.com | click here)$$
 $$code(js | Title | label)%
 const x = 1;
@@ -84,7 +108,7 @@ Use `\|` to escape a literal pipe.
 
 ### Escape Sequences
 
-Prefix any syntax token with `\` to produce a literal:
+Prefix syntax tokens with `\` to produce them literally.
 
 | Escape | Output |
 |--------|--------|
@@ -101,7 +125,7 @@ Prefix any syntax token with `\` to produce a literal:
 
 ### `parseRichText(text, options?)`
 
-Parse a DSL string into a token tree.
+Parses a DSL string into a token tree.
 
 ```ts
 function parseRichText(text: string, options?: ParseOptions): TextToken[];
@@ -109,61 +133,77 @@ function parseRichText(text: string, options?: ParseOptions): TextToken[];
 
 ### `stripRichText(text, options?)`
 
-Parse and flatten to a plain string (all tags removed).
+Parses a DSL string and flattens the result into plain text.
 
 ```ts
 function stripRichText(text: string, options?: ParseOptions): string;
 ```
 
-### `ParseOptions`
+---
+
+## ParseOptions
 
 ```ts
 interface ParseOptions {
-  handlers?: Record<string, TagHandler>;   // tag name → handler
-  blockTags?: string[];   // tags with block-level line-break normalization
-                          // defaults to tags whose handler has `raw` or `block`
-  depthLimit?: number;    // max nesting depth (default: 50)
-  mode?: "render" | "highlight";   // "render" normalises block line breaks,
-                                   // "highlight" preserves them
-  onError?: (error: ParseError) => void;   // error callback
-  syntax?: Partial<SyntaxInput>;           // override syntax tokens
+  handlers?: Record<string, TagHandler>;
+  blockTags?: string[];
+  depthLimit?: number;
+  mode?: "render" | "highlight";
+  onError?: (error: ParseError) => void;
+  syntax?: Partial<SyntaxInput>;
 }
 ```
 
-### `TextToken`
+### Fields
 
-Every node in the output tree:
+- `handlers`: tag name → handler definition
+- `blockTags`: tags treated as block-level for line-break normalization
+- `depthLimit`: maximum nesting depth, default `50`
+- `mode`:
+    - `"render"` normalizes block line breaks
+    - `"highlight"` preserves them
+- `onError`: callback for parse errors
+- `syntax`: override default syntax tokens
+
+---
+
+## Token Structure
 
 ```ts
 interface TextToken {
-  type: string;                    // "text" or the tag name
-  value: string | TextToken[];     // plain text or nested children
-  id: string;                      // unique id (e.g. "rt-0")
+  type: string;
+  value: string | TextToken[];
+  id: string;
 }
 ```
 
-Handlers can attach arbitrary extra properties (e.g. `url`, `lang`, `title`) — they are preserved on the token at runtime.
+Handlers may attach additional runtime fields such as `url`, `lang`, or `title`.
 
 ---
 
 ## Writing Tag Handlers
 
-A `TagHandler` defines how a tag is parsed in each of the three forms:
+A `TagHandler` can define behavior for any of the three tag forms.
 
 ```ts
 interface TagHandler {
   inline?: (tokens: TextToken[]) => TokenDraft;
-  raw?:    (arg: string | undefined, content: string) => TokenDraft;
-  block?:  (arg: string | undefined, content: TextToken[]) => TokenDraft;
+  raw?: (arg: string | undefined, content: string) => TokenDraft;
+  block?: (arg: string | undefined, content: TextToken[]) => TokenDraft;
 }
 ```
 
-You only need to implement the forms your tag supports. Unimplemented forms fall back to text.
+You only need to implement the forms your tag supports.
+Unsupported forms fall back to plain text.
 
-### Example: full handler set
+### Example
 
 ```ts
-import { parseRichText, parsePipeArgs, extractText } from "yume-rich-text";
+import {
+  parseRichText,
+  parsePipeArgs,
+  extractText,
+} from "yume-rich-text";
 
 const handlers = {
   bold: {
@@ -173,12 +213,14 @@ const handlers = {
   link: {
     inline: (tokens) => {
       const args = parsePipeArgs(tokens);
+
       return {
         type: "link",
         url: args.text(0),
-        value: args.parts.length > 1
-          ? args.materializedTailTokens(1)
-          : args.materializedTokens(0),
+        value:
+          args.parts.length > 1
+            ? args.materializedTailTokens(1)
+            : args.materializedTokens(0),
       };
     },
   },
@@ -197,9 +239,10 @@ const handlers = {
       title: arg || "Info",
       value: content,
     }),
-    // also usable as inline
+
     inline: (tokens) => {
       const args = parsePipeArgs(tokens);
+
       return {
         type: "info",
         title: extractText(args.materializedTokens(0)),
@@ -216,73 +259,83 @@ const tokens = parseRichText(input, { handlers });
 
 ## Utility Exports
 
-These helpers are useful when writing tag handlers:
+These helpers are useful when writing handlers.
 
 | Export | Description |
 |--------|-------------|
-| `parsePipeArgs(tokens)` | Split tokens by `\|` → `PipeArgs` with `.text(i)`, `.materializedTokens(i)`, `.materializedTailTokens(i)` |
-| `parsePipeTextArgs(text)` | Same as above but from a plain string |
-| `splitTokensByPipe(tokens)` | Low-level: split into `TextToken[][]` |
-| `extractText(tokens)` | Flatten a token tree to a plain string |
+| `parsePipeArgs(tokens)` | Split tokens by `\|` and access parsed parts |
+| `parsePipeTextArgs(text)` | Same as above, but from plain text |
+| `splitTokensByPipe(tokens)` | Low-level token splitter |
+| `extractText(tokens)` | Flatten a token tree into plain text |
 | `materializeTextTokens(tokens)` | Unescape text tokens in a tree |
 | `unescapeInline(str)` | Unescape a single string |
-| `createToken(draft)` | Add an auto-incremented `id` to a `TokenDraft` |
-| `resetTokenIdSeed()` | Reset the id counter (useful in tests) |
+| `createToken(draft)` | Add an auto-incremented `id` to a token draft |
+| `resetTokenIdSeed()` | Reset the token id counter, useful in tests |
 
 ---
 
 ## Custom Syntax
 
-Override any syntax token via `options.syntax`:
+You can override syntax tokens through `options.syntax`.
 
 ```ts
+import { parseRichText } from "yume-rich-text";
+
 const tokens = parseRichText("@@bold(hello)@@", {
   syntax: {
     tagPrefix: "@@",
     endTag: ")@@",
   },
   handlers: {
-    bold: { inline: (t) => ({ type: "bold", value: t }) },
+    bold: {
+      inline: (tokens) => ({ type: "bold", value: tokens }),
+    },
   },
 });
 ```
 
-Full defaults:
+### Default Syntax
 
 ```ts
 import { DEFAULT_SYNTAX } from "yume-rich-text";
 
-// DEFAULT_SYNTAX = {
-//   tagPrefix:  "$$",
-//   tagOpen:    "(",
-//   tagClose:   ")",
+// {
+//   tagPrefix: "$$",
+//   tagOpen: "(",
+//   tagClose: ")",
 //   tagDivider: "|",
-//   endTag:     ")$$",
-//   rawOpen:    ")%",
-//   blockOpen:  ")*",
+//   endTag: ")$$",
+//   rawOpen: ")%",
+//   blockOpen: ")*",
 //   blockClose: "*end$$",
-//   rawClose:   "%end$$",
+//   rawClose: "%end$$",
 //   escapeChar: "\\",
 // }
 ```
 
-> **Warning**: Syntax tokens must be mutually distinguishable. Setting two tokens to the same string will cause undefined behaviour.
+> Warning:
+> Syntax tokens must remain distinguishable from one another.
+> If two tokens are configured to the same string, behavior is undefined.
 
 ---
 
 ## Error Handling
 
-Pass an `onError` callback to receive parse errors. If omitted, errors are silently discarded and malformed markup degrades to plain text.
+Use `onError` to collect parse errors.
 
 ```ts
 const errors: ParseError[] = [];
 
 parseRichText("$$bold(unclosed", {
-  handlers: { bold: { inline: (t) => ({ type: "bold", value: t }) } },
-  onError: (e) => errors.push(e),
+  handlers: {
+    bold: {
+      inline: (tokens) => ({ type: "bold", value: tokens }),
+    },
+  },
+  onError: (error) => errors.push(error),
 });
 
-// errors[0]:
+// errors[0]
 // {
 //   code: "INLINE_NOT_CLOSED",
 //   message: "(L1:C1) Inline tag not closed:  >>>$$bold(<<< unclosed",
@@ -292,17 +345,19 @@ parseRichText("$$bold(unclosed", {
 // }
 ```
 
+If `onError` is omitted, malformed markup degrades to plain text and errors are discarded.
+
 ### Error Codes
 
 | Code | Meaning |
 |------|---------|
 | `DEPTH_LIMIT` | Nesting exceeded `depthLimit` |
-| `UNEXPECTED_CLOSE` | Stray `)$$` with no matching open |
-| `INLINE_NOT_CLOSED` | Inline tag never closed |
-| `BLOCK_NOT_CLOSED` | Block `*end$$` marker missing |
-| `BLOCK_CLOSE_MALFORMED` | `*end$$` exists but not on its own line |
-| `RAW_NOT_CLOSED` | Raw `%end$$` marker missing |
-| `RAW_CLOSE_MALFORMED` | `%end$$` exists but not on its own line |
+| `UNEXPECTED_CLOSE` | Stray close tag with no matching open |
+| `INLINE_NOT_CLOSED` | Inline tag was never closed |
+| `BLOCK_NOT_CLOSED` | Block close marker is missing |
+| `BLOCK_CLOSE_MALFORMED` | Block close marker exists but is malformed |
+| `RAW_NOT_CLOSED` | Raw close marker is missing |
+| `RAW_CLOSE_MALFORMED` | Raw close marker exists but is malformed |
 
 ---
 

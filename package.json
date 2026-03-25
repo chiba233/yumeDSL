@@ -2,23 +2,26 @@
   "name": "yume-dsl-rich-text",
   "version": "0.1.0",
   "description": "A recursive rich-text DSL parser with pluggable tag handlers",
-  "type": "module",
   "main": "./dist/index.js",
-  "module": "./dist/index.js",
+  "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "types": {
+        "import": "./dist/index.d.mts",
+        "require": "./dist/index.d.ts"
+      },
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
     }
   },
   "files": [
-    "dist",
-    "src"
+    "dist"
   ],
+  "sideEffects": false,
   "scripts": {
-    "build": "tsc",
-    "prepublishOnly": "tsc"
+    "build": "tsup",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "dsl",
@@ -27,8 +30,21 @@
     "markup",
     "tokenizer"
   ],
+  "author": "Hoshino Yumeka",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chiba233/yumeDSL.git"
+  },
+  "homepage": "https://github.com/chiba233/yumeDSL#readme",
+  "bugs": {
+    "url": "https://github.com/chiba233/yumeDSL/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
   "devDependencies": {
+    "tsup": "^8.5.1",
     "typescript": "^5.7.0"
   }
 }
