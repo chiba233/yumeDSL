@@ -1,4 +1,4 @@
-# yume-rich-text
+# yume-dsl-rich-text
 
 A zero-dependency, recursive rich-text DSL parser with pluggable tag handlers and configurable syntax.
 
@@ -203,7 +203,7 @@ import {
   parseRichText,
   parsePipeArgs,
   extractText,
-} from "yume-rich-text";
+} from "yume-dsl-rich-text";
 
 const handlers = {
   bold: {
@@ -255,6 +255,24 @@ const handlers = {
 const tokens = parseRichText(input, { handlers });
 ```
 
+### Recommended: Shared Options
+
+In practice you'll reuse the same handlers everywhere.
+Define a shared options object once and spread it when needed.
+
+```ts
+import type { ParseOptions } from "yume-dsl-rich-text";
+
+const dslOptions: ParseOptions = { handlers };
+
+// use everywhere
+parseRichText(text, dslOptions);
+stripRichText(text, dslOptions);
+
+// add onError when needed
+parseRichText(text, { ...dslOptions, onError: (e) => console.warn(e) });
+```
+
 ---
 
 ## Utility Exports
@@ -279,7 +297,7 @@ These helpers are useful when writing handlers.
 You can override syntax tokens through `options.syntax`.
 
 ```ts
-import { parseRichText } from "yume-rich-text";
+import { parseRichText } from "yume-dsl-rich-text";
 
 const tokens = parseRichText("@@bold(hello)@@", {
   syntax: {
@@ -297,7 +315,7 @@ const tokens = parseRichText("@@bold(hello)@@", {
 ### Default Syntax
 
 ```ts
-import { DEFAULT_SYNTAX } from "yume-rich-text";
+import { DEFAULT_SYNTAX } from "yume-dsl-rich-text";
 
 // {
 //   tagPrefix: "$$",
@@ -327,11 +345,7 @@ Use `onError` to collect parse errors.
 const errors: ParseError[] = [];
 
 parseRichText("$$bold(unclosed", {
-  handlers: {
-    bold: {
-      inline: (tokens) => ({ type: "bold", value: tokens }),
-    },
-  },
+  ...dslOptions,
   onError: (error) => errors.push(error),
 });
 
@@ -345,7 +359,7 @@ parseRichText("$$bold(unclosed", {
 // }
 ```
 
-If `onError` is omitted, malformed markup degrades to plain text and errors are discarded.
+If `onError` is omitted, malformed markup degrades to plain text and errors are silently discarded.
 
 ### Error Codes
 

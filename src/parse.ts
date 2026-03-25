@@ -79,6 +79,6 @@ export const parseRichText = (text: string, options: ParseOptions = {}): TextTok
 
 export const stripRichText = (text: string, options: ParseOptions = {}): string => {
   if (!text) return "";
-  const tokens = parseRichText(text, { ...options, onError: undefined });
+  const tokens = parseRichText(text, options);
   return extractText(tokens);
 };

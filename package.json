@@ -1,26 +1,28 @@
 {
   "name": "yume-dsl-rich-text",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A recursive rich-text DSL parser with pluggable tag handlers",
-  "main": "./dist/index.js",
-  "module": "./dist/index.mjs",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": {
-        "import": "./dist/index.d.mts",
-        "require": "./dist/index.d.ts"
+        "import": "./dist/index.d.ts",
+        "require": "./dist/index.d.cts"
       },
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.js"
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
     }
   },
   "files": [
     "dist"
   ],
+  "type": "module",
   "sideEffects": false,
   "scripts": {
     "build": "tsup",
+    "test": "tsup && tsx tests/run-dsl-tests.ts",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -44,7 +46,9 @@
     "node": ">=18"
   },
   "devDependencies": {
+    "@types/node": "^25.5.0",
     "tsup": "^8.5.1",
+    "tsx": "^4.21.0",
     "typescript": "^5.7.0"
   }
 }
