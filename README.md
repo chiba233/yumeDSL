@@ -621,7 +621,7 @@ type ErrorCode =
 
 ## Changelog
 
-### 0.1.5 (unreleased)
+### 0.1.5
 
 - Add `createParser()` factory for pre-bound options
 - Export `Parser` interface
