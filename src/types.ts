@@ -4,6 +4,7 @@ export interface TextToken {
   type: string;
   value: string | TextToken[];
   id: string;
+  [key: string]: unknown;
 }
 
 export interface TokenDraft {

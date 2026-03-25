@@ -1,4 +1,8 @@
+**English** | [中文](./README.zh-CN.md)
+
 # yume-dsl-rich-text
+
+<img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white" />
 
 A zero-dependency, recursive rich-text DSL parser with pluggable tag handlers and configurable syntax.
 
@@ -282,12 +286,22 @@ interface TextToken {
   type: string;
   value: string | TextToken[];
   id: string;
+  [key: string]: unknown;
 }
 ```
 
 `TextToken` is the parser's output type. The `type` and `value` fields are intentionally loose (`string`) so the parser can represent any tag without knowing your schema.
 
-Handlers return `TokenDraft`, which allows arbitrary extra fields:
+Extra fields returned by handlers (e.g. `url`, `lang`, `title`) are preserved on the resulting `TextToken` and accessible as `unknown`. You can read them directly without a cast — just narrow the type before use:
+
+```ts
+const token = tokens[0];
+if (token.type === "link" && typeof token.href === "string") {
+  console.log(token.href); // works, no cast needed
+}
+```
+
+Handlers return `TokenDraft`, which shares the same open structure:
 
 ```ts
 interface TokenDraft {
@@ -297,40 +311,36 @@ interface TokenDraft {
 }
 ```
 
-Extra fields (e.g. `url`, `lang`, `title`) are preserved on the resulting `TextToken` at runtime, but are not visible to TypeScript without a cast.
-
 ### Strong Typing
 
-`parseRichText` returns `TextToken[]` where `type` is `string`. To get full type safety for your own token schema, define a discriminated union and cast once at the call site:
+For simple use cases, you can access extra fields directly via `typeof` narrowing — no cast needed.
+
+For full type safety across your entire token schema, define typed interfaces that extend `TextToken` and cast once at the call site:
 
 ```ts
-import { parseRichText } from "yume-dsl-rich-text";
+import { parseRichText, type TextToken } from "yume-dsl-rich-text";
 
-// 1. Define your token types
-interface PlainText {
+// 1. Define your token types — extend TextToken for compatibility
+interface PlainText extends TextToken {
   type: "text";
   value: string;
-  id: string;
 }
 
-interface BoldToken {
+interface BoldToken extends TextToken {
   type: "bold";
   value: MyToken[];
-  id: string;
 }
 
-interface LinkToken {
+interface LinkToken extends TextToken {
   type: "link";
   url: string;
   value: MyToken[];
-  id: string;
 }
 
-interface CodeBlockToken {
+interface CodeBlockToken extends TextToken {
   type: "code-block";
   lang: string;
   value: string;
-  id: string;
 }
 
 type MyToken = PlainText | BoldToken | LinkToken | CodeBlockToken;
@@ -620,6 +630,13 @@ type ErrorCode =
 ---
 
 ## Changelog
+
+### 0.1.7
+
+- Add index signature (`[key: string]: unknown`) to `TextToken` — extra fields from handlers are now visible in the type system without casting
+- Remove unnecessary `as TextToken` assertion in `createToken`
+- Enable `allowImportingTsExtensions` in tsconfig — project now passes `tsc --noEmit` cleanly
+- Update README: document `TextToken` index signature, recommend `extends TextToken` for strong typing
 
 ### 0.1.6
 
