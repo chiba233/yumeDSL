@@ -130,6 +130,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add package.json
+          git diff --cached --quiet && echo "No version change, skipping commit" && exit 0
           git commit -m "release: yume-dsl-rich-text v${PKG_VERSION}"
           git tag "dsl-v${PKG_VERSION}"
           git push
