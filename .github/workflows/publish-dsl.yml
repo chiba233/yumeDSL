@@ -55,6 +55,17 @@ jobs:
           fi
           echo "PKG_VERSION=$(node -p 'require("./package.json").version')" >> "$GITHUB_ENV"
 
+      - name: Verify package contents
+        run: |
+          if [ ! -s README.md ]; then
+            echo "::error::README.md is missing or empty — push your docs before publishing"
+            exit 1
+          fi
+          npm pack --dry-run 2>&1 | grep -q 'README.md' || {
+            echo "::error::README.md is not included in the package"
+            exit 1
+          }
+
       - name: Publish
         if: ${{ !inputs.dry_run }}
         run: npm publish --access public
