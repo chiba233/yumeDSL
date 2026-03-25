@@ -82,3 +82,15 @@ export const stripRichText = (text: string, options: ParseOptions = {}): string 
   const tokens = parseRichText(text, options);
   return extractText(tokens);
 };
+
+export interface Parser {
+  parse: (text: string, overrides?: ParseOptions) => TextToken[];
+  strip: (text: string, overrides?: ParseOptions) => string;
+}
+
+export const createParser = (defaults: ParseOptions): Parser => ({
+  parse: (text, overrides) =>
+    parseRichText(text, overrides ? { ...defaults, ...overrides } : defaults),
+  strip: (text, overrides) =>
+    stripRichText(text, overrides ? { ...defaults, ...overrides } : defaults),
+});

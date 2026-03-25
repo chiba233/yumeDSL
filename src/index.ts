@@ -1,5 +1,6 @@
 // ── Core API ──
-export { parseRichText, stripRichText } from "./parse.js";
+export { parseRichText, stripRichText, createParser } from "./parse.js";
+export type { Parser } from "./parse.js";
 
 // ── Types ──
 export type {

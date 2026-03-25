@@ -22,6 +22,7 @@ You define your own semantics and rendering layer.
   - [Pipe Parameters](#pipe-parameters)
   - [Escape Sequences](#escape-sequences)
 - [API](#api)
+  - [createParser](#createparser)
 - [ParseOptions](#parseoptions)
 - [Token Structure](#token-structure)
   - [Strong Typing](#strong-typing)
@@ -31,6 +32,7 @@ You define your own semantics and rendering layer.
 - [Custom Syntax](#custom-syntax)
   - [createSyntax](#createsyntax)
 - [Error Handling](#error-handling)
+- [Changelog](#changelog)
 - [License](#license)
 
 ---
@@ -213,6 +215,37 @@ Parses a DSL string and flattens the result into plain text.
 ```ts
 function stripRichText(text: string, options?: ParseOptions): string;
 ```
+
+### `createParser(defaults)`
+
+Creates a reusable parser instance with pre-bound options. Avoids passing the same handlers on every call.
+
+```ts
+import { createParser } from "yume-dsl-rich-text";
+
+const dsl = createParser({
+  handlers: {
+    bold: { inline: (tokens) => ({ type: "bold", value: tokens }) },
+    // ...
+  },
+});
+
+// No need to pass handlers again
+dsl.parse("Hello $$bold(world)$$!");
+dsl.strip("Hello $$bold(world)$$!");
+
+// Still accepts per-call overrides
+dsl.parse(text, { onError: (e) => console.warn(e) });
+```
+
+```ts
+interface Parser {
+  parse: (text: string, overrides?: ParseOptions) => TextToken[];
+  strip: (text: string, overrides?: ParseOptions) => string;
+}
+```
+
+When `overrides` is provided, it is shallow-merged onto the defaults (`{ ...defaults, ...overrides }`).
 
 ---
 
@@ -411,25 +444,22 @@ const answer = 42;
 const tokens = parseRichText(input, { handlers });
 ```
 
-### Recommended: Shared Options
+### Recommended: createParser
 
-In practice you'll usually reuse the same handlers everywhere.  
-Define a shared options object once and spread it when needed.
+In practice you'll usually reuse the same handlers everywhere.
+Use [`createParser`](#createparser) to bind them once:
 
 ```ts
-import type { ParseOptions } from "yume-dsl-rich-text";
+import { createParser } from "yume-dsl-rich-text";
 
-const dslOptions: ParseOptions = { handlers };
+const dsl = createParser({ handlers });
 
 // use everywhere
-parseRichText(text, dslOptions);
-stripRichText(text, dslOptions);
+dsl.parse(text);
+dsl.strip(text);
 
 // add onError when needed
-parseRichText(text, {
-  ...dslOptions,
-  onError: (error) => console.warn(error),
-});
+dsl.parse(text, { onError: (error) => console.warn(error) });
 ```
 
 ---
@@ -586,6 +616,44 @@ type ErrorCode =
 | `BLOCK_CLOSE_MALFORMED` | Block close marker exists but is malformed |
 | `RAW_NOT_CLOSED` | Raw close marker is missing |
 | `RAW_CLOSE_MALFORMED` | Raw close marker exists but is malformed |
+
+---
+
+## Changelog
+
+### 0.1.5 (unreleased)
+
+- Add `createParser()` factory for pre-bound options
+- Export `Parser` interface
+
+### 0.1.4
+
+- Narrow `ParseError.code` from `string` to `ErrorCode` union type
+- Export `ErrorCode` type
+- Optimize `extractText` — replace `.map().join("")` with `for...of` loop
+- Optimize `getErrorContext` — replace `slice` + `split` with single-pass line counter
+- Fix duplicate `trimStart()` call in `findMalformedWholeLineTokenCandidate`
+
+### 0.1.3
+
+- Comprehensive README rewrite with full API documentation
+- Add LICENSE file
+- Add CI publish workflow for npm and GitHub Packages
+- Add pre-publish README verification step
+
+### 0.1.1
+
+- Fix: ensure parse errors are reported correctly
+- Add golden test suite (60 cases) and dist smoke tests (36 cases)
+- Add CJS + ESM dual-format build
+
+### 0.1.0
+
+- Initial release
+- Recursive DSL parser with inline, raw, and block tag forms
+- Pluggable tag handlers with graceful degradation
+- Configurable syntax tokens
+- Utility helpers: `parsePipeArgs`, `extractText`, `materializeTextTokens`, etc.
 
 ---
 
