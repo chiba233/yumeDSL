@@ -5,6 +5,7 @@ export { parseRichText, stripRichText } from "./parse.js";
 export type {
   TextToken,
   TokenDraft,
+  ErrorCode,
   ParseError,
   ParseOptions,
   TagHandler,

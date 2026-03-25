@@ -119,7 +119,11 @@ var resetTokenIdSeed = () => {
 var createTextToken = (value) => createToken({ type: "text", value });
 var extractText = (tokens) => {
   if (!tokens?.length) return "";
-  return tokens.map((t) => typeof t.value === "string" ? t.value : extractText(t.value)).join("");
+  let result = "";
+  for (const t of tokens) {
+    result += typeof t.value === "string" ? t.value : extractText(t.value);
+  }
+  return result;
 };
 var materializeTextTokens = (tokens) => {
   return tokens.map((token) => {
@@ -192,9 +196,15 @@ var ERROR_MESSAGES = {
   INLINE_NOT_CLOSED: "Inline tag not closed"
 };
 var getErrorContext = (text, index, length = 1, range = 15) => {
-  const lines = text.slice(0, index).split("\n");
-  const line = lines.length;
-  const column = lines[lines.length - 1].length + 1;
+  let line = 1;
+  let lastLineStart = 0;
+  for (let i = 0; i < index; i++) {
+    if (text[i] === "\n") {
+      line++;
+      lastLineStart = i + 1;
+    }
+  }
+  const column = index - lastLineStart + 1;
   const start = Math.max(0, index - range);
   const end = Math.min(text.length, index + length + range);
   const prefix = start > 0 ? "..." : "";
@@ -420,8 +430,8 @@ var findMalformedWholeLineTokenCandidate = (text, start, token) => {
     const lineEnd = text.indexOf("\n", pos);
     const end = lineEnd === -1 ? text.length : lineEnd;
     const line = text.slice(pos, end);
-    const leadingWhitespace = line.length - line.trimStart().length;
     const trimmedStart = line.trimStart();
+    const leadingWhitespace = line.length - trimmedStart.length;
     if (trimmedStart.startsWith(token) && line !== token) {
       return {
         index: pos + leadingWhitespace,

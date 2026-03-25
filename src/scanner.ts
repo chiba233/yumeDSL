@@ -201,8 +201,8 @@ export const findMalformedWholeLineTokenCandidate = (
     const lineEnd = text.indexOf("\n", pos);
     const end = lineEnd === -1 ? text.length : lineEnd;
     const line = text.slice(pos, end);
-    const leadingWhitespace = line.length - line.trimStart().length;
     const trimmedStart = line.trimStart();
+    const leadingWhitespace = line.length - trimmedStart.length;
 
     if (trimmedStart.startsWith(token) && line !== token) {
       return {

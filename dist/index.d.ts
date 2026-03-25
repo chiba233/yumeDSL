@@ -8,8 +8,9 @@ interface TokenDraft {
     value: string | TextToken[];
     [key: string]: unknown;
 }
+type ErrorCode = "DEPTH_LIMIT" | "UNEXPECTED_CLOSE" | "INLINE_NOT_CLOSED" | "BLOCK_NOT_CLOSED" | "BLOCK_CLOSE_MALFORMED" | "RAW_NOT_CLOSED" | "RAW_CLOSE_MALFORMED";
 interface ParseError {
-    code: string;
+    code: ErrorCode;
     message: string;
     line: number;
     column: number;
@@ -77,4 +78,4 @@ declare const resetTokenIdSeed: () => void;
 declare const DEFAULT_SYNTAX: SyntaxInput;
 declare const createSyntax: (overrides?: Partial<SyntaxInput>) => SyntaxConfig;
 
-export { DEFAULT_SYNTAX, type ParseError, type ParseOptions, type PipeArgs, type SyntaxConfig, type SyntaxInput, type TagHandler, type TextToken, type TokenDraft, createSyntax, createToken, extractText, materializeTextTokens, parsePipeArgs, parsePipeTextArgs, parseRichText, resetTokenIdSeed, splitTokensByPipe, stripRichText, unescapeInline };
+export { DEFAULT_SYNTAX, type ErrorCode, type ParseError, type ParseOptions, type PipeArgs, type SyntaxConfig, type SyntaxInput, type TagHandler, type TextToken, type TokenDraft, createSyntax, createToken, extractText, materializeTextTokens, parsePipeArgs, parsePipeTextArgs, parseRichText, resetTokenIdSeed, splitTokensByPipe, stripRichText, unescapeInline };

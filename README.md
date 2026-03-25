@@ -564,6 +564,19 @@ If `onError` is omitted, malformed markup degrades gracefully and errors are sil
 
 ### Error Codes
 
+`ParseError.code` is typed as `ErrorCode`, a union of all possible error codes:
+
+```ts
+type ErrorCode =
+  | "DEPTH_LIMIT"
+  | "UNEXPECTED_CLOSE"
+  | "INLINE_NOT_CLOSED"
+  | "BLOCK_NOT_CLOSED"
+  | "BLOCK_CLOSE_MALFORMED"
+  | "RAW_NOT_CLOSED"
+  | "RAW_CLOSE_MALFORMED";
+```
+
 | Code | Meaning |
 |------|---------|
 | `DEPTH_LIMIT` | Nesting exceeded `depthLimit` |

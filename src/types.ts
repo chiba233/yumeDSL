@@ -12,8 +12,17 @@ export interface TokenDraft {
   [key: string]: unknown;
 }
 
+export type ErrorCode =
+  | "DEPTH_LIMIT"
+  | "UNEXPECTED_CLOSE"
+  | "INLINE_NOT_CLOSED"
+  | "BLOCK_NOT_CLOSED"
+  | "BLOCK_CLOSE_MALFORMED"
+  | "RAW_NOT_CLOSED"
+  | "RAW_CLOSE_MALFORMED";
+
 export interface ParseError {
-  code: string;
+  code: ErrorCode;
   message: string;
   line: number;
   column: number;
@@ -100,7 +109,7 @@ export interface ComplexTagParseResult {
   token?: TextToken;
   fallbackText?: string;
   error?: {
-    code: string;
+    code: ErrorCode;
     index: number;
     length?: number;
   };

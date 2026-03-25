@@ -7,7 +7,11 @@ const createTextToken = (value: string): TextToken => createToken({ type: "text"
 
 export const extractText = (tokens?: TextToken[]): string => {
   if (!tokens?.length) return "";
-  return tokens.map((t) => (typeof t.value === "string" ? t.value : extractText(t.value))).join("");
+  let result = "";
+  for (const t of tokens) {
+    result += typeof t.value === "string" ? t.value : extractText(t.value);
+  }
+  return result;
 };
 
 export const materializeTextTokens = (tokens: TextToken[]): TextToken[] => {

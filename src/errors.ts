@@ -1,6 +1,6 @@
-import type { ParseError } from "./types.js";
+import type { ErrorCode, ParseError } from "./types.js";
 
-const ERROR_MESSAGES: Record<string, string> = {
+const ERROR_MESSAGES: Record<ErrorCode, string> = {
   DEPTH_LIMIT: "Nesting too deep",
   UNEXPECTED_CLOSE: "Unexpected close tag",
   BLOCK_NOT_CLOSED: "Block tag not closed",
@@ -11,9 +11,15 @@ const ERROR_MESSAGES: Record<string, string> = {
 };
 
 export const getErrorContext = (text: string, index: number, length = 1, range = 15) => {
-  const lines = text.slice(0, index).split("\n");
-  const line = lines.length;
-  const column = lines[lines.length - 1].length + 1;
+  let line = 1;
+  let lastLineStart = 0;
+  for (let i = 0; i < index; i++) {
+    if (text[i] === "\n") {
+      line++;
+      lastLineStart = i + 1;
+    }
+  }
+  const column = index - lastLineStart + 1;
 
   const start = Math.max(0, index - range);
   const end = Math.min(text.length, index + length + range);
@@ -36,7 +42,7 @@ export const getErrorContext = (text: string, index: number, length = 1, range =
 
 export const emitError = (
   onError: ((error: ParseError) => void) | undefined,
-  code: string,
+  code: ErrorCode,
   text: string,
   index: number,
   length?: number,
