@@ -1,6 +1,6 @@
 **English** | [中文](./README.zh-CN.md)
 
-# yume-dsl-rich-text
+# yume-dsl-rich-text(ユメテキスト)
 
 <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white" />
 
