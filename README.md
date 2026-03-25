@@ -2,26 +2,88 @@
 
 A zero-dependency, recursive rich-text DSL parser with pluggable tag handlers and configurable syntax.
 
-The core package provides only the parsing engine — no built-in tags.
-You define your own tags, or install a companion handler package.
+**Parser core only.**  
+This package does not ship built-in tags, rendering, or UI integration.  
+You define your own semantics and rendering layer.
+
+---
+
+## Table of Contents
+
+- [When to Use](#when-to-use)
+- [Features](#features)
+- [Graceful Degradation](#graceful-degradation)
+- [Install](#install)
+- [Quick Start](#quick-start)
+- [DSL Syntax](#dsl-syntax)
+  - [Inline](#inline)
+  - [Raw](#raw)
+  - [Block](#block)
+  - [Pipe Parameters](#pipe-parameters)
+  - [Escape Sequences](#escape-sequences)
+- [API](#api)
+- [ParseOptions](#parseoptions)
+- [Token Structure](#token-structure)
+  - [Strong Typing](#strong-typing)
+- [Writing Tag Handlers](#writing-tag-handlers)
+- [Utility Exports](#utility-exports)
+  - [PipeArgs](#pipeargs)
+- [Custom Syntax](#custom-syntax)
+  - [createSyntax](#createsyntax)
+- [Error Handling](#error-handling)
+- [License](#license)
+
+---
+
+## When to Use
+
+Use this package when you want:
+
+- a custom rich-text mini language instead of Markdown
+- high control over parsing semantics and rendering behavior
+- graceful fallback when a tag form is unsupported
+- a small parser core without opinionated semantics
+- predictable parsing without regex-based backtracking
+
+This package only parses DSL input into tokens.  
+Rendering is entirely up to you.
+
+---
 
 ## Features
 
 - Zero dependencies
-- Recursive parsing
+- Recursive parsing with depth limits
 - Pluggable tag handlers
 - Inline / Raw / Block tag forms
 - Configurable syntax tokens
 - Graceful degradation for unknown tags
-- Depth-limited parsing
 - Custom error reporting
 - Utility helpers for pipe arguments and token processing
+- Single-pass forward scanner (no backtracking)
+- No RegExp-based parsing
+- Deterministic linear scan
+
+---
+
+## Graceful Degradation
+
+Unknown or unsupported tags do not throw errors.  
+They degrade gracefully without breaking the overall parse result.
+
+This allows partial DSL support without crashing the parser.
+
+---
 
 ## Install
 
 ```bash
 npm install yume-dsl-rich-text
+pnpm add yume-dsl-rich-text
+yarn add yume-dsl-rich-text
 ```
+
+---
 
 ## Quick Start
 
@@ -35,19 +97,34 @@ const tokens = parseRichText("Hello $$bold(world)$$!", {
     },
   },
 });
-
-// [
-//   { type: "text", value: "Hello ", id: "rt-0" },
-//   {
-//     type: "bold",
-//     value: [{ type: "text", value: "world", id: "rt-1" }],
-//     id: "rt-2"
-//   },
-//   { type: "text", value: "!", id: "rt-3" },
-// ]
 ```
 
-Unregistered tags degrade to plain text instead of throwing or crashing.
+Result:
+
+```ts
+[
+  { type: "text", value: "Hello ", id: "rt-0" },
+  {
+    type: "bold",
+    value: [{ type: "text", value: "world", id: "rt-1" }],
+    id: "rt-2",
+  },
+  { type: "text", value: "!", id: "rt-3" },
+]
+```
+
+Unregistered tags degrade gracefully instead of throwing or crashing.
+
+### stripRichText
+
+```ts
+import { stripRichText } from "yume-dsl-rich-text";
+
+const plain = stripRichText("Hello $$bold(world)$$!");
+// "Hello world!"
+```
+
+Useful for extracting searchable plain text, generating previews, or building accessibility labels.
 
 ---
 
@@ -110,14 +187,12 @@ Use `\|` to escape a literal pipe.
 
 Prefix syntax tokens with `\` to produce them literally.
 
-| Escape | Output |
-|--------|--------|
-| `\(` | `(` |
-| `\)` | `)` |
-| `\|` | `|` |
-| `\\` | `\` |
-| `\%end$$` | `%end$$` |
-| `\*end$$` | `*end$$` |
+- `\(` → `(`
+- `\)` → `)`
+- `\|` → `|`
+- `\\` → `\`
+- `\%end$$` → `%end$$`
+- `\*end$$` → `*end$$`
 
 ---
 
@@ -160,8 +235,8 @@ interface ParseOptions {
 - `blockTags`: tags treated as block-level for line-break normalization
 - `depthLimit`: maximum nesting depth, default `50`
 - `mode`:
-    - `"render"` normalizes block line breaks
-    - `"highlight"` preserves them
+  - `"render"` normalizes block line breaks
+  - `"highlight"` preserves them
 - `onError`: callback for parse errors
 - `syntax`: override default syntax tokens
 
@@ -177,7 +252,76 @@ interface TextToken {
 }
 ```
 
-Handlers may attach additional runtime fields such as `url`, `lang`, or `title`.
+`TextToken` is the parser's output type. The `type` and `value` fields are intentionally loose (`string`) so the parser can represent any tag without knowing your schema.
+
+Handlers return `TokenDraft`, which allows arbitrary extra fields:
+
+```ts
+interface TokenDraft {
+  type: string;
+  value: string | TextToken[];
+  [key: string]: unknown;
+}
+```
+
+Extra fields (e.g. `url`, `lang`, `title`) are preserved on the resulting `TextToken` at runtime, but are not visible to TypeScript without a cast.
+
+### Strong Typing
+
+`parseRichText` returns `TextToken[]` where `type` is `string`. To get full type safety for your own token schema, define a discriminated union and cast once at the call site:
+
+```ts
+import { parseRichText } from "yume-dsl-rich-text";
+
+// 1. Define your token types
+interface PlainText {
+  type: "text";
+  value: string;
+  id: string;
+}
+
+interface BoldToken {
+  type: "bold";
+  value: MyToken[];
+  id: string;
+}
+
+interface LinkToken {
+  type: "link";
+  url: string;
+  value: MyToken[];
+  id: string;
+}
+
+interface CodeBlockToken {
+  type: "code-block";
+  lang: string;
+  value: string;
+  id: string;
+}
+
+type MyToken = PlainText | BoldToken | LinkToken | CodeBlockToken;
+
+// 2. Cast once at the call site
+const tokens = parseRichText(input, options) as MyToken[];
+
+// 3. Narrow with discriminated unions
+function render(token: MyToken): string {
+  switch (token.type) {
+    case "text":
+      return token.value; // string
+    case "bold":
+      return `<b>${token.value.map(render).join("")}</b>`;
+    case "link":
+      return `<a href="${token.url}">${token.value.map(render).join("")}</a>`;
+    case "code-block":
+      return `<pre data-lang="${token.lang}">${token.value}</pre>`;
+  }
+}
+```
+
+The cast is safe as long as your handlers return drafts that match the union.
+If you add or remove tags, update the union accordingly — TypeScript will flag any unhandled `type` in exhaustive switches.
 
 ---
 
@@ -193,16 +337,16 @@ interface TagHandler {
 }
 ```
 
-You only need to implement the forms your tag supports.
-Unsupported forms fall back to plain text.
+You only need to implement the forms your tag supports.  
+Unsupported forms fall back gracefully instead of breaking the parse.
 
 ### Example
 
 ```ts
 import {
-  parseRichText,
-  parsePipeArgs,
   extractText,
+  parsePipeArgs,
+  parseRichText,
 } from "yume-dsl-rich-text";
 
 const handlers = {
@@ -252,12 +396,24 @@ const handlers = {
   },
 };
 
+const input = `
+Hello $$bold(world)$$!
+
+$$info(Notice)*
+This is a $$bold(block)$$ example.
+*end$$
+
+$$code(ts)%
+const answer = 42;
+%end$$
+`;
+
 const tokens = parseRichText(input, { handlers });
 ```
 
 ### Recommended: Shared Options
 
-In practice you'll reuse the same handlers everywhere.
+In practice you'll usually reuse the same handlers everywhere.  
 Define a shared options object once and spread it when needed.
 
 ```ts
@@ -270,7 +426,10 @@ parseRichText(text, dslOptions);
 stripRichText(text, dslOptions);
 
 // add onError when needed
-parseRichText(text, { ...dslOptions, onError: (e) => console.warn(e) });
+parseRichText(text, {
+  ...dslOptions,
+  onError: (error) => console.warn(error),
+});
 ```
 
 ---
@@ -289,6 +448,26 @@ These helpers are useful when writing handlers.
 | `unescapeInline(str)` | Unescape a single string |
 | `createToken(draft)` | Add an auto-incremented `id` to a token draft |
 | `resetTokenIdSeed()` | Reset the token id counter, useful in tests |
+
+### PipeArgs
+
+`parsePipeArgs` and `parsePipeTextArgs` return a `PipeArgs` object:
+
+```ts
+interface PipeArgs {
+  parts: TextToken[][];
+  text: (index: number) => string;
+  materializedTokens: (index: number) => TextToken[];
+  materializedTailTokens: (startIndex: number) => TextToken[];
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `parts` | Raw token arrays split by `\|` |
+| `text(i)` | Plain text of part `i`, unescaped and trimmed |
+| `materializedTokens(i)` | Unescaped tokens of part `i` |
+| `materializedTailTokens(i)` | All parts from index `i` onward, merged into one token array |
 
 ---
 
@@ -335,6 +514,27 @@ import { DEFAULT_SYNTAX } from "yume-dsl-rich-text";
 > Syntax tokens must remain distinguishable from one another.
 > If two tokens are configured to the same string, behavior is undefined.
 
+### createSyntax
+
+`createSyntax` builds a full `SyntaxConfig` from partial overrides. This is useful if you need to inspect or reuse the resolved syntax outside of parsing.
+
+```ts
+import { createSyntax } from "yume-dsl-rich-text";
+
+const syntax = createSyntax({ tagPrefix: "@@", endTag: ")@@" });
+
+// SyntaxConfig extends SyntaxInput with a precomputed field:
+// syntax.escapableTokens — tokens that can be escaped, sorted by length (descending)
+```
+
+```ts
+interface SyntaxConfig extends SyntaxInput {
+  escapableTokens: string[];
+}
+```
+
+You do not need `createSyntax` for normal usage — `options.syntax` accepts a `Partial<SyntaxInput>` and the parser resolves it internally.
+
 ---
 
 ## Error Handling
@@ -342,10 +542,11 @@ import { DEFAULT_SYNTAX } from "yume-dsl-rich-text";
 Use `onError` to collect parse errors.
 
 ```ts
+import type { ParseError } from "yume-dsl-rich-text";
+
 const errors: ParseError[] = [];
 
 parseRichText("$$bold(unclosed", {
-  ...dslOptions,
   onError: (error) => errors.push(error),
 });
 
@@ -359,7 +560,7 @@ parseRichText("$$bold(unclosed", {
 // }
 ```
 
-If `onError` is omitted, malformed markup degrades to plain text and errors are silently discarded.
+If `onError` is omitted, malformed markup degrades gracefully and errors are silently discarded.
 
 ### Error Codes
 
