@@ -28,6 +28,8 @@ pnpm-workspace.yaml
 *.njsproj
 *.sln
 *.sw?
+yume-dsl-rich-text*.tgz
+dist
 
 .eslintcache
 /node_modules/
