@@ -51,6 +51,8 @@ const smokeTest = (mod: DistModule, label: string) => {
         assert.equal(typeof mod.createSimpleInlineHandlers, "function");
         assert.equal(typeof mod.createSimpleBlockHandlers, "function");
         assert.equal(typeof mod.createSimpleRawHandlers, "function");
+        assert.equal(typeof mod.createPipeBlockHandlers, "function");
+        assert.equal(typeof mod.createPipeRawHandlers, "function");
         assert.equal(typeof mod.createPassthroughTags, "function");
         assert.equal(typeof mod.declareMultilineTags, "function");
         assert.ok(mod.DEFAULT_SYNTAX);
@@ -254,6 +256,20 @@ const smokeTest = (mod: DistModule, label: string) => {
       },
     },
     {
+      name: `[${label}] allowForms 只允许 inline 时被过滤掉的 block/raw-only 标签保留原文`,
+      run: () => {
+        const handlers = {
+          ...mod.createSimpleBlockHandlers(["info"]),
+          ...mod.createSimpleRawHandlers(["code"]),
+        };
+        const tokens = mod.parseRichText("$$info(x)$$ $$code(ts)$$", {
+          handlers,
+          allowForms: ["inline"],
+        });
+        assert.deepEqual(normalize(tokens), [{ type: "text", value: "$$info(x)$$ $$code(ts)$$" }]);
+      },
+    },
+    {
       name: `[${label}] block/raw-only helper 不接受 inline 语法`,
       run: () => {
         const handlers = {
@@ -272,6 +288,33 @@ const smokeTest = (mod: DistModule, label: string) => {
           allowForms: ["raw", "block"],
         });
         assert.deepEqual(normalize(tokens), [{ type: "text", value: "$$unknown(x)$$" }]);
+      },
+    },
+    {
+      name: `[${label}] pipe block/raw helper 导出联动`,
+      run: () => {
+        const handlers = {
+          ...mod.createPipeBlockHandlers(["panel"]),
+          ...mod.createPipeRawHandlers(["code"]),
+        };
+        const tokens = mod.parseRichText(
+          "$$panel(a | b)*\nbody\n*end$$\n$$code(ts | demo)%\n1\n%end$$",
+          { handlers },
+        );
+        assert.deepEqual(normalize(tokens), [
+          {
+            type: "panel",
+            arg: "a | b",
+            args: ["a", "b"],
+            value: [{ type: "text", value: "body\n" }],
+          },
+          {
+            type: "code",
+            arg: "ts | demo",
+            args: ["ts", "demo"],
+            value: "1\n",
+          },
+        ]);
       },
     },
   ];

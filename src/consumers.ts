@@ -19,9 +19,10 @@ import { consumeBlockTagTrailingLineBreak } from "./blockTagFormatting.js";
 const supportsInlineForm = (
   handler: ParseContext["handlers"][string] | undefined,
   allowInline: boolean,
+  isRegistered: boolean,
 ): boolean => {
   if (!allowInline) return false;
-  if (!handler) return true;
+  if (!handler) return !isRegistered;
   if (handler.inline) return true;
   return !handler.raw && !handler.block;
 };
@@ -150,7 +151,7 @@ export const tryConsumeInlineTag = (
   inlineEnd: number,
 ): boolean => {
   const handler = ctx.handlers[info.tag];
-  if (!supportsInlineForm(handler, ctx.allowInline)) {
+  if (!supportsInlineForm(handler, ctx.allowInline, ctx.registeredTags.has(info.tag))) {
     return false;
   }
 

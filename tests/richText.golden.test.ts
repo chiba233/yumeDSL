@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import {
   createPassthroughTags,
+  createPipeBlockHandlers,
+  createPipeRawHandlers,
   createSimpleBlockHandlers,
   createSimpleInlineHandlers,
   createSimpleRawHandlers,
@@ -757,6 +759,18 @@ const cases: Array<{ name: string; run: () => void }> = [
     },
   },
   {
+    name: "[Forms] allowForms 只允许 inline -> 已注册但被过滤掉的 block/raw-only inline 标签应保留原文",
+    run: () => {
+      const tokens = parseRichText("$$info(hello)$$ $$code(ts)$$", {
+        handlers: helperHandlers,
+        allowForms: ["inline"],
+      });
+      assert.deepEqual(normalizeTokens(tokens), [
+        { type: "text", value: "$$info(hello)$$ $$code(ts)$$" },
+      ]);
+    },
+  },
+  {
     name: "[Forms] allowForms 禁用 inline -> passthrough 与 inline helper 也应整体保留原文",
     run: () => {
       const tokens = parseRichText("$$bold(x)$$ $$pass(y)$$", {
@@ -897,6 +911,40 @@ const cases: Array<{ name: string; run: () => void }> = [
       });
       assert.deepEqual(normalizeTokens(tokens), [
         { type: "text", value: "$$info(T)$$ $$code(ts)$$" },
+      ]);
+    },
+  },
+  {
+    name: "[Helpers] pipe block helper -> 应当透传 arg、解析 args 并保留 block 内容",
+    run: () => {
+      const handlers = {
+        ...createPipeBlockHandlers(["panel"] as const),
+      };
+      const tokens = parseRichText("$$panel(a | b | c)*\nbody\n*end$$", { handlers });
+      assert.deepEqual(normalizeTokens(tokens), [
+        {
+          type: "panel",
+          arg: "a | b | c",
+          args: ["a", "b", "c"],
+          value: [{ type: "text", value: "body\n" }],
+        },
+      ]);
+    },
+  },
+  {
+    name: "[Helpers] pipe raw helper -> 应当透传 arg、解析 args 并保留 raw 内容",
+    run: () => {
+      const handlers = {
+        ...createPipeRawHandlers(["code"] as const),
+      };
+      const tokens = parseRichText("$$code(ts | Demo | Label)%\nconst x = 1\n%end$$", { handlers });
+      assert.deepEqual(normalizeTokens(tokens), [
+        {
+          type: "code",
+          arg: "ts | Demo | Label",
+          args: ["ts", "Demo", "Label"],
+          value: "const x = 1\n",
+        },
       ]);
     },
   },

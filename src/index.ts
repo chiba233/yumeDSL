@@ -33,6 +33,8 @@ export {
   createSimpleInlineHandlers,
   createSimpleBlockHandlers,
   createSimpleRawHandlers,
+  createPipeBlockHandlers,
+  createPipeRawHandlers,
   declareMultilineTags,
 } from "./handlerHelpers.js";
 

@@ -441,6 +441,16 @@ function createSimpleBlockHandlers(names: readonly string[]): Record<string, Tag
 为一组标签名创建原始处理器，对应 DSL 的多行 raw 形式。每个处理器直接透传 `arg` 和原始字符串内容：
 `{ type: tagName, arg, value: content }`。
 
+解析后的 token 结构如下：
+
+```ts
+{
+  type: string;
+  arg ? : string;
+  value: string;
+}
+```
+
 适用于按原样保留内容的原始标签 — `$$tagName(arg)%...%end$$`。
 和 block 标签一样，`%end$$` 也必须独占一行，因此更适合作为多行块书写。
 
@@ -456,11 +466,53 @@ const dsl = createParser({
 dsl.parse(`$$code(ts)%
 const x = 1;
 %end$$`);
-// → [{ type: "code", arg: "ts", value: "const x = 1;", id: "..." }]
+// → [{ type: "code", arg: "ts", value: "const x = 1\n", id: "..." }]
 ```
 
 ```ts
 function createSimpleRawHandlers(names: readonly string[]): Record<string, TagHandler>;
+```
+
+### `createPipeBlockHandlers(names)`
+
+创建 block 处理器，既保留原始 `arg`，也会按 pipe 拆出 `args`，并保留解析后的 block 内容：
+`{ type: tagName, arg, args, value: content }`。
+
+它只处理结构，不会自动赋予 `title`、`label` 之类业务字段名。
+
+```ts
+import { createParser, createPipeBlockHandlers } from "yume-dsl-rich-text";
+
+const dsl = createParser({
+  handlers: {
+    ...createPipeBlockHandlers(["panel"]),
+  },
+});
+```
+
+```ts
+function createPipeBlockHandlers(names: readonly string[]): Record<string, TagHandler>;
+```
+
+### `createPipeRawHandlers(names)`
+
+创建 raw 处理器，既保留原始 `arg`，也会按 pipe 拆出 `args`，并保留 raw 内容：
+`{ type: tagName, arg, args, value: content }`。
+
+适合需要复用 pipe 参数拆分，但又不想在核心 helper 里硬编码 `lang`、`title` 等业务字段名的场景。
+
+```ts
+import { createParser, createPipeRawHandlers } from "yume-dsl-rich-text";
+
+const dsl = createParser({
+  handlers: {
+    ...createPipeRawHandlers(["code"]),
+  },
+});
+```
+
+```ts
+function createPipeRawHandlers(names: readonly string[]): Record<string, TagHandler>;
 ```
 
 ### `createPassthroughTags(names)`（进阶）
@@ -997,6 +1049,8 @@ dsl.parse("Hello $$bold(world", { onError: (e) => errors.push(e) });
 - 修复 `allowForms`：当禁用 `"inline"` 时，未注册的 `$$unknown(...)$$` 也会按原文保留
 - 修复 `createSimpleBlockHandlers()` / `createSimpleRawHandlers()`：块级 / 原始 helper 不再隐式接受 inline 语法
 - 修复自定义 syntax 对多字符 `tagOpen` / `tagClose` / `tagDivider` 的解析问题
+- 修复 `allowForms: ["inline"]`：已注册但被 form 过滤掉的 block/raw-only 标签会按原文保留，不再被当成 unknown inline 标签
+- 新增 `createPipeBlockHandlers()` / `createPipeRawHandlers()` helper，用于结构化 pipe 参数拆分
 - 补充 `allowForms` 与新 helper 的回归测试
 - 补充自定义 syntax 边界测试、类型编译检查与更强的 fuzz 覆盖
 - 微调 README，对多行 block/raw helper 与降级行为的说明更直观

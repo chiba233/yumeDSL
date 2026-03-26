@@ -451,6 +451,16 @@ Creates raw-only tag handlers for the DSL's multiline raw form. Each handler pas
 content:
 `{ type: tagName, arg, value: content }`.
 
+The parsed token shape is:
+
+```ts
+{
+  type: string;
+  arg ? : string;
+  value: string;
+}
+```
+
 Use this for raw tags that preserve content as-is — `$$tagName(arg)%...%end$$`.
 As with block tags, `%end$$` must be on its own line, so this form should be written as a multiline block.
 
@@ -466,11 +476,53 @@ const dsl = createParser({
 dsl.parse(`$$code(ts)%
 const x = 1;
 %end$$`);
-// → [{ type: "code", arg: "ts", value: "const x = 1;", id: "..." }]
+// → [{ type: "code", arg: "ts", value: "const x = 1\n", id: "..." }]
 ```
 
 ```ts
 function createSimpleRawHandlers(names: readonly string[]): Record<string, TagHandler>;
+```
+
+### `createPipeBlockHandlers(names)`
+
+Creates block handlers that keep the original `arg`, split it by pipe into `args`, and preserve parsed block content:
+`{ type: tagName, arg, args, value: content }`.
+
+This is a structural helper only. It does not assign business-specific fields such as `title` or `label`.
+
+```ts
+import { createParser, createPipeBlockHandlers } from "yume-dsl-rich-text";
+
+const dsl = createParser({
+  handlers: {
+    ...createPipeBlockHandlers(["panel"]),
+  },
+});
+```
+
+```ts
+function createPipeBlockHandlers(names: readonly string[]): Record<string, TagHandler>;
+```
+
+### `createPipeRawHandlers(names)`
+
+Creates raw handlers that keep the original `arg`, split it by pipe into `args`, and preserve raw content:
+`{ type: tagName, arg, args, value: content }`.
+
+This is useful when you want reusable pipe parsing without hard-coding domain fields such as `lang` or `title`.
+
+```ts
+import { createParser, createPipeRawHandlers } from "yume-dsl-rich-text";
+
+const dsl = createParser({
+  handlers: {
+    ...createPipeRawHandlers(["code"]),
+  },
+});
+```
+
+```ts
+function createPipeRawHandlers(names: readonly string[]): Record<string, TagHandler>;
 ```
 
 ### `createPassthroughTags(names)` (advanced)
@@ -1020,6 +1072,9 @@ Without `onError`, the same recovery happens silently — no error is thrown.
 - Fix `createSimpleBlockHandlers()` / `createSimpleRawHandlers()` so block-only and raw-only helpers no longer accept
   inline syntax implicitly
 - Fix custom syntax parsing for multi-character `tagOpen` / `tagClose` / `tagDivider` tokens
+- Fix `allowForms: ["inline"]` so registered block/raw-only tags filtered out by form restriction keep their inline
+  markup literally instead of being treated as unknown inline tags
+- Add `createPipeBlockHandlers()` and `createPipeRawHandlers()` helpers for structural pipe-arg parsing
 - Add regression tests for `allowForms` and the new handler helpers
 - Add custom syntax edge tests, compile-time type checks, and stronger fuzz coverage
 - Clarify README wording around multiline block/raw helpers and fallback behavior

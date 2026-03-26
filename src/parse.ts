@@ -58,6 +58,7 @@ const internalParse = (
   depthLimit: number,
   options: { mode?: ParseContext["mode"] } | undefined,
   allowInline: boolean,
+  registeredTags: ReadonlySet<string>,
   onError: ParseContext["onError"],
   handlers: Record<string, import("./types").TagHandler>,
   blockTagSet: ReadonlySet<string>,
@@ -69,6 +70,7 @@ const internalParse = (
     depthLimit,
     mode: options?.mode ?? "render",
     allowInline,
+    registeredTags,
     onError,
     handlers,
     blockTagSet,
@@ -88,6 +90,7 @@ const internalParse = (
       innerDepthLimit,
       innerOptions,
       allowInline,
+      registeredTags,
       onError,
       handlers,
       blockTagSet,
@@ -112,6 +115,7 @@ export const parseRichText = (text: string, options: ParseOptions = {}): TextTok
   if (!text) return [];
 
   const rawHandlers = options.handlers ?? {};
+  const registeredTags = new Set(Object.keys(rawHandlers));
   const handlers = options.allowForms
     ? filterHandlersByForms(rawHandlers, new Set(options.allowForms))
     : rawHandlers;
@@ -125,6 +129,7 @@ export const parseRichText = (text: string, options: ParseOptions = {}): TextTok
       options.depthLimit ?? 50,
       { mode: options.mode ?? "render" },
       allowInline,
+      registeredTags,
       options.onError,
       handlers,
       blockTagSet,

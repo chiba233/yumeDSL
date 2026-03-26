@@ -1,5 +1,5 @@
 import type { TagHandler, TextToken, TokenDraft } from "./types.js";
-import { materializeTextTokens } from "./builders.js";
+import { materializeTextTokens, parsePipeTextArgs } from "./builders.js";
 
 /**
  * Create passthrough tag handlers that simply register tag names
@@ -116,6 +116,56 @@ export const createSimpleRawHandlers = <const T extends readonly string[]>(
         arg,
         value: content,
       }),
+    };
+  }
+  return result;
+};
+
+/**
+ * Create block handlers that split the arg by pipe and expose both
+ * the original arg and structured `args` array:
+ * `{ type: tagName, arg, args, value: content }`.
+ */
+export const createPipeBlockHandlers = <const T extends readonly string[]>(
+  names: T,
+): Record<T[number], TagHandler> => {
+  const result = {} as Record<T[number], TagHandler>;
+  for (const name of names) {
+    result[name as T[number]] = {
+      block: (arg: string | undefined, content: TextToken[]): TokenDraft => {
+        const parsed = arg === undefined ? null : parsePipeTextArgs(arg);
+        return {
+          type: name,
+          arg,
+          args: parsed ? parsed.parts.map((_, i) => parsed.text(i)) : [],
+          value: content,
+        };
+      },
+    };
+  }
+  return result;
+};
+
+/**
+ * Create raw handlers that split the arg by pipe and expose both
+ * the original arg and structured `args` array:
+ * `{ type: tagName, arg, args, value: content }`.
+ */
+export const createPipeRawHandlers = <const T extends readonly string[]>(
+  names: T,
+): Record<T[number], TagHandler> => {
+  const result = {} as Record<T[number], TagHandler>;
+  for (const name of names) {
+    result[name as T[number]] = {
+      raw: (arg: string | undefined, content: string): TokenDraft => {
+        const parsed = arg === undefined ? null : parsePipeTextArgs(arg);
+        return {
+          type: name,
+          arg,
+          args: parsed ? parsed.parts.map((_, i) => parsed.text(i)) : [],
+          value: content,
+        };
+      },
     };
   }
   return result;
