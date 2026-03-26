@@ -32,6 +32,9 @@
   - [parseRichText / stripRichText](#parserichtext--striprichtext)
 - [处理器辅助函数](#处理器辅助函数)
   - [createSimpleInlineHandlers](#createsimpleinlinehandlers)
+  - [declareMultilineTags](#declaremultilinetags)
+  - [createSimpleBlockHandlers](#createsimpleblockhandlers)
+  - [createSimpleRawHandlers](#createsimplerawhandlers)
   - [createPassthroughTags（进阶）](#createpassthroughtags进阶)
 - [ParseOptions](#parseoptions)
 - [Token 结构](#token-结构)
@@ -127,13 +130,18 @@ yarn add yume-dsl-rich-text
 import {
   createParser,
   createSimpleInlineHandlers,
+  createSimpleBlockHandlers,
+  createSimpleRawHandlers,
+  declareMultilineTags,
 } from "yume-dsl-rich-text";
 
 const dsl = createParser({
   handlers: {
-    // 一行注册多个简单标签
     ...createSimpleInlineHandlers(["bold", "italic", "underline", "strike"]),
+    ...createSimpleBlockHandlers(["info", "warning"]),
+    ...createSimpleRawHandlers(["code"]),
   },
+  blockTags: declareMultilineTags(["info", "warning", "code"]),
 });
 ```
 
@@ -376,6 +384,82 @@ createSimpleInlineHandlers(["bold", "italic", "underline"])
 
 ```ts
 function createSimpleInlineHandlers(names: readonly string[]): Record<string, TagHandler>;
+```
+
+### `declareMultilineTags(names)`
+
+声明哪些已注册的标签是多行类型。返回 `string[]`，传入 `ParseOptions.blockTags`。
+
+该函数**不**注册标签或创建处理器 — 它只告诉解析器哪些标签需要换行符修剪（剥离 `)*` / `)%` 开启符后的前导 `\n`，以及
+`*end$$` / `%end$$` 关闭符前的尾随 `\n`）。
+
+```ts
+import { createParser, createSimpleInlineHandlers, declareMultilineTags } from "yume-dsl-rich-text";
+
+const dsl = createParser({
+  handlers: {
+    ...createSimpleInlineHandlers(["bold", "italic"]),
+    info: { /* 自定义处理器，单独注册 */ },
+    warning: { /* 自定义处理器，单独注册 */ },
+  },
+  blockTags: declareMultilineTags(["info", "warning"]),
+});
+```
+
+> **注意：** 如果省略 `blockTags`，解析器会从具有 `raw` 或 `block` 方法的处理器自动推导。
+> 当需要显式控制哪些标签接受换行符修剪时使用 `declareMultilineTags`。
+
+```ts
+function declareMultilineTags(names: readonly string[]): string[];
+```
+
+### `createSimpleBlockHandlers(names)`
+
+创建块级处理器（DSL block 形式：`$$tag(arg)*...*end$$`）。
+每个处理器直接透传 `arg` 和递归解析后的内容：`{ type: tagName, arg, value: content }`。
+
+```ts
+import { createParser, createSimpleInlineHandlers, createSimpleBlockHandlers } from "yume-dsl-rich-text";
+
+const dsl = createParser({
+  handlers: {
+    ...createSimpleInlineHandlers(["bold", "italic"]),
+    ...createSimpleBlockHandlers(["info", "warning"]),
+  },
+});
+
+dsl.parse("$$info(Notice)*\nThis is a $$bold(block)$$ example.\n*end$$");
+// → [{ type: "info", arg: "Notice", value: [... 解析后的 token ...], id: "..." }]
+```
+
+```ts
+function createSimpleBlockHandlers(names: readonly string[]): Record<string, TagHandler>;
+```
+
+### `createSimpleRawHandlers(names)`
+
+为一组标签名创建原始处理器。每个处理器直接透传 `arg` 和原始字符串内容：
+`{ type: tagName, arg, value: content }`。
+
+适用于按原样保留内容的原始标签 — `$$tagName(arg)%...%end$$`。
+
+```ts
+import { createParser, createSimpleRawHandlers } from "yume-dsl-rich-text";
+
+const dsl = createParser({
+  handlers: {
+    ...createSimpleRawHandlers(["code", "math"]),
+  },
+});
+
+dsl.parse(`$$code(ts)%
+const x = 1;
+%end$$`);
+// → [{ type: "code", arg: "ts", value: "const x = 1;", id: "..." }]
+```
+
+```ts
+function createSimpleRawHandlers(names: readonly string[]): Record<string, TagHandler>;
 ```
 
 ### `createPassthroughTags(names)`（进阶）
@@ -664,6 +748,9 @@ const tokens = dsl.parse(input);
 | `createToken(draft)`                | 手动构建 token 的处理器   | 为 `TokenDraft` 添加自增 `id`  |
 | `resetTokenIdSeed()`                | 测试代码              | 重置 token id 计数器，用于确定性测试输出 |
 | `createSimpleInlineHandlers(names)` | 初始化代码             | 批量创建简单标签的行内处理器            |
+| `declareMultilineTags(names)`       | 初始化代码             | 声明哪些标签需要多行换行符修剪           |
+| `createSimpleBlockHandlers(names)`  | 初始化代码             | 批量创建简单标签的块级处理器            |
+| `createSimpleRawHandlers(names)`    | 初始化代码             | 批量创建简单标签的原始处理器            |
 | `createPassthroughTags(names)`      | 初始化代码             | 批量注册空处理器的标签名              |
 
 ### PipeArgs
@@ -901,8 +988,11 @@ dsl.parse("Hello $$bold(world", { onError: (e) => errors.push(e) });
 
 - 新增 `ParseOptions.allowForms` 选项 — 限制解析器接受的标签形式（`"inline"`、`"raw"`、`"block"`），被禁用的形式优雅降级
 - 新增 `createSimpleInlineHandlers(names)` 辅助函数 — 批量注册简单行内标签，无需编写重复的处理器对象
+- 新增 `declareMultilineTags(names)` 辅助函数 — 声明哪些标签需要多行换行符修剪（`blockTags`）
+- 新增 `createSimpleBlockHandlers(names)` 辅助函数 — 批量注册简单块级标签
+- 新增 `createSimpleRawHandlers(names)` 辅助函数 — 批量注册简单原始标签
 - 新增 `createPassthroughTags(names)` 辅助函数 — 批量注册空处理器的标签名（进阶用法）
-- 两个辅助函数均通过 `const` 泛型保留字面量 key 类型 — `createSimpleInlineHandlers(["bold", "italic"])` 推导为
+- 所有辅助函数均通过 `const` 泛型保留字面量 key 类型 — `createSimpleInlineHandlers(["bold", "italic"])` 推导为
   `Record<"bold" | "italic", TagHandler>`
 - 导出 `TagForm` 类型
 

@@ -31,6 +31,9 @@ You define your own semantics and rendering layer.
   - [parseRichText / stripRichText](#parserichtext--striprichtext)
 - [Handler Helpers](#handler-helpers)
   - [createSimpleInlineHandlers](#createsimpleinlinehandlers)
+  - [declareMultilineTags](#declaremultilinetags)
+  - [createSimpleBlockHandlers](#createsimpleblockhandlers)
+  - [createSimpleRawHandlers](#createsimplerawhandlers)
   - [createPassthroughTags (advanced)](#createpassthroughtags-advanced)
 - [ParseOptions](#parseoptions)
 - [Token Structure](#token-structure)
@@ -131,13 +134,18 @@ yarn add yume-dsl-rich-text
 import {
   createParser,
   createSimpleInlineHandlers,
+  createSimpleBlockHandlers,
+  createSimpleRawHandlers,
+  declareMultilineTags,
 } from "yume-dsl-rich-text";
 
 const dsl = createParser({
   handlers: {
-    // Register simple tags in one call
     ...createSimpleInlineHandlers(["bold", "italic", "underline", "strike"]),
+    ...createSimpleBlockHandlers(["info", "warning"]),
+    ...createSimpleRawHandlers(["code"]),
   },
+  blockTags: declareMultilineTags(["info", "warning", "code"]),
 });
 ```
 
@@ -382,6 +390,83 @@ createSimpleInlineHandlers(["bold", "italic", "underline"])
 
 ```ts
 function createSimpleInlineHandlers(names: readonly string[]): Record<string, TagHandler>;
+```
+
+### `declareMultilineTags(names)`
+
+Declares which already-registered tags are multiline types. Returns a `string[]` to pass as `ParseOptions.blockTags`.
+
+This does **not** register tags or create handlers — it only tells the parser which tags need line-break normalization (
+stripping the leading `\n` after `)*` / `)%` openers and the trailing `\n` before `*end$$` / `%end$$` closers).
+
+```ts
+import { createParser, createSimpleInlineHandlers, declareMultilineTags } from "yume-dsl-rich-text";
+
+const dsl = createParser({
+  handlers: {
+    ...createSimpleInlineHandlers(["bold", "italic"]),
+    info: { /* custom handler registered separately */ },
+    warning: { /* custom handler registered separately */ },
+  },
+  blockTags: declareMultilineTags(["info", "warning"]),
+});
+```
+
+> **Note:** If you omit `blockTags`, the parser auto-derives it from handlers that have `raw` or `block` methods.
+> Use `declareMultilineTags` when you need explicit control over which tags receive line-break normalization.
+
+```ts
+function declareMultilineTags(names: readonly string[]): string[];
+```
+
+### `createSimpleBlockHandlers(names)`
+
+Creates block-only tag handlers (DSL block form: `$$tag(arg)*...*end$$`).
+Each handler passes through the `arg` and recursively-parsed content:
+`{ type: tagName, arg, value: content }`.
+
+```ts
+import { createParser, createSimpleInlineHandlers, createSimpleBlockHandlers } from "yume-dsl-rich-text";
+
+const dsl = createParser({
+  handlers: {
+    ...createSimpleInlineHandlers(["bold", "italic"]),
+    ...createSimpleBlockHandlers(["info", "warning"]),
+  },
+});
+
+dsl.parse("$$info(Notice)*\nThis is a $$bold(block)$$ example.\n*end$$");
+// → [{ type: "info", arg: "Notice", value: [... parsed tokens ...], id: "..." }]
+```
+
+```ts
+function createSimpleBlockHandlers(names: readonly string[]): Record<string, TagHandler>;
+```
+
+### `createSimpleRawHandlers(names)`
+
+Creates raw-only tag handlers. Each handler passes through the `arg` and raw string content:
+`{ type: tagName, arg, value: content }`.
+
+Use this for raw tags that preserve content as-is — `$$tagName(arg)%...%end$$`.
+
+```ts
+import { createParser, createSimpleRawHandlers } from "yume-dsl-rich-text";
+
+const dsl = createParser({
+  handlers: {
+    ...createSimpleRawHandlers(["code", "math"]),
+  },
+});
+
+dsl.parse(`$$code(ts)%
+const x = 1;
+%end$$`);
+// → [{ type: "code", arg: "ts", value: "const x = 1;", id: "..." }]
+```
+
+```ts
+function createSimpleRawHandlers(names: readonly string[]): Record<string, TagHandler>;
 ```
 
 ### `createPassthroughTags(names)` (advanced)
@@ -663,18 +748,21 @@ These helpers serve **handler authors** — they solve common problems when writ
 
 You will not need these if you only use `createSimpleInlineHandlers` / `createPassthroughTags`.
 
-| Export                              | Who uses it                                | Description                                              |
-|-------------------------------------|--------------------------------------------|----------------------------------------------------------|
-| `parsePipeArgs(tokens)`             | Custom handlers with `\|`-separated params | Split tokens by pipe and access parsed parts             |
-| `parsePipeTextArgs(text)`           | Custom handlers parsing raw args           | Same as above, but from a plain text string              |
-| `splitTokensByPipe(tokens)`         | Low-level handler code                     | Raw token splitter without helper methods                |
-| `extractText(tokens)`               | Handlers that need plain-text values       | Flatten a token tree into a single string                |
-| `materializeTextTokens(tokens)`     | Handlers returning processed child tokens  | Recursively unescape text tokens in a tree               |
-| `unescapeInline(str)`               | Handlers processing raw strings            | Unescape DSL escape sequences in a single string         |
-| `createToken(draft)`                | Handlers building tokens manually          | Add an auto-incremented `id` to a `TokenDraft`           |
-| `resetTokenIdSeed()`                | Test code                                  | Reset the token id counter for deterministic test output |
-| `createSimpleInlineHandlers(names)` | Setup code                                 | Create inline handlers for simple tags in bulk           |
-| `createPassthroughTags(names)`      | Setup code                                 | Register tag names with empty handlers in bulk           |
+| Export                              | Who uses it                                | Description                                                |
+|-------------------------------------|--------------------------------------------|------------------------------------------------------------|
+| `parsePipeArgs(tokens)`             | Custom handlers with `\|`-separated params | Split tokens by pipe and access parsed parts               |
+| `parsePipeTextArgs(text)`           | Custom handlers parsing raw args           | Same as above, but from a plain text string                |
+| `splitTokensByPipe(tokens)`         | Low-level handler code                     | Raw token splitter without helper methods                  |
+| `extractText(tokens)`               | Handlers that need plain-text values       | Flatten a token tree into a single string                  |
+| `materializeTextTokens(tokens)`     | Handlers returning processed child tokens  | Recursively unescape text tokens in a tree                 |
+| `unescapeInline(str)`               | Handlers processing raw strings            | Unescape DSL escape sequences in a single string           |
+| `createToken(draft)`                | Handlers building tokens manually          | Add an auto-incremented `id` to a `TokenDraft`             |
+| `resetTokenIdSeed()`                | Test code                                  | Reset the token id counter for deterministic test output   |
+| `createSimpleInlineHandlers(names)` | Setup code                                 | Create inline handlers for simple tags in bulk             |
+| `declareMultilineTags(names)`       | Setup code                                 | Declare which tags need multiline line-break normalization |
+| `createSimpleBlockHandlers(names)`  | Setup code                                 | Create block-form handlers for simple tags in bulk         |
+| `createSimpleRawHandlers(names)`    | Setup code                                 | Create raw handlers for simple tags in bulk                |
+| `createPassthroughTags(names)`      | Setup code                                 | Register tag names with empty handlers in bulk             |
 
 ### PipeArgs
 
@@ -914,8 +1002,11 @@ Without `onError`, the same recovery happens silently — no error is thrown.
   accepts; disallowed forms degrade gracefully
 - Add `createSimpleInlineHandlers(names)` helper — register simple inline tags in bulk without writing repetitive
   handler objects
+- Add `declareMultilineTags(names)` helper — declare which tags need multiline line-break normalization (`blockTags`)
+- Add `createSimpleBlockHandlers(names)` helper — register simple block-form tags in bulk
+- Add `createSimpleRawHandlers(names)` helper — register simple raw-form tags in bulk
 - Add `createPassthroughTags(names)` helper — register tag names with empty handlers in bulk (advanced use case)
-- Both helpers preserve literal key types via `const` generics — `createSimpleInlineHandlers(["bold", "italic"])` infers
+- All helpers preserve literal key types via `const` generics — `createSimpleInlineHandlers(["bold", "italic"])` infers
   `Record<"bold" | "italic", TagHandler>`
 - Export `TagForm` type
 
