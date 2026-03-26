@@ -7,6 +7,7 @@ import {
   createSimpleInlineHandlers,
   createSimpleRawHandlers,
   declareMultilineTags,
+  parsePipeTextList,
   parseRichText,
   resetTokenIdSeed,
   stripRichText,
@@ -189,6 +190,14 @@ const cases: Array<{ name: string; run: () => void }> = [
         if (!Array.isArray(token.value)) throw new Error("value should be array");
         assert.deepEqual(normalizeTokens(token.value), pipeCase.expectedValue);
       });
+    },
+  },
+  {
+    name: "[Common/Pipe] parsePipeTextList -> 应当处理 trim / 空段 / 转义管道符",
+    run: () => {
+      assert.deepEqual(parsePipeTextList(" ts | Demo | Label "), ["ts", "Demo", "Label"]);
+      assert.deepEqual(parsePipeTextList("a||c"), ["a", "", "c"]);
+      assert.deepEqual(parsePipeTextList(String.raw`a \| b | c`), ["a | b", "c"]);
     },
   },
   {

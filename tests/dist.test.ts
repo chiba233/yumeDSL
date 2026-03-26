@@ -201,6 +201,14 @@ const smokeTest = (mod: DistModule, label: string) => {
       },
     },
     {
+      name: `[${label}] parsePipeTextList`,
+      run: () => {
+        assert.deepEqual(mod.parsePipeTextList(" ts | Demo | Label "), ["ts", "Demo", "Label"]);
+        assert.deepEqual(mod.parsePipeTextList("a||c"), ["a", "", "c"]);
+        assert.deepEqual(mod.parsePipeTextList(String.raw`a \| b | c`), ["a | b", "c"]);
+      },
+    },
+    {
       name: `[${label}] createToken + resetTokenIdSeed`,
       run: () => {
         mod.resetTokenIdSeed();
