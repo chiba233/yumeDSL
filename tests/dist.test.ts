@@ -48,6 +48,11 @@ const smokeTest = (mod: DistModule, label: string) => {
         assert.equal(typeof mod.createToken, "function");
         assert.equal(typeof mod.resetTokenIdSeed, "function");
         assert.equal(typeof mod.createSyntax, "function");
+        assert.equal(typeof mod.createSimpleInlineHandlers, "function");
+        assert.equal(typeof mod.createSimpleBlockHandlers, "function");
+        assert.equal(typeof mod.createSimpleRawHandlers, "function");
+        assert.equal(typeof mod.createPassthroughTags, "function");
+        assert.equal(typeof mod.declareMultilineTags, "function");
         assert.ok(mod.DEFAULT_SYNTAX);
       },
     },
@@ -154,10 +159,7 @@ const smokeTest = (mod: DistModule, label: string) => {
     {
       name: `[${label}] stripRichText 嵌套`,
       run: () => {
-        assert.equal(
-          strip("$$bold(a $$thin(b)$$ c)$$"),
-          "a b c",
-        );
+        assert.equal(strip("$$bold(a $$thin(b)$$ c)$$"), "a b c");
       },
     },
     {
@@ -216,15 +218,38 @@ const smokeTest = (mod: DistModule, label: string) => {
     {
       name: `[${label}] depthLimit 选项`,
       run: () => {
-        const tokens = mod.parseRichText(
-          "$$bold($$bold($$bold(deep)$$)$$)$$",
-          { handlers: testHandlers, depthLimit: 1 },
-        );
+        const tokens = mod.parseRichText("$$bold($$bold($$bold(deep)$$)$$)$$", {
+          handlers: testHandlers,
+          depthLimit: 1,
+        });
         assert.deepEqual(normalize(tokens), [
           {
             type: "bold",
             value: [{ type: "text", value: "$$bold($$bold(deep)$$)$$" }],
           },
+        ]);
+      },
+    },
+    {
+      name: `[${label}] allowForms 与 helper 导出联动`,
+      run: () => {
+        const handlers = {
+          ...mod.createSimpleInlineHandlers(["bold"]),
+          ...mod.createSimpleBlockHandlers(["info"]),
+          ...mod.createSimpleRawHandlers(["code"]),
+          ...mod.createPassthroughTags(["pass"]),
+        };
+        const tokens = mod.parseRichText(
+          "$$bold(x)$$\n$$info(T)*\nA\n*end$$\n$$code(ts)%\n1\n%end$$\n$$pass(y)$$",
+          {
+            handlers,
+            allowForms: ["inline"],
+          },
+        );
+        assert.deepEqual(normalize(tokens), [
+          { type: "bold", value: [{ type: "text", value: "x" }] },
+          { type: "text", value: "\n$$info(T)*\nA\n*end$$\n$$code(ts)%\n1\n%end$$\n" },
+          { type: "pass", value: [{ type: "text", value: "y" }] },
         ]);
       },
     },

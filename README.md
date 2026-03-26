@@ -421,7 +421,9 @@ function declareMultilineTags(names: readonly string[]): string[];
 
 ### `createSimpleBlockHandlers(names)`
 
-Creates block-only tag handlers (DSL block form: `$$tag(arg)*...*end$$`).
+Creates block-only tag handlers for the DSL's multiline block form: `$$tag(arg)* ... *end$$`.
+The closing marker `*end$$` must stay on its own line, so this form is best treated as a standalone block rather than
+inline text.
 Each handler passes through the `arg` and recursively-parsed content:
 `{ type: tagName, arg, value: content }`.
 
@@ -445,10 +447,12 @@ function createSimpleBlockHandlers(names: readonly string[]): Record<string, Tag
 
 ### `createSimpleRawHandlers(names)`
 
-Creates raw-only tag handlers. Each handler passes through the `arg` and raw string content:
+Creates raw-only tag handlers for the DSL's multiline raw form. Each handler passes through the `arg` and raw string
+content:
 `{ type: tagName, arg, value: content }`.
 
 Use this for raw tags that preserve content as-is — `$$tagName(arg)%...%end$$`.
+As with block tags, `%end$$` must be on its own line, so this form should be written as a multiline block.
 
 ```ts
 import { createParser, createSimpleRawHandlers } from "yume-dsl-rich-text";
@@ -528,6 +532,9 @@ interface ParseOptions {
 Controls which tag forms the parser will accept. Forms not listed are treated as if the handler does not support them —
 the parser degrades gracefully.
 
+In practice, disabled forms are left as plain text. This is especially useful when you want to allow inline formatting
+but reject multiline block/raw tags in comments or chat input.
+
 ```ts
 // Only allow inline tags — block and raw syntax is ignored
 const dsl = createParser({
@@ -556,13 +563,16 @@ interface TextToken {
   type: string;
   value: string | TextToken[];
   id: string;
+
   [key: string]: unknown;
 }
 ```
 
-`TextToken` is the parser's output type. The `type` and `value` fields are intentionally loose (`string`) so the parser can represent any tag without knowing your schema.
+`TextToken` is the parser's output type. The `type` and `value` fields are intentionally loose (`string`) so the parser
+can represent any tag without knowing your schema.
 
-Extra fields returned by handlers (e.g. `url`, `lang`, `title`) are preserved on the resulting `TextToken` and accessible as `unknown`. You can read them directly without a cast — just narrow the type before use:
+Extra fields returned by handlers (e.g. `url`, `lang`, `title`) are preserved on the resulting `TextToken` and
+accessible as `unknown`. You can read them directly without a cast — just narrow the type before use:
 
 ```ts
 const token = tokens[0];
@@ -577,6 +587,7 @@ Handlers return `TokenDraft`, which shares the same open structure:
 interface TokenDraft {
   type: string;
   value: string | TextToken[];
+
   [key: string]: unknown;
 }
 ```
@@ -585,7 +596,8 @@ interface TokenDraft {
 
 For simple use cases, you can access extra fields directly via `typeof` narrowing — no cast needed.
 
-For full type safety across your entire token schema, define typed interfaces that extend `TextToken` and cast once at the call site:
+For full type safety across your entire token schema, define typed interfaces that extend `TextToken` and cast once at
+the call site:
 
 ```ts
 import { parseRichText, type TextToken } from "yume-dsl-rich-text";
@@ -634,7 +646,8 @@ function render(token: MyToken): string {
 ```
 
 The cast is safe as long as your handlers return drafts that match the union.
-If you add or remove tags, update the union accordingly — TypeScript will flag any unhandled `type` in exhaustive switches.
+If you add or remove tags, update the union accordingly — TypeScript will flag any unhandled `type` in exhaustive
+switches.
 
 ---
 
@@ -777,11 +790,11 @@ interface PipeArgs {
 }
 ```
 
-| Field | Description |
-|-------|-------------|
-| `parts` | Raw token arrays split by `\|` |
-| `text(i)` | Plain text of part `i`, unescaped and trimmed |
-| `materializedTokens(i)` | Unescaped tokens of part `i` |
+| Field                       | Description                                                  |
+|-----------------------------|--------------------------------------------------------------|
+| `parts`                     | Raw token arrays split by `\|`                               |
+| `text(i)`                   | Plain text of part `i`, unescaped and trimmed                |
+| `materializedTokens(i)`     | Unescaped tokens of part `i`                                 |
 | `materializedTailTokens(i)` | All parts from index `i` onward, merged into one token array |
 
 ---
@@ -831,7 +844,8 @@ import { DEFAULT_SYNTAX } from "yume-dsl-rich-text";
 
 ### createSyntax
 
-`createSyntax` builds a full `SyntaxConfig` from partial overrides. This is useful if you need to inspect or reuse the resolved syntax outside of parsing.
+`createSyntax` builds a full `SyntaxConfig` from partial overrides. This is useful if you need to inspect or reuse the
+resolved syntax outside of parsing.
 
 ```ts
 import { createSyntax } from "yume-dsl-rich-text";
@@ -848,7 +862,8 @@ interface SyntaxConfig extends SyntaxInput {
 }
 ```
 
-You do not need `createSyntax` for normal usage — `options.syntax` accepts a `Partial<SyntaxInput>` and the parser resolves it internally.
+You do not need `createSyntax` for normal usage — `options.syntax` accepts a `Partial<SyntaxInput>` and the parser
+resolves it internally.
 
 ---
 
@@ -892,15 +907,15 @@ type ErrorCode =
   | "RAW_CLOSE_MALFORMED";
 ```
 
-| Code | Meaning |
-|------|---------|
-| `DEPTH_LIMIT` | Nesting exceeded `depthLimit` |
-| `UNEXPECTED_CLOSE` | Stray close tag with no matching open |
-| `INLINE_NOT_CLOSED` | Inline tag was never closed |
-| `BLOCK_NOT_CLOSED` | Block close marker is missing |
+| Code                    | Meaning                                    |
+|-------------------------|--------------------------------------------|
+| `DEPTH_LIMIT`           | Nesting exceeded `depthLimit`              |
+| `UNEXPECTED_CLOSE`      | Stray close tag with no matching open      |
+| `INLINE_NOT_CLOSED`     | Inline tag was never closed                |
+| `BLOCK_NOT_CLOSED`      | Block close marker is missing              |
 | `BLOCK_CLOSE_MALFORMED` | Block close marker exists but is malformed |
-| `RAW_NOT_CLOSED` | Raw close marker is missing |
-| `RAW_CLOSE_MALFORMED` | Raw close marker exists but is malformed |
+| `RAW_NOT_CLOSED`        | Raw close marker is missing                |
+| `RAW_CLOSE_MALFORMED`   | Raw close marker exists but is malformed   |
 
 ---
 
@@ -1016,7 +1031,8 @@ Without `onError`, the same recovery happens silently — no error is thrown.
 
 ### 0.1.7
 
-- Add index signature (`[key: string]: unknown`) to `TextToken` — extra fields from handlers are now visible in the type system without casting
+- Add index signature (`[key: string]: unknown`) to `TextToken` — extra fields from handlers are now visible in the type
+  system without casting
 - Remove unnecessary `as TextToken` assertion in `createToken`
 - Enable `allowImportingTsExtensions` in tsconfig — project now passes `tsc --noEmit` cleanly
 - Update README: document `TextToken` index signature, recommend `extends TextToken` for strong typing

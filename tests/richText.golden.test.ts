@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
 import {
+  createPassthroughTags,
+  createSimpleBlockHandlers,
+  createSimpleInlineHandlers,
+  createSimpleRawHandlers,
+  declareMultilineTags,
   parseRichText,
-  stripRichText,
   resetTokenIdSeed,
+  stripRichText,
 } from "../src/index.ts";
-import type { TextToken, ParseError } from "../src/types.ts";
+import type { ParseError, TextToken } from "../src/types.ts";
 import { runGoldenCases } from "./testHarness.ts";
 import { loadTestJsonFixture } from "./testFixtures.ts";
 import { testHandlers } from "./handlers.ts";
@@ -14,8 +19,7 @@ import { testHandlers } from "./handlers.ts";
 const parse = (text: string, opts?: { depthLimit?: number }) =>
   parseRichText(text, { handlers: testHandlers, ...opts });
 
-const strip = (text: string) =>
-  stripRichText(text, { handlers: testHandlers });
+const strip = (text: string) => stripRichText(text, { handlers: testHandlers });
 
 const parseWithErrors = (text: string, opts?: { depthLimit?: number }) => {
   const errors: ParseError[] = [];
@@ -78,6 +82,13 @@ const formatIsoInstant = (base: string, offsetDays: number): string => {
   return d.toISOString();
 };
 
+const helperHandlers = {
+  ...createSimpleInlineHandlers(["bold", "italic"] as const),
+  ...createSimpleBlockHandlers(["info"] as const),
+  ...createSimpleRawHandlers(["code"] as const),
+  ...createPassthroughTags(["pass"] as const),
+};
+
 // ── fixtures ──
 
 interface RichTextCommonFixture {
@@ -97,8 +108,7 @@ interface RichTextCommonFixture {
   }>;
 }
 
-const commonFixture =
-  await loadTestJsonFixture<RichTextCommonFixture>("richText.common.json");
+const commonFixture = await loadTestJsonFixture<RichTextCommonFixture>("richText.common.json");
 
 interface RichTextInlineFixture {
   inlineCases: Array<{
@@ -110,8 +120,7 @@ interface RichTextInlineFixture {
   }>;
 }
 
-const inlineFixture =
-  await loadTestJsonFixture<RichTextInlineFixture>("richText.inline.json");
+const inlineFixture = await loadTestJsonFixture<RichTextInlineFixture>("richText.inline.json");
 
 interface RichTextRawBlockFixture {
   cases: Array<{
@@ -294,9 +303,7 @@ const cases: Array<{ name: string; run: () => void }> = [
   {
     name: "[Inline/Variety] 多种 inline 标签并存 -> 应当生成对应的各类型 token",
     run: () => {
-      const tokens = parse(
-        "$$thin(x)$$ $$underline(y)$$ $$strike(z)$$ $$code(k)$$",
-      );
+      const tokens = parse("$$thin(x)$$ $$underline(y)$$ $$strike(z)$$ $$code(k)$$");
       assert.deepEqual(normalizeTokens(tokens), [
         { type: "thin", value: [{ type: "text", value: "x" }] },
         { type: "text", value: " " },
@@ -369,6 +376,19 @@ const cases: Array<{ name: string; run: () => void }> = [
       ]);
     },
   },
+  {
+    name: "[Inline/Helpers] simple inline + passthrough helper -> 应当生成预期 token 结构",
+    run: () => {
+      const tokens = parseRichText("$$bold(x)$$ $$pass(y)$$", {
+        handlers: helperHandlers,
+      });
+      assert.deepEqual(normalizeTokens(tokens), [
+        { type: "bold", value: [{ type: "text", value: "x" }] },
+        { type: "text", value: " " },
+        { type: "pass", value: [{ type: "text", value: "y" }] },
+      ]);
+    },
+  },
 
   // --- [Raw] ---
   {
@@ -411,10 +431,7 @@ const cases: Array<{ name: string; run: () => void }> = [
   {
     name: "[Raw/Boundary] 未闭合 raw 标签 -> 应当退化为普通文本",
     run: () => {
-      assert.equal(
-        strip("$$raw-code(ts)%\nconst a = 1"),
-        "$$raw-code(ts)%\nconst a = 1",
-      );
+      assert.equal(strip("$$raw-code(ts)%\nconst a = 1"), "$$raw-code(ts)%\nconst a = 1");
     },
   },
   {
@@ -433,10 +450,7 @@ const cases: Array<{ name: string; run: () => void }> = [
   {
     name: "[Raw/Unknown] 未知 raw 语法 -> 应当整体退化为普通文本",
     run: () => {
-      assert.equal(
-        strip("$$unknown(title)%\nhello\n%end$$"),
-        "$$unknown(title)%\nhello\n%end$$",
-      );
+      assert.equal(strip("$$unknown(title)%\nhello\n%end$$"), "$$unknown(title)%\nhello\n%end$$");
     },
   },
   {
@@ -484,8 +498,87 @@ const cases: Array<{ name: string; run: () => void }> = [
       assert.equal(strip("$$center(标题)%\n正文\n%end$$"), "$$center(标题)%\n正文\n%end$$");
     },
   },
+  {
+    name: "[Raw/Helpers] simple raw helper -> 应当保留 arg 与原始正文",
+    run: () => {
+      const tokens = parseRichText("$$code(ts)%\nconst x = 1\n%end$$", {
+        handlers: helperHandlers,
+        blockTags: declareMultilineTags(["info", "code"] as const),
+      });
+      assert.deepEqual(normalizeTokens(tokens), [
+        {
+          type: "code",
+          arg: "ts",
+          value: "const x = 1\n",
+        },
+      ]);
+    },
+  },
 
   // --- [Block] ---
+  {
+    name: "[Block/Helpers] simple block helper -> 应当保留 arg 并递归解析内容",
+    run: () => {
+      const tokens = parseRichText("$$info(Notice)*\nA $$italic(B)$$\n*end$$", {
+        handlers: helperHandlers,
+        blockTags: declareMultilineTags(["info", "code"] as const),
+      });
+      assert.deepEqual(normalizeTokens(tokens), [
+        {
+          type: "info",
+          arg: "Notice",
+          value: [
+            { type: "text", value: "A " },
+            { type: "italic", value: [{ type: "text", value: "B" }] },
+            { type: "text", value: "\n" },
+          ],
+        },
+      ]);
+    },
+  },
+  {
+    name: "[Block/Helpers] declareMultilineTags -> 应当执行块级换行归一化",
+    run: () => {
+      const tokens = parseRichText("$$info(Title)*\nline\n*end$$\nnext", {
+        handlers: helperHandlers,
+        blockTags: declareMultilineTags(["info"] as const),
+      });
+      assert.deepEqual(normalizeTokens(tokens), [
+        {
+          type: "info",
+          arg: "Title",
+          value: [{ type: "text", value: "line\n" }],
+        },
+        { type: "text", value: "next" },
+      ]);
+    },
+  },
+  {
+    name: "[Forms] allowForms 只允许 inline -> raw 与 block 应当整体退化为文本",
+    run: () => {
+      const input =
+        "$$bold(x)$$\n$$info(Title)*\nline\n*end$$\n$$code(ts)%\n1\n%end$$\n$$pass(y)$$";
+      const tokens = parseRichText(input, {
+        handlers: helperHandlers,
+        allowForms: ["inline"],
+      });
+      assert.deepEqual(normalizeTokens(tokens), [
+        { type: "bold", value: [{ type: "text", value: "x" }] },
+        { type: "text", value: "\n$$info(Title)*\nline\n*end$$\n$$code(ts)%\n1\n%end$$\n" },
+        { type: "pass", value: [{ type: "text", value: "y" }] },
+      ]);
+    },
+  },
+  {
+    name: "[Forms] allowForms 禁用 inline -> passthrough 与 inline helper 应当去壳为纯文本",
+    run: () => {
+      const tokens = parseRichText("$$bold(x)$$ $$pass(y)$$", {
+        handlers: helperHandlers,
+        allowForms: ["raw", "block"],
+      });
+      assert.deepEqual(normalizeTokens(tokens), [{ type: "text", value: "x y" }]);
+    },
+  },
   {
     name: "[Block/Boundary] close 行格式错误 -> 应当 fallback 并上报 BLOCK_CLOSE_MALFORMED 错误",
     run: () => {

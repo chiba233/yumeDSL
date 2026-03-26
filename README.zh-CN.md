@@ -2,7 +2,6 @@
 
 # yume-dsl-rich-text (ユメテキスト)
 
-
 <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white" />
 
 零依赖、递归解析的富文本 DSL 解析器，支持可插拔的标签处理器和可配置语法。
@@ -415,7 +414,8 @@ function declareMultilineTags(names: readonly string[]): string[];
 
 ### `createSimpleBlockHandlers(names)`
 
-创建块级处理器（DSL block 形式：`$$tag(arg)*...*end$$`）。
+创建块级处理器，对应 DSL 的多行 block 形式：`$$tag(arg)* ... *end$$`。
+闭合标记 `*end$$` 必须独占一行，因此它更适合作为独立块使用，而不是和普通行内文本混排。
 每个处理器直接透传 `arg` 和递归解析后的内容：`{ type: tagName, arg, value: content }`。
 
 ```ts
@@ -438,10 +438,11 @@ function createSimpleBlockHandlers(names: readonly string[]): Record<string, Tag
 
 ### `createSimpleRawHandlers(names)`
 
-为一组标签名创建原始处理器。每个处理器直接透传 `arg` 和原始字符串内容：
+为一组标签名创建原始处理器，对应 DSL 的多行 raw 形式。每个处理器直接透传 `arg` 和原始字符串内容：
 `{ type: tagName, arg, value: content }`。
 
 适用于按原样保留内容的原始标签 — `$$tagName(arg)%...%end$$`。
+和 block 标签一样，`%end$$` 也必须独占一行，因此更适合作为多行块书写。
 
 ```ts
 import { createParser, createSimpleRawHandlers } from "yume-dsl-rich-text";
@@ -519,6 +520,9 @@ interface ParseOptions {
 
 控制解析器接受哪些标签形式。未列出的形式按处理器不支持处理 — 解析器优雅降级。
 
+实际效果上，被禁用的形式会按普通文本保留。这很适合评论、聊天输入之类场景：允许行内格式，但拒绝多行
+block/raw 标签。
+
 ```ts
 // 只允许行内标签 — 块级和原始语法被忽略
 const dsl = createParser({
@@ -546,11 +550,13 @@ interface TextToken {
   type: string;
   value: string | TextToken[];
   id: string;
+
   [key: string]: unknown;
 }
 ```
 
-`TextToken` 是解析器的输出类型。`type` 和 `value` 字段使用宽松类型（`string`），以便解析器可以在不了解你的 schema 的情况下表示任意标签。
+`TextToken` 是解析器的输出类型。`type` 和 `value` 字段使用宽松类型（`string`），以便解析器可以在不了解你的 schema
+的情况下表示任意标签。
 
 处理器返回的额外字段（如 `url`、`lang`、`title`）会保留在结果 `TextToken` 上，类型为 `unknown`。你可以直接读取，只需在使用前收窄类型：
 
@@ -567,6 +573,7 @@ if (token.type === "link" && typeof token.href === "string") {
 interface TokenDraft {
   type: string;
   value: string | TextToken[];
+
   [key: string]: unknown;
 }
 ```
@@ -766,11 +773,11 @@ interface PipeArgs {
 }
 ```
 
-| 字段 | 说明 |
-|------|------|
-| `parts` | 按 `\|` 分割的原始 token 数组 |
-| `text(i)` | 第 `i` 部分的纯文本，已反转义并去除首尾空格 |
-| `materializedTokens(i)` | 第 `i` 部分已反转义的 token |
+| 字段                          | 说明                         |
+|-----------------------------|----------------------------|
+| `parts`                     | 按 `\|` 分割的原始 token 数组      |
+| `text(i)`                   | 第 `i` 部分的纯文本，已反转义并去除首尾空格   |
+| `materializedTokens(i)`     | 第 `i` 部分已反转义的 token        |
 | `materializedTailTokens(i)` | 从索引 `i` 起所有部分合并成的 token 数组 |
 
 ---
@@ -866,7 +873,6 @@ parseRichText("$$bold(unclosed", {
 
 如果省略 `onError`，格式错误的标记会优雅降级，错误被静默丢弃。
 
-
 ### 错误码
 
 `ParseError.code` 的类型为 `ErrorCode`，是所有可能错误码的联合类型：
@@ -882,15 +888,15 @@ type ErrorCode =
   | "RAW_CLOSE_MALFORMED";
 ```
 
-| 错误码 | 含义 |
-|--------|------|
-| `DEPTH_LIMIT` | 嵌套超过 `depthLimit` |
-| `UNEXPECTED_CLOSE` | 孤立的关闭标签，无匹配的打开标签 |
-| `INLINE_NOT_CLOSED` | 行内标签未闭合 |
-| `BLOCK_NOT_CLOSED` | 块级关闭标记缺失 |
-| `BLOCK_CLOSE_MALFORMED` | 块级关闭标记存在但格式错误 |
-| `RAW_NOT_CLOSED` | 原始关闭标记缺失 |
-| `RAW_CLOSE_MALFORMED` | 原始关闭标记存在但格式错误 |
+| 错误码                     | 含义                |
+|-------------------------|-------------------|
+| `DEPTH_LIMIT`           | 嵌套超过 `depthLimit` |
+| `UNEXPECTED_CLOSE`      | 孤立的关闭标签，无匹配的打开标签  |
+| `INLINE_NOT_CLOSED`     | 行内标签未闭合           |
+| `BLOCK_NOT_CLOSED`      | 块级关闭标记缺失          |
+| `BLOCK_CLOSE_MALFORMED` | 块级关闭标记存在但格式错误     |
+| `RAW_NOT_CLOSED`        | 原始关闭标记缺失          |
+| `RAW_CLOSE_MALFORMED`   | 原始关闭标记存在但格式错误     |
 
 ---
 
