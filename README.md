@@ -14,6 +14,13 @@ Can be embedded inside Markdown or any other markup as a secondary syntax layer.
 This package does not ship built-in tags, rendering, or UI integration.  
 You define your own semantics and rendering layer.
 
+Ecosystem packages:
+
+| Package                                                                                         | Role                                               |
+|-------------------------------------------------------------------------------------------------|----------------------------------------------------|
+| [`@yume-dsl/render-core`](https://github.com/chiba233/yume-dsl-render-core)                     | Generic renderer core — token tree to output nodes |
+| [`@yume-dsl/markdown-it-rich-text`](https://github.com/chiba233/markdown-it-yume-dsl-rich-text) | markdown-it adapter                                |
+
 ---
 
 ## Table of Contents
@@ -22,6 +29,7 @@ You define your own semantics and rendering layer.
 - [When to Use](#when-to-use)
 - [Boundaries](#boundaries)
 - [Features](#features)
+- [Ecosystem](#ecosystem)
 - [Install](#install)
 - [Quick Start](#quick-start)
 - [DSL Syntax](#dsl-syntax)
@@ -118,6 +126,15 @@ What this package **does not do**:
 - Single-pass forward scanner (no backtracking)
 - No RegExp-based parsing
 - Deterministic linear scan
+
+---
+
+## Ecosystem
+
+| Package                                                     | Role                                                    |
+|-------------------------------------------------------------|---------------------------------------------------------|
+| [`yume-dsl-rich-text`](https://github.com/chiba233/yumeDSL) | Parser core — text to token tree                        |
+| **`@yume-dsl/render-core`**                                 | Render core — token tree to output nodes (this package) |
 
 ---
 
@@ -1194,6 +1211,10 @@ Without `onError`, the same recovery happens silently — no error is thrown.
 ---
 
 ## Changelog
+
+### 0.1.14
+
+- Update Markdown and add golden test.
 
 ### 0.1.13
 

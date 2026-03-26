@@ -12,14 +12,10 @@ const cases = [
     name: "[Types] helper 返回类型与 ParseOptions/TagForm 约束 -> 应当通过编译检查",
     run: () => {
       assert.doesNotThrow(() => {
-        execFileSync(
-          process.execPath,
-          ["./node_modules/typescript/bin/tsc", "-p", "./tests/tsconfig.types.json", "--noEmit"],
-          {
-            cwd: repoRoot,
-            stdio: "pipe",
-          },
-        );
+        execFileSync("./node_modules/.bin/tsc", ["-p", "./tests/tsconfig.types.json", "--noEmit"], {
+          cwd: repoRoot,
+          stdio: "pipe",
+        });
       });
     },
   },
