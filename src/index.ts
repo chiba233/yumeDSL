@@ -9,6 +9,7 @@ export type {
   ErrorCode,
   ParseError,
   ParseOptions,
+  TagForm,
   TagHandler,
   SyntaxInput,
   SyntaxConfig,
@@ -25,6 +26,9 @@ export {
 export type { PipeArgs } from "./builders.js";
 export { unescapeInline } from "./escape.js";
 export { createToken, resetTokenIdSeed } from "./createToken.js";
+
+// ── Handler helpers ──
+export { createPassthroughTags, createSimpleInlineHandlers } from "./handlerHelpers.js";
 
 // ── Syntax configuration ──
 export { DEFAULT_SYNTAX, createSyntax } from "./syntax.js";

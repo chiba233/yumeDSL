@@ -54,9 +54,21 @@ export interface SyntaxConfig extends SyntaxInput {
   escapableTokens: string[];
 }
 
+export type TagForm = "inline" | "raw" | "block";
+
 export interface ParseOptions {
   /** Tag handler map – keys are tag names, values define how each tag is parsed. */
   handlers?: Record<string, TagHandler>;
+  /**
+   * Restrict which tag forms the parser will accept.
+   * Forms not listed are treated as if the handler does not support them (graceful degradation).
+   * Default: all forms enabled (`["inline", "raw", "block"]`).
+   *
+   * @example
+   * // Only allow inline tags — raw and block syntax is ignored
+   * parseRichText(text, { handlers, allowForms: ["inline"] });
+   */
+  allowForms?: readonly TagForm[];
   /**
    * Tags that receive block-level line-break normalization.
    * Defaults to every tag whose handler has a `raw` or `block` parser.

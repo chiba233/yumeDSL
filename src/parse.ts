@@ -1,4 +1,4 @@
-import type { ParseContext, ParseOptions, TextToken } from "./types.js";
+import type { ParseContext, ParseOptions, TagForm, TagHandler, TextToken } from "./types.js";
 import { extractText } from "./builders.js";
 import { tryConsumeEscape, tryConsumeTagClose, tryConsumeTagStart } from "./consumers.js";
 import { finalizeUnclosedTags, flushBuffer } from "./context.js";
@@ -11,6 +11,46 @@ const deriveBlockTags = (handlers: Record<string, unknown>): Set<string> => {
     if (h.raw || h.block) set.add(tag);
   }
   return set;
+};
+
+/**
+ * Filter handler methods by allowed tag forms.
+ * Handlers that have no remaining methods after filtering are removed entirely,
+ * so the parser treats those tags as unrecognized (graceful degradation).
+ *
+ * Passthrough handlers (empty `{}`) are treated as inline-form tags.
+ */
+const filterHandlersByForms = (
+  handlers: Record<string, TagHandler>,
+  forms: ReadonlySet<TagForm>,
+): Record<string, TagHandler> => {
+  const allowInline = forms.has("inline");
+  const allowRaw = forms.has("raw");
+  const allowBlock = forms.has("block");
+
+  const result: Record<string, TagHandler> = {};
+  for (const [name, handler] of Object.entries(handlers)) {
+    const hasInline = !!handler.inline;
+    const hasRaw = !!handler.raw;
+    const hasBlock = !!handler.block;
+    const isPassthrough = !hasInline && !hasRaw && !hasBlock;
+
+    // Passthrough handlers work through the inline code path
+    if (isPassthrough) {
+      if (allowInline) result[name] = handler;
+      continue;
+    }
+
+    const filtered: TagHandler = {};
+    if (allowInline && hasInline) filtered.inline = handler.inline;
+    if (allowRaw && hasRaw) filtered.raw = handler.raw;
+    if (allowBlock && hasBlock) filtered.block = handler.block;
+
+    if (filtered.inline || filtered.raw || filtered.block) {
+      result[name] = filtered;
+    }
+  }
+  return result;
 };
 
 const internalParse = (
@@ -61,7 +101,10 @@ const internalParse = (
 export const parseRichText = (text: string, options: ParseOptions = {}): TextToken[] => {
   if (!text) return [];
 
-  const handlers = options.handlers ?? {};
+  const rawHandlers = options.handlers ?? {};
+  const handlers = options.allowForms
+    ? filterHandlersByForms(rawHandlers, new Set(options.allowForms))
+    : rawHandlers;
   const blockTagSet = options.blockTags ? new Set(options.blockTags) : deriveBlockTags(handlers);
   const syntax = createSyntax(options.syntax);
 

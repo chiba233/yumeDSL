@@ -15,9 +15,10 @@
 
 ## 目录
 
+- [设计理念](#设计理念)
 - [适用场景](#适用场景)
+- [边界说明](#边界说明)
 - [特性](#特性)
-- [优雅降级](#优雅降级)
 - [安装](#安装)
 - [快速开始](#快速开始)
 - [DSL 语法](#dsl-语法)
@@ -28,6 +29,10 @@
   - [转义序列](#转义序列)
 - [API](#api)
   - [createParser](#createparser)
+  - [parseRichText / stripRichText](#parserichtext--striprichtext)
+- [处理器辅助函数](#处理器辅助函数)
+  - [createSimpleInlineHandlers](#createsimpleinlinehandlers)
+  - [createPassthroughTags](#createpassthroughtags)
 - [ParseOptions](#parseoptions)
 - [Token 结构](#token-结构)
   - [强类型](#强类型)
@@ -37,8 +42,22 @@
 - [自定义语法](#自定义语法)
   - [createSyntax](#createsyntax)
 - [错误处理](#错误处理)
+- [优雅降级](#优雅降级)
 - [更新日志](#更新日志)
 - [许可证](#许可证)
+
+---
+
+## 设计理念
+
+本解析器采用 **「解析器核心 + 用户定义语义」** 架构：
+
+- **解析器不认识任何标签。** 没有内置的 `bold`、`link`、`code` 等标签。每个标签的含义由你注册的处理器定义。
+- **处理器就是语义层。** 处理器接收解析后的 token，返回 `TokenDraft` — 输出结构、附加字段、行为全部由你决定。
+- **渲染不是我们的工作。** 解析器产出 token 树；如何渲染（React、Vue、纯 HTML、终端）完全由你负责。
+- **默认优雅降级。** 未知或不支持的标签永远不会抛出异常 — 它们静默降级，让部分 DSL 支持也能正常工作。
+
+这种分离意味着你可以替换渲染框架、新增标签、修改标签语义，而无需触碰解析器。
 
 ---
 
@@ -52,8 +71,24 @@
 - 小巧的解析器核心，无预设语义
 - 可预测的解析行为，无正则回溯
 
-本包仅将 DSL 输入解析为 token。
-渲染完全由你负责。
+---
+
+## 边界说明
+
+本包**会做**的事：
+
+- 将 DSL 字符串解析为 token 树（`TextToken[]`）
+- 通过处理器提供标签注册 — 标签只有注册了才存在
+- 处理递归嵌套、转义、管道参数分割
+- 未知或格式错误的标签优雅降级
+- 通过 `onError` 上报结构化错误
+
+本包**不会做**的事：
+
+- 附带任何内置标签（没有 bold、italic、link 等）
+- 将 token 渲染为 HTML、React 组件或任何输出格式
+- 校验 token 语义（那是处理器的工作）
+- 提供 Markdown 兼容的语法
 
 ---
 
@@ -63,6 +98,7 @@
 - 递归解析，支持深度限制
 - 可插拔的标签处理器
 - 行内 / 原始 / 块级三种标签形式
+- 处理器辅助函数，支持批量注册标签
 - 可配置语法符号
 - 未知标签优雅降级
 - 自定义错误上报
@@ -70,15 +106,6 @@
 - 单遍前向扫描（无回溯）
 - 不使用正则表达式解析
 - 确定性线性扫描
-
----
-
-## 优雅降级
-
-未知或不支持的标签不会抛出错误，
-而是优雅降级，不影响整体解析结果。
-
-这允许在不崩溃的情况下部分支持 DSL。
 
 ---
 
@@ -94,16 +121,26 @@ yarn add yume-dsl-rich-text
 
 ## 快速开始
 
-```ts
-import { parseRichText } from "yume-dsl-rich-text";
+### 1. 创建解析器并注册标签
 
-const tokens = parseRichText("Hello $$bold(world)$$!", {
+```ts
+import {
+  createParser,
+  createSimpleInlineHandlers,
+} from "yume-dsl-rich-text";
+
+const dsl = createParser({
   handlers: {
-    bold: {
-      inline: (tokens) => ({ type: "bold", value: tokens }),
-    },
+    // 一行注册多个简单标签
+    ...createSimpleInlineHandlers(["bold", "italic", "underline", "strike"]),
   },
 });
+```
+
+### 2. 解析
+
+```ts
+const tokens = dsl.parse("Hello $$bold(world)$$!");
 ```
 
 结果：
@@ -120,18 +157,16 @@ const tokens = parseRichText("Hello $$bold(world)$$!", {
 ]
 ```
 
-未注册的标签会优雅降级，而不是抛出异常。
-
-### stripRichText
+### 3. 提取纯文本
 
 ```ts
-import { stripRichText } from "yume-dsl-rich-text";
-
-const plain = stripRichText("Hello $$bold(world)$$!");
+const plain = dsl.strip("Hello $$bold(world)$$!");
 // "Hello world!"
 ```
 
 适用于提取可搜索的纯文本、生成摘要或构建无障碍标签。
+
+未注册的标签会优雅降级，而不是抛出异常。
 
 ---
 
@@ -205,42 +240,66 @@ const x = 1;
 
 ## API
 
-### `parseRichText(text, options?)`
+### `createParser(defaults)` — 推荐入口
 
-将 DSL 字符串解析为 token 树。
-
-```ts
-function parseRichText(text: string, options?: ParseOptions): TextToken[];
-```
-
-### `stripRichText(text, options?)`
-
-将 DSL 字符串解析并展平为纯文本。
+`createParser` 将你的 `ParseOptions`（handlers、syntax、mode、depthLimit、onError）绑定为一个可复用实例。
+这是**推荐的使用方式** — 定义一次标签处理器，然后在各处调用 `dsl.parse()` / `dsl.strip()`，无需重复传入配置。
 
 ```ts
-function stripRichText(text: string, options?: ParseOptions): string;
-```
-
-### `createParser(defaults)`
-
-创建一个预绑定选项的可复用解析器实例，避免每次调用都传入相同的 handlers。
-
-```ts
-import { createParser } from "yume-dsl-rich-text";
+import {
+  createParser,
+  createSimpleInlineHandlers,
+  parsePipeArgs,
+} from "yume-dsl-rich-text";
 
 const dsl = createParser({
   handlers: {
-    bold: { inline: (tokens) => ({ type: "bold", value: tokens }) },
-    // ...
+    ...createSimpleInlineHandlers(["bold", "italic", "underline"]),
+
+    link: {
+      inline: (tokens) => {
+        const args = parsePipeArgs(tokens);
+        return {
+          type: "link",
+          url: args.text(0),
+          value: args.materializedTailTokens(1),
+        };
+      },
+    },
   },
 });
 
-// 无需再次传入 handlers
+// 到处使用 — handlers 已经绑定
 dsl.parse("Hello $$bold(world)$$!");
 dsl.strip("Hello $$bold(world)$$!");
 
-// 仍然接受单次调用的覆盖选项
+// 单次覆盖会浅合并到默认值上
 dsl.parse(text, { onError: (e) => console.warn(e) });
+```
+
+**`createParser` 绑定了什么：**
+
+| 选项           | 预绑定后的效果                                  |
+|--------------|------------------------------------------|
+| `handlers`   | 标签定义 — 不需要每次调用都传入                        |
+| `syntax`     | 自定义语法符号（如覆盖 `$$` 前缀等）                    |
+| `mode`       | `"render"` 或 `"highlight"` — 为你的场景设置一次即可 |
+| `depthLimit` | 嵌套深度限制 — 很少需要逐次修改                        |
+| `onError`    | 默认错误处理器（仍可按次覆盖）                          |
+
+**不用 `createParser` 的话**，每次调用都需要传入完整选项：
+
+```ts
+// 重复 — 必须到处传 handlers
+parseRichText(text1, { handlers });
+parseRichText(text2, { handlers });
+stripRichText(text3, { handlers });
+
+// 用 createParser — 绑定一次，到处使用
+const dsl = createParser({ handlers });
+dsl.parse(text1);
+dsl.parse(text2);
+dsl.strip(text3);
 ```
 
 ```ts
@@ -250,7 +309,96 @@ interface Parser {
 }
 ```
 
-提供 `overrides` 时，会浅合并到默认值上（`{ ...defaults, ...overrides }`）。
+### `parseRichText` / `stripRichText`
+
+底层无状态函数。适用于一次性调用或需要完全控制每次调用参数的场景。
+
+```ts
+function parseRichText(text: string, options?: ParseOptions): TextToken[];
+
+function stripRichText(text: string, options?: ParseOptions): string;
+```
+
+大多数应用场景建议使用 [`createParser`](#createparser--推荐入口)。
+
+---
+
+## 处理器辅助函数
+
+大多数项目中的标签都是简单包装器 — bold、italic、underline 等 — 不需要自定义逻辑。为每个标签写完整的
+`{ inline: (tokens) => ({ type: "bold", value: ... }) }` 很繁琐。辅助函数让你可以批量注册。
+
+### `createSimpleInlineHandlers(names)`
+
+为一组标签名创建行内处理器。
+每个处理器将子 token 物化后包装为 `{ type: tagName, value: materializedTokens }`。
+
+这是注册简单标签的**推荐方式**。
+
+```ts
+import { createParser, createSimpleInlineHandlers } from "yume-dsl-rich-text";
+
+const dsl = createParser({
+  handlers: {
+    // 一行注册 5 个标签，而不是写 5 个处理器对象
+    ...createSimpleInlineHandlers(["bold", "italic", "underline", "strike", "code"]),
+
+    // 与需要更多逻辑的自定义处理器混合使用
+    link: {
+      inline: (tokens) => { /* ... */
+      }
+    },
+  },
+});
+```
+
+**它替代了什么：**
+
+```ts
+// 之前 — 重复
+bold:      {
+  inline: (tokens) => ({ type: "bold", value: materializeTextTokens(tokens) })
+}
+,
+italic:    {
+  inline: (tokens) => ({ type: "italic", value: materializeTextTokens(tokens) })
+}
+,
+underline: {
+  inline: (tokens) => ({ type: "underline", value: materializeTextTokens(tokens) })
+}
+,
+
+// 之后 — 一行搞定
+...
+createSimpleInlineHandlers(["bold", "italic", "underline"])
+```
+
+```ts
+function createSimpleInlineHandlers(names: readonly string[]): Record<string, TagHandler>;
+```
+
+### `createPassthroughTags(names)`
+
+创建空的标签处理器，仅让解析器识别标签名，不包含任何自定义逻辑。
+解析器的内置回退机制产出 `{ type: tagName, value: materializedTokens }` — 与 `createSimpleInlineHandlers` 输出结构相同。
+
+区别在于：passthrough 处理器没有 `inline` 方法，因此外部代码检查 `handler.inline` 时会得到 `undefined`。如果需要显式处理器使用
+`createSimpleInlineHandlers`；如果只需要解析器识别标签名使用 `createPassthroughTags`。
+
+```ts
+import { createParser, createPassthroughTags } from "yume-dsl-rich-text";
+
+const dsl = createParser({
+  handlers: {
+    ...createPassthroughTags(["bold", "italic"]),
+  },
+});
+```
+
+```ts
+function createPassthroughTags(names: readonly string[]): Record<string, TagHandler>;
+```
 
 ---
 
@@ -259,6 +407,7 @@ interface Parser {
 ```ts
 interface ParseOptions {
   handlers?: Record<string, TagHandler>;
+  allowForms?: readonly ("inline" | "raw" | "block")[];
   blockTags?: string[];
   depthLimit?: number;
   mode?: "render" | "highlight";
@@ -270,6 +419,7 @@ interface ParseOptions {
 ### 字段
 
 - `handlers`：标签名 → 处理器定义
+- `allowForms`：限制解析器接受的标签形式（默认：全部启用）
 - `blockTags`：需要块级换行规范化的标签
 - `depthLimit`：最大嵌套深度，默认 `50`
 - `mode`：
@@ -277,6 +427,28 @@ interface ParseOptions {
   - `"highlight"` 保留原始换行
 - `onError`：解析错误回调
 - `syntax`：覆盖默认语法符号
+
+### allowForms
+
+控制解析器接受哪些标签形式。未列出的形式按处理器不支持处理 — 解析器优雅降级。
+
+```ts
+// 只允许行内标签 — 块级和原始语法被忽略
+const dsl = createParser({
+  handlers,
+  allowForms: ["inline"],
+});
+
+// 允许行内和块级，但不允许原始
+const dsl2 = createParser({
+  handlers,
+  allowForms: ["inline", "block"],
+});
+```
+
+适用于用户生成内容（评论、聊天消息），希望允许简单的行内格式但禁止多行块级或原始标签的场景。
+
+省略时启用全部形式。
 
 ---
 
@@ -371,7 +543,16 @@ function render(token: MyToken): string {
 
 ## 编写标签处理器
 
-`TagHandler` 可以定义三种标签形式的行为。
+对于需要自定义逻辑的标签 — 提取参数、附加额外字段、支持多种形式 — 你需要手动编写 `TagHandler`。
+
+简单包装标签请使用[处理器辅助函数](#处理器辅助函数)。在以下场景需要自定义处理器：
+
+- **管道参数** — 如 `$$link(url | 显示文本)$$`
+- **输出 token 上的额外字段** — 如 `url`、`lang`、`title`
+- **多种形式** — 同一标签同时支持行内、原始和块级语法
+- **转换逻辑** — 如代码块的语言别名映射
+
+### TagHandler 接口
 
 ```ts
 interface TagHandler {
@@ -384,63 +565,68 @@ interface TagHandler {
 你只需实现标签支持的形式。
 不支持的形式会优雅降级，而非中断解析。
 
-### 示例
+### 示例：完整处理器集
 
 ```ts
 import {
+  createParser,
+  createSimpleInlineHandlers,
   extractText,
   parsePipeArgs,
-  parseRichText,
 } from "yume-dsl-rich-text";
 
-const handlers = {
-  bold: {
-    inline: (tokens) => ({ type: "bold", value: tokens }),
-  },
+const dsl = createParser({
+  handlers: {
+    // 简单标签 — 使用辅助函数
+    ...createSimpleInlineHandlers(["bold", "italic", "underline"]),
 
-  link: {
-    inline: (tokens) => {
-      const args = parsePipeArgs(tokens);
-
-      return {
-        type: "link",
-        url: args.text(0),
-        value:
-          args.parts.length > 1
-            ? args.materializedTailTokens(1)
-            : args.materializedTokens(0),
-      };
+    // 自定义：管道参数 → 额外字段
+    link: {
+      inline: (tokens) => {
+        const args = parsePipeArgs(tokens);
+        return {
+          type: "link",
+          url: args.text(0),
+          value:
+                  args.parts.length > 1
+                          ? args.materializedTailTokens(1)
+                          : args.materializedTokens(0),
+        };
+      },
     },
-  },
 
-  code: {
-    raw: (arg, content) => ({
-      type: "code-block",
-      lang: arg ?? "text",
-      value: content,
-    }),
-  },
+    // 自定义：原始形式 → 内容按原样保留
+    code: {
+      raw: (arg, content) => ({
+        type: "code-block",
+        lang: arg ?? "text",
+        value: content,
+      }),
+    },
 
-  info: {
-    block: (arg, content) => ({
-      type: "info",
-      title: arg || "Info",
-      value: content,
-    }),
-
-    inline: (tokens) => {
-      const args = parsePipeArgs(tokens);
-
-      return {
+    // 自定义：同时支持行内和块级形式
+    info: {
+      inline: (tokens) => {
+        const args = parsePipeArgs(tokens);
+        return {
+          type: "info",
+          title: extractText(args.materializedTokens(0)),
+          value: args.materializedTailTokens(1),
+        };
+      },
+      block: (arg, content) => ({
         type: "info",
-        title: extractText(args.materializedTokens(0)),
-        value: args.materializedTailTokens(1),
-      };
+        title: arg || "Info",
+        value: content,
+      }),
     },
   },
-};
+});
+```
 
-const input = `
+输入：
+
+```text
 Hello $$bold(world)$$!
 
 $$info(Notice)*
@@ -450,45 +636,32 @@ This is a $$bold(block)$$ example.
 $$code(ts)%
 const answer = 42;
 %end$$
-`;
-
-const tokens = parseRichText(input, { handlers });
 ```
 
-### 推荐：createParser
-
-实际使用中，通常会在各处复用相同的 handlers。
-使用 [`createParser`](#createparser) 绑定一次即可：
-
 ```ts
-import { createParser } from "yume-dsl-rich-text";
-
-const dsl = createParser({ handlers });
-
-// 到处使用
-dsl.parse(text);
-dsl.strip(text);
-
-// 需要时添加 onError
-dsl.parse(text, { onError: (error) => console.warn(error) });
+const tokens = dsl.parse(input);
 ```
 
 ---
 
 ## 工具函数导出
 
-这些辅助函数在编写处理器时很有用。
+这些辅助函数服务于**处理器作者** — 它们解决编写自定义 `TagHandler` 时的常见问题。
 
-| 导出 | 说明 |
-|------|------|
-| `parsePipeArgs(tokens)` | 按 `\|` 分割 token 并访问解析后的部分 |
-| `parsePipeTextArgs(text)` | 同上，但输入为纯文本 |
-| `splitTokensByPipe(tokens)` | 底层 token 分割器 |
-| `extractText(tokens)` | 将 token 树展平为纯文本 |
-| `materializeTextTokens(tokens)` | 反转义 token 树中的文本 token |
-| `unescapeInline(str)` | 反转义单个字符串 |
-| `createToken(draft)` | 为 token draft 添加自增 `id` |
-| `resetTokenIdSeed()` | 重置 token id 计数器，用于测试 |
+如果你只使用 `createSimpleInlineHandlers` / `createPassthroughTags`，则不需要这些函数。
+
+| 导出                                  | 使用者               | 说明                        |
+|-------------------------------------|-------------------|---------------------------|
+| `parsePipeArgs(tokens)`             | 带 `\|` 参数的自定义处理器  | 按管道分割 token 并访问解析后的部分     |
+| `parsePipeTextArgs(text)`           | 解析原始参数的自定义处理器     | 同上，但输入为纯文本字符串             |
+| `splitTokensByPipe(tokens)`         | 底层处理器代码           | 原始 token 分割器，不含辅助方法       |
+| `extractText(tokens)`               | 需要纯文本值的处理器        | 将 token 树展平为单个字符串         |
+| `materializeTextTokens(tokens)`     | 返回处理后子 token 的处理器 | 递归反转义 token 树中的文本 token   |
+| `unescapeInline(str)`               | 处理原始字符串的处理器       | 反转义单个字符串中的 DSL 转义序列       |
+| `createToken(draft)`                | 手动构建 token 的处理器   | 为 `TokenDraft` 添加自增 `id`  |
+| `resetTokenIdSeed()`                | 测试代码              | 重置 token id 计数器，用于确定性测试输出 |
+| `createSimpleInlineHandlers(names)` | 初始化代码             | 批量创建简单标签的行内处理器            |
+| `createPassthroughTags(names)`      | 初始化代码             | 批量注册空处理器的标签名              |
 
 ### PipeArgs
 
@@ -603,6 +776,7 @@ parseRichText("$$bold(unclosed", {
 
 如果省略 `onError`，格式错误的标记会优雅降级，错误被静默丢弃。
 
+
 ### 错误码
 
 `ParseError.code` 的类型为 `ErrorCode`，是所有可能错误码的联合类型：
@@ -630,7 +804,102 @@ type ErrorCode =
 
 ---
 
+## 优雅降级
+
+解析器永远不会因格式错误或未识别的输入而抛出异常。它将内容降级为纯文本，并通过 `onError` 可选地上报错误。以下是具体的降级场景。
+
+### 未注册的标签 → 纯文本
+
+不在 `handlers` 中的标签不会被识别。其内容被展开为纯文本。
+
+```ts
+const dsl = createParser({
+  handlers: {
+    ...createSimpleInlineHandlers(["bold"]),
+    // "italic" 未注册
+  },
+});
+
+dsl.parse("Hello $$bold(world)$$ and $$italic(goodbye)$$");
+```
+
+```ts
+[
+  { type: "text", value: "Hello ", id: "rt-0" },
+  { type: "bold", value: [{ type: "text", value: "world", id: "rt-1" }], id: "rt-2" },
+  { type: "text", value: " and goodbye", id: "rt-3" },
+  //                      ↑ "italic" 未注册 — 内容变为纯文本
+]
+```
+
+### 处理器不支持的形式 → 回退文本
+
+处理器只需实现它支持的形式。如果标签以处理器不支持的形式使用，整个标记降级为纯文本。
+
+```ts
+const dsl = createParser({
+  handlers: {
+    // "note" 只支持行内，不支持原始
+    note: { inline: (tokens) => ({ type: "note", value: tokens }) },
+  },
+});
+
+dsl.parse("$$note(ok)%\nraw content\n%end$$");
+```
+
+```ts
+// 原始形式不受支持 → 整个标签降级为回退文本
+[
+  { type: "text", value: "$$note(ok)%\nraw content\n%end$$", id: "rt-0" },
+]
+```
+
+### `allowForms` 限制 → 形式被剥离
+
+当 `allowForms` 排除了某种形式时，解析器视为处理器不支持该形式 — 即使实际支持。
+
+```ts
+const dsl = createParser({
+  handlers: {
+    bold: { inline: (tokens) => ({ type: "bold", value: tokens }) },
+    code: { raw: (arg, content) => ({ type: "code", lang: arg ?? "text", value: content }) },
+  },
+  allowForms: ["inline"],   // ← 禁用了 raw 和 block
+});
+
+dsl.parse("$$bold(hello)$$");
+// → [{ type: "bold", ... }]   ✓ 行内正常工作
+
+dsl.parse("$$code(ts)%\nconst x = 1;\n%end$$");
+// → [{ type: "text", value: "$$code(ts)%\nconst x = 1;\n%end$$", ... }]
+//   ↑ raw 形式被禁用 — 整个标签降级为纯文本
+```
+
+### 未闭合标签 → 部分文本恢复
+
+当标签打开但未关闭时，解析器上报错误并将开头标记恢复为纯文本。
+
+```ts
+const errors: ParseError[] = [];
+
+dsl.parse("Hello $$bold(world", { onError: (e) => errors.push(e) });
+// → [{ type: "text", value: "Hello $$bold(world", id: "rt-0" }]
+//
+// errors[0].code === "INLINE_NOT_CLOSED"
+```
+
+不提供 `onError` 时，同样的恢复行为静默发生 — 不会抛出任何异常。
+
+---
+
 ## 更新日志
+
+### 0.1.8
+
+- 新增 `ParseOptions.allowForms` 选项 — 限制解析器接受的标签形式（`"inline"`、`"raw"`、`"block"`），被禁用的形式优雅降级
+- 新增 `createSimpleInlineHandlers(names)` 辅助函数 — 批量注册简单行内标签，无需编写重复的处理器对象
+- 新增 `createPassthroughTags(names)` 辅助函数 — 批量注册空处理器的标签名
+- 导出 `TagForm` 类型
 
 ### 0.1.7
 

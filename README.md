@@ -14,9 +14,10 @@ You define your own semantics and rendering layer.
 
 ## Table of Contents
 
+- [Design Philosophy](#design-philosophy)
 - [When to Use](#when-to-use)
+- [Boundaries](#boundaries)
 - [Features](#features)
-- [Graceful Degradation](#graceful-degradation)
 - [Install](#install)
 - [Quick Start](#quick-start)
 - [DSL Syntax](#dsl-syntax)
@@ -27,6 +28,10 @@ You define your own semantics and rendering layer.
   - [Escape Sequences](#escape-sequences)
 - [API](#api)
   - [createParser](#createparser)
+  - [parseRichText / stripRichText](#parserichtext--striprichtext)
+- [Handler Helpers](#handler-helpers)
+  - [createSimpleInlineHandlers](#createsimpleinlinehandlers)
+  - [createPassthroughTags](#createpassthroughtags)
 - [ParseOptions](#parseoptions)
 - [Token Structure](#token-structure)
   - [Strong Typing](#strong-typing)
@@ -36,8 +41,27 @@ You define your own semantics and rendering layer.
 - [Custom Syntax](#custom-syntax)
   - [createSyntax](#createsyntax)
 - [Error Handling](#error-handling)
+- [Graceful Degradation](#graceful-degradation)
 - [Changelog](#changelog)
 - [License](#license)
+
+---
+
+## Design Philosophy
+
+This parser follows a **"parser core + user-defined semantics"** architecture:
+
+- **The parser knows nothing about your tags.** There are no built-in `bold`, `link`, or `code` tags. Every tag's
+  meaning is defined by the handler you register.
+- **Handlers are the semantic layer.** A handler receives parsed tokens and returns a `TokenDraft` — you decide the
+  output shape, extra fields, and behavior.
+- **Rendering is not our job.** The parser produces a token tree; how you render it (React, Vue, plain HTML, terminal)is
+  entirely up to you.
+- **Graceful degradation by default.** Unknown or unsupported tags never throw — they degrade silently so partial DSL
+  support works without crashing.
+
+This separation means you can swap rendering frameworks, add new tags, or change tag semantics without touching the
+parser.
 
 ---
 
@@ -51,8 +75,24 @@ Use this package when you want:
 - a small parser core without opinionated semantics
 - predictable parsing without regex-based backtracking
 
-This package only parses DSL input into tokens.  
-Rendering is entirely up to you.
+---
+
+## Boundaries
+
+What this package **does**:
+
+- Parse DSL strings into a token tree (`TextToken[]`)
+- Provide tag registration via handlers — tags only exist if you register them
+- Handle recursive nesting, escaping, pipe-separated arguments
+- Degrade gracefully when tags are unknown or malformed
+- Report structured errors via `onError`
+
+What this package **does not do**:
+
+- Ship any built-in tags (no bold, italic, link, etc.)
+- Render tokens to HTML, React components, or any output format
+- Validate token semantics (that's your handler's job)
+- Provide a Markdown-compatible syntax
 
 ---
 
@@ -62,6 +102,7 @@ Rendering is entirely up to you.
 - Recursive parsing with depth limits
 - Pluggable tag handlers
 - Inline / Raw / Block tag forms
+- Handler helpers for bulk tag registration
 - Configurable syntax tokens
 - Graceful degradation for unknown tags
 - Custom error reporting
@@ -69,15 +110,6 @@ Rendering is entirely up to you.
 - Single-pass forward scanner (no backtracking)
 - No RegExp-based parsing
 - Deterministic linear scan
-
----
-
-## Graceful Degradation
-
-Unknown or unsupported tags do not throw errors.  
-They degrade gracefully without breaking the overall parse result.
-
-This allows partial DSL support without crashing the parser.
 
 ---
 
@@ -93,16 +125,26 @@ yarn add yume-dsl-rich-text
 
 ## Quick Start
 
-```ts
-import { parseRichText } from "yume-dsl-rich-text";
+### 1. Create a parser and register your tags
 
-const tokens = parseRichText("Hello $$bold(world)$$!", {
+```ts
+import {
+  createParser,
+  createSimpleInlineHandlers,
+} from "yume-dsl-rich-text";
+
+const dsl = createParser({
   handlers: {
-    bold: {
-      inline: (tokens) => ({ type: "bold", value: tokens }),
-    },
+    // Register simple tags in one call
+    ...createSimpleInlineHandlers(["bold", "italic", "underline", "strike"]),
   },
 });
+```
+
+### 2. Parse
+
+```ts
+const tokens = dsl.parse("Hello $$bold(world)$$!");
 ```
 
 Result:
@@ -119,18 +161,16 @@ Result:
 ]
 ```
 
-Unregistered tags degrade gracefully instead of throwing or crashing.
-
-### stripRichText
+### 3. Strip to plain text
 
 ```ts
-import { stripRichText } from "yume-dsl-rich-text";
-
-const plain = stripRichText("Hello $$bold(world)$$!");
+const plain = dsl.strip("Hello $$bold(world)$$!");
 // "Hello world!"
 ```
 
 Useful for extracting searchable plain text, generating previews, or building accessibility labels.
+
+Unregistered tags degrade gracefully instead of throwing or crashing.
 
 ---
 
@@ -204,42 +244,67 @@ Prefix syntax tokens with `\` to produce them literally.
 
 ## API
 
-### `parseRichText(text, options?)`
+### `createParser(defaults)` — recommended entry point
 
-Parses a DSL string into a token tree.
-
-```ts
-function parseRichText(text: string, options?: ParseOptions): TextToken[];
-```
-
-### `stripRichText(text, options?)`
-
-Parses a DSL string and flattens the result into plain text.
+`createParser` binds your `ParseOptions` (handlers, syntax, mode, depthLimit, onError) into a reusable instance.
+This is the **recommended way** to use the parser — define your tag handlers once, then call `dsl.parse()` /
+`dsl.strip()` everywhere without repeating config.
 
 ```ts
-function stripRichText(text: string, options?: ParseOptions): string;
-```
-
-### `createParser(defaults)`
-
-Creates a reusable parser instance with pre-bound options. Avoids passing the same handlers on every call.
-
-```ts
-import { createParser } from "yume-dsl-rich-text";
+import {
+  createParser,
+  createSimpleInlineHandlers,
+  parsePipeArgs,
+} from "yume-dsl-rich-text";
 
 const dsl = createParser({
   handlers: {
-    bold: { inline: (tokens) => ({ type: "bold", value: tokens }) },
-    // ...
+    ...createSimpleInlineHandlers(["bold", "italic", "underline"]),
+
+    link: {
+      inline: (tokens) => {
+        const args = parsePipeArgs(tokens);
+        return {
+          type: "link",
+          url: args.text(0),
+          value: args.materializedTailTokens(1),
+        };
+      },
+    },
   },
 });
 
-// No need to pass handlers again
+// Use everywhere — handlers are already bound
 dsl.parse("Hello $$bold(world)$$!");
 dsl.strip("Hello $$bold(world)$$!");
 
-// Still accepts per-call overrides
+// Per-call overrides are shallow-merged onto defaults
 dsl.parse(text, { onError: (e) => console.warn(e) });
+```
+
+**What `createParser` binds:**
+
+| Option       | What it does when pre-bound                               |
+|--------------|-----------------------------------------------------------|
+| `handlers`   | Your tag definitions — no need to pass them on every call |
+| `syntax`     | Custom syntax tokens (if you override `$$` prefix, etc.)  |
+| `mode`       | `"render"` or `"highlight"` — set once for your use case  |
+| `depthLimit` | Nesting limit — rarely changes per call                   |
+| `onError`    | Default error handler (can still be overridden per call)  |
+
+**Without `createParser`** you must pass the full options object on every call:
+
+```ts
+// Repetitive — must pass handlers everywhere
+parseRichText(text1, { handlers });
+parseRichText(text2, { handlers });
+stripRichText(text3, { handlers });
+
+// With createParser — bind once, use everywhere
+const dsl = createParser({ handlers });
+dsl.parse(text1);
+dsl.parse(text2);
+dsl.strip(text3);
 ```
 
 ```ts
@@ -249,7 +314,99 @@ interface Parser {
 }
 ```
 
-When `overrides` is provided, it is shallow-merged onto the defaults (`{ ...defaults, ...overrides }`).
+### `parseRichText` / `stripRichText`
+
+Low-level stateless functions. Useful for one-off calls or when you need full control per invocation.
+
+```ts
+function parseRichText(text: string, options?: ParseOptions): TextToken[];
+
+function stripRichText(text: string, options?: ParseOptions): string;
+```
+
+For most applications, prefer [`createParser`](#createparser--recommended-entry-point) instead.
+
+---
+
+## Handler Helpers
+
+Most tags in a typical project are simple wrappers — bold, italic, underline, etc. — that don't need custom logic.
+Writing a full `{ inline: (tokens) => ({ type: "bold", value: ... }) }` for each one is tedious. Handler helpers let you
+register them in bulk.
+
+### `createSimpleInlineHandlers(names)`
+
+Creates inline-only tag handlers for a list of tag names.
+Each handler materializes child tokens and wraps them in `{ type: tagName, value: materializedTokens }`.
+
+This is the **recommended way** to register simple tags.
+
+```ts
+import { createParser, createSimpleInlineHandlers } from "yume-dsl-rich-text";
+
+const dsl = createParser({
+  handlers: {
+    // Register 5 tags in one line instead of 5 handler objects
+    ...createSimpleInlineHandlers(["bold", "italic", "underline", "strike", "code"]),
+
+    // Mix with custom handlers that need more logic
+    link: {
+      inline: (tokens) => { /* ... */
+      }
+    },
+  },
+});
+```
+
+**What it replaces:**
+
+```ts
+// Before — repetitive
+bold:      {
+  inline: (tokens) => ({ type: "bold", value: materializeTextTokens(tokens) })
+}
+,
+italic:    {
+  inline: (tokens) => ({ type: "italic", value: materializeTextTokens(tokens) })
+}
+,
+underline: {
+  inline: (tokens) => ({ type: "underline", value: materializeTextTokens(tokens) })
+}
+,
+
+// After — one call
+...
+createSimpleInlineHandlers(["bold", "italic", "underline"])
+```
+
+```ts
+function createSimpleInlineHandlers(names: readonly string[]): Record<string, TagHandler>;
+```
+
+### `createPassthroughTags(names)`
+
+Creates empty tag handlers that register tag names with the parser without any custom logic.
+The parser's built-in fallback produces `{ type: tagName, value: materializedTokens }` — same output shape as
+`createSimpleInlineHandlers`.
+
+The difference: passthrough handlers have no `inline` method, so external code inspecting `handler.inline` will see
+`undefined`. Use `createSimpleInlineHandlers` if you need explicit handlers; use `createPassthroughTags` if you only
+need the parser to recognize the tag names.
+
+```ts
+import { createParser, createPassthroughTags } from "yume-dsl-rich-text";
+
+const dsl = createParser({
+  handlers: {
+    ...createPassthroughTags(["bold", "italic"]),
+  },
+});
+```
+
+```ts
+function createPassthroughTags(names: readonly string[]): Record<string, TagHandler>;
+```
 
 ---
 
@@ -258,6 +415,7 @@ When `overrides` is provided, it is shallow-merged onto the defaults (`{ ...defa
 ```ts
 interface ParseOptions {
   handlers?: Record<string, TagHandler>;
+  allowForms?: readonly ("inline" | "raw" | "block")[];
   blockTags?: string[];
   depthLimit?: number;
   mode?: "render" | "highlight";
@@ -269,6 +427,7 @@ interface ParseOptions {
 ### Fields
 
 - `handlers`: tag name → handler definition
+- `allowForms`: restrict which tag forms are parsed (default: all forms enabled)
 - `blockTags`: tags treated as block-level for line-break normalization
 - `depthLimit`: maximum nesting depth, default `50`
 - `mode`:
@@ -276,6 +435,30 @@ interface ParseOptions {
   - `"highlight"` preserves them
 - `onError`: callback for parse errors
 - `syntax`: override default syntax tokens
+
+### allowForms
+
+Controls which tag forms the parser will accept. Forms not listed are treated as if the handler does not support them —
+the parser degrades gracefully.
+
+```ts
+// Only allow inline tags — block and raw syntax is ignored
+const dsl = createParser({
+  handlers,
+  allowForms: ["inline"],
+});
+
+// Allow inline and block, but not raw
+const dsl2 = createParser({
+  handlers,
+  allowForms: ["inline", "block"],
+});
+```
+
+This is useful for user-generated content (comments, chat messages) where you want to allow simple inline formatting but
+prevent multi-line block or raw tags.
+
+When omitted, all forms are enabled.
 
 ---
 
@@ -370,7 +553,17 @@ If you add or remove tags, update the union accordingly — TypeScript will flag
 
 ## Writing Tag Handlers
 
-A `TagHandler` can define behavior for any of the three tag forms.
+For tags that need custom logic — extracting parameters, attaching extra fields, supporting multiple forms — you write a
+`TagHandler` manually.
+
+Use [handler helpers](#handler-helpers) for simple wrapper tags. Write custom handlers when you need:
+
+- **Pipe parameters** — e.g., `$$link(url | display text)$$`
+- **Extra fields** on the output token — e.g., `url`, `lang`, `title`
+- **Multiple forms** — the same tag supporting inline, raw, and block syntax
+- **Transformation logic** — e.g., language alias mapping for code blocks
+
+### TagHandler interface
 
 ```ts
 interface TagHandler {
@@ -380,66 +573,71 @@ interface TagHandler {
 }
 ```
 
-You only need to implement the forms your tag supports.  
+You only need to implement the forms your tag supports.
 Unsupported forms fall back gracefully instead of breaking the parse.
 
-### Example
+### Example: full handler set
 
 ```ts
 import {
+  createParser,
+  createSimpleInlineHandlers,
   extractText,
   parsePipeArgs,
-  parseRichText,
 } from "yume-dsl-rich-text";
 
-const handlers = {
-  bold: {
-    inline: (tokens) => ({ type: "bold", value: tokens }),
-  },
+const dsl = createParser({
+  handlers: {
+    // Simple tags — use helpers
+    ...createSimpleInlineHandlers(["bold", "italic", "underline"]),
 
-  link: {
-    inline: (tokens) => {
-      const args = parsePipeArgs(tokens);
-
-      return {
-        type: "link",
-        url: args.text(0),
-        value:
-          args.parts.length > 1
-            ? args.materializedTailTokens(1)
-            : args.materializedTokens(0),
-      };
+    // Custom: pipe parameters → extra fields
+    link: {
+      inline: (tokens) => {
+        const args = parsePipeArgs(tokens);
+        return {
+          type: "link",
+          url: args.text(0),
+          value:
+                  args.parts.length > 1
+                          ? args.materializedTailTokens(1)
+                          : args.materializedTokens(0),
+        };
+      },
     },
-  },
 
-  code: {
-    raw: (arg, content) => ({
-      type: "code-block",
-      lang: arg ?? "text",
-      value: content,
-    }),
-  },
+    // Custom: raw form → preserves content as-is
+    code: {
+      raw: (arg, content) => ({
+        type: "code-block",
+        lang: arg ?? "text",
+        value: content,
+      }),
+    },
 
-  info: {
-    block: (arg, content) => ({
-      type: "info",
-      title: arg || "Info",
-      value: content,
-    }),
-
-    inline: (tokens) => {
-      const args = parsePipeArgs(tokens);
-
-      return {
+    // Custom: supports both inline and block forms
+    info: {
+      inline: (tokens) => {
+        const args = parsePipeArgs(tokens);
+        return {
+          type: "info",
+          title: extractText(args.materializedTokens(0)),
+          value: args.materializedTailTokens(1),
+        };
+      },
+      block: (arg, content) => ({
         type: "info",
-        title: extractText(args.materializedTokens(0)),
-        value: args.materializedTailTokens(1),
-      };
+        title: arg || "Info",
+        value: content,
+      }),
     },
   },
-};
+});
+```
 
-const input = `
+Input:
+
+```text
 Hello $$bold(world)$$!
 
 $$info(Notice)*
@@ -449,45 +647,32 @@ This is a $$bold(block)$$ example.
 $$code(ts)%
 const answer = 42;
 %end$$
-`;
-
-const tokens = parseRichText(input, { handlers });
 ```
 
-### Recommended: createParser
-
-In practice you'll usually reuse the same handlers everywhere.
-Use [`createParser`](#createparser) to bind them once:
-
 ```ts
-import { createParser } from "yume-dsl-rich-text";
-
-const dsl = createParser({ handlers });
-
-// use everywhere
-dsl.parse(text);
-dsl.strip(text);
-
-// add onError when needed
-dsl.parse(text, { onError: (error) => console.warn(error) });
+const tokens = dsl.parse(input);
 ```
 
 ---
 
 ## Utility Exports
 
-These helpers are useful when writing handlers.
+These helpers serve **handler authors** — they solve common problems when writing custom `TagHandler` implementations.
 
-| Export | Description |
-|--------|-------------|
-| `parsePipeArgs(tokens)` | Split tokens by `\|` and access parsed parts |
-| `parsePipeTextArgs(text)` | Same as above, but from plain text |
-| `splitTokensByPipe(tokens)` | Low-level token splitter |
-| `extractText(tokens)` | Flatten a token tree into plain text |
-| `materializeTextTokens(tokens)` | Unescape text tokens in a tree |
-| `unescapeInline(str)` | Unescape a single string |
-| `createToken(draft)` | Add an auto-incremented `id` to a token draft |
-| `resetTokenIdSeed()` | Reset the token id counter, useful in tests |
+You will not need these if you only use `createSimpleInlineHandlers` / `createPassthroughTags`.
+
+| Export                              | Who uses it                                | Description                                              |
+|-------------------------------------|--------------------------------------------|----------------------------------------------------------|
+| `parsePipeArgs(tokens)`             | Custom handlers with `\|`-separated params | Split tokens by pipe and access parsed parts             |
+| `parsePipeTextArgs(text)`           | Custom handlers parsing raw args           | Same as above, but from a plain text string              |
+| `splitTokensByPipe(tokens)`         | Low-level handler code                     | Raw token splitter without helper methods                |
+| `extractText(tokens)`               | Handlers that need plain-text values       | Flatten a token tree into a single string                |
+| `materializeTextTokens(tokens)`     | Handlers returning processed child tokens  | Recursively unescape text tokens in a tree               |
+| `unescapeInline(str)`               | Handlers processing raw strings            | Unescape DSL escape sequences in a single string         |
+| `createToken(draft)`                | Handlers building tokens manually          | Add an auto-incremented `id` to a `TokenDraft`           |
+| `resetTokenIdSeed()`                | Test code                                  | Reset the token id counter for deterministic test output |
+| `createSimpleInlineHandlers(names)` | Setup code                                 | Create inline handlers for simple tags in bulk           |
+| `createPassthroughTags(names)`      | Setup code                                 | Register tag names with empty handlers in bulk           |
 
 ### PipeArgs
 
@@ -629,7 +814,106 @@ type ErrorCode =
 
 ---
 
+## Graceful Degradation
+
+The parser never throws on malformed or unrecognized input. Instead, it degrades content to plain text and optionally
+reports errors via `onError`. Below are the concrete degradation scenarios.
+
+### Unregistered tags → plain text
+
+Tags not present in `handlers` are not recognized. Their content is unwrapped as plain text.
+
+```ts
+const dsl = createParser({
+  handlers: {
+    ...createSimpleInlineHandlers(["bold"]),
+    // "italic" is NOT registered
+  },
+});
+
+dsl.parse("Hello $$bold(world)$$ and $$italic(goodbye)$$");
+```
+
+```ts
+[
+  { type: "text", value: "Hello ", id: "rt-0" },
+  { type: "bold", value: [{ type: "text", value: "world", id: "rt-1" }], id: "rt-2" },
+  { type: "text", value: " and goodbye", id: "rt-3" },
+  //                      ↑ "italic" is unregistered — content becomes plain text
+]
+```
+
+### Unsupported form on a registered tag → fallback text
+
+A handler only needs to implement the forms it supports. If a tag is used in a form the handler doesn't cover, the
+entire markup degrades to plain text.
+
+```ts
+const dsl = createParser({
+  handlers: {
+    // "note" only supports inline, not raw
+    note: { inline: (tokens) => ({ type: "note", value: tokens }) },
+  },
+});
+
+dsl.parse("$$note(ok)%\nraw content\n%end$$");
+```
+
+```ts
+// The raw form is not supported → entire tag degrades to fallback text
+[
+  { type: "text", value: "$$note(ok)%\nraw content\n%end$$", id: "rt-0" },
+]
+```
+
+### `allowForms` restriction → form stripped
+
+When `allowForms` excludes a form, the parser acts as if handlers don't support it — even if they do.
+
+```ts
+const dsl = createParser({
+  handlers: {
+    bold: { inline: (tokens) => ({ type: "bold", value: tokens }) },
+    code: { raw: (arg, content) => ({ type: "code", lang: arg ?? "text", value: content }) },
+  },
+  allowForms: ["inline"],   // ← raw and block disabled
+});
+
+dsl.parse("$$bold(hello)$$");
+// → [{ type: "bold", ... }]   ✓ inline works
+
+dsl.parse("$$code(ts)%\nconst x = 1;\n%end$$");
+// → [{ type: "text", value: "$$code(ts)%\nconst x = 1;\n%end$$", ... }]
+//   ↑ raw form is disabled — entire tag degrades to plain text
+```
+
+### Unclosed tags → partial text recovery
+
+When a tag is opened but never closed, the parser reports an error and recovers the opening markup as plain text.
+
+```ts
+const errors: ParseError[] = [];
+
+dsl.parse("Hello $$bold(world", { onError: (e) => errors.push(e) });
+// → [{ type: "text", value: "Hello $$bold(world", id: "rt-0" }]
+//
+// errors[0].code === "INLINE_NOT_CLOSED"
+```
+
+Without `onError`, the same recovery happens silently — no error is thrown.
+
+---
+
 ## Changelog
+
+### 0.1.8
+
+- Add `allowForms` option to `ParseOptions` — restrict which tag forms (`"inline"`, `"raw"`, `"block"`) the parser
+  accepts; disallowed forms degrade gracefully
+- Add `createSimpleInlineHandlers(names)` helper — register simple inline tags in bulk without writing repetitive
+  handler objects
+- Add `createPassthroughTags(names)` helper — register tag names with empty handlers in bulk
+- Export `TagForm` type
 
 ### 0.1.7
 
