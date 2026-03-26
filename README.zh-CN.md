@@ -796,21 +796,27 @@ const tokens = dsl.parse(input);
 
 如果你只使用 `createSimpleInlineHandlers` / `createPassthroughTags`，则不需要这些函数。
 
-| 导出                                  | 使用者               | 说明                        |
-|-------------------------------------|-------------------|---------------------------|
-| `parsePipeArgs(tokens)`             | 带 `\|` 参数的自定义处理器  | 按管道分割 token 并访问解析后的部分     |
-| `parsePipeTextArgs(text)`           | 解析原始参数的自定义处理器     | 同上，但输入为纯文本字符串             |
-| `splitTokensByPipe(tokens)`         | 底层处理器代码           | 原始 token 分割器，不含辅助方法       |
-| `extractText(tokens)`               | 需要纯文本值的处理器        | 将 token 树展平为单个字符串         |
-| `materializeTextTokens(tokens)`     | 返回处理后子 token 的处理器 | 递归反转义 token 树中的文本 token   |
-| `unescapeInline(str)`               | 处理原始字符串的处理器       | 反转义单个字符串中的 DSL 转义序列       |
-| `createToken(draft)`                | 手动构建 token 的处理器   | 为 `TokenDraft` 添加自增 `id`  |
-| `resetTokenIdSeed()`                | 测试代码              | 重置 token id 计数器，用于确定性测试输出 |
-| `createSimpleInlineHandlers(names)` | 初始化代码             | 批量创建简单标签的行内处理器            |
-| `declareMultilineTags(names)`       | 初始化代码             | 声明哪些标签需要多行换行符修剪           |
-| `createSimpleBlockHandlers(names)`  | 初始化代码             | 批量创建简单标签的块级处理器            |
-| `createSimpleRawHandlers(names)`    | 初始化代码             | 批量创建简单标签的原始处理器            |
-| `createPassthroughTags(names)`      | 初始化代码             | 批量注册空处理器的标签名              |
+| 导出                                  | 使用者               | 说明                                |
+|-------------------------------------|-------------------|-----------------------------------|
+| `parsePipeArgs(tokens)`             | 带 `\|` 参数的自定义处理器  | 按管道分割 token 并访问解析后的部分             |
+| `parsePipeTextArgs(text)`           | 解析原始参数的自定义处理器     | 同上，但输入为纯文本字符串                     |
+| `splitTokensByPipe(tokens)`         | 底层处理器代码           | 原始 token 分割器，不含辅助方法               |
+| `extractText(tokens)`               | 需要纯文本值的处理器        | 将 token 树展平为单个字符串                 |
+| `materializeTextTokens(tokens)`     | 返回处理后子 token 的处理器 | 递归反转义 token 树中的文本 token           |
+| `unescapeInline(str)`               | 处理原始字符串的处理器       | 反转义单个字符串中的 DSL 转义序列               |
+| `createToken(draft)`                | 手动构建 token 的处理器   | 为 `TokenDraft` 添加自增 `id`          |
+| `resetTokenIdSeed()`                | 测试代码              | 重置 token id 计数器，用于确定性测试输出         |
+| `createSimpleInlineHandlers(names)` | 初始化代码             | 批量创建简单标签的行内处理器                    |
+| `declareMultilineTags(names)`       | 初始化代码             | 声明哪些标签需要多行换行符修剪                   |
+| `createSimpleBlockHandlers(names)`  | 初始化代码             | 批量创建简单标签的块级处理器                    |
+| `createSimpleRawHandlers(names)`    | 初始化代码             | 批量创建简单标签的原始处理器                    |
+| `createPipeBlockHandlers(names)`    | 初始化代码             | 创建同时暴露 `arg` 与 `args` 的 block 处理器 |
+| `createPipeRawHandlers(names)`      | 初始化代码             | 创建同时暴露 `arg` 与 `args` 的 raw 处理器   |
+| `createPassthroughTags(names)`      | 初始化代码             | 批量注册空处理器的标签名                      |
+
+> `createToken()` 和自定义 syntax 的内部切换依赖模块级状态。
+> `resetTokenIdSeed()` 主要用于测试；自定义 `syntax` 也更适合同步解析流程。
+> 如果你在 SSR 或并发异步请求里要求严格隔离，建议按运行时边界隔离 parser 的使用。
 
 ### PipeArgs
 
@@ -897,6 +903,10 @@ interface SyntaxConfig extends SyntaxInput {
 ```
 
 正常使用不需要 `createSyntax` — `options.syntax` 接受 `Partial<SyntaxInput>`，解析器会在内部解析。
+
+> 注意：
+> 自定义 syntax 在解析期间通过模块级活动状态生效。
+> 对普通同步调用是安全的；如果多个并发异步请求共享同一个模块实例，需要自行做好隔离。
 
 ---
 
@@ -1050,6 +1060,8 @@ dsl.parse("Hello $$bold(world", { onError: (e) => errors.push(e) });
 - 修复 `createSimpleBlockHandlers()` / `createSimpleRawHandlers()`：块级 / 原始 helper 不再隐式接受 inline 语法
 - 修复自定义 syntax 对多字符 `tagOpen` / `tagClose` / `tagDivider` 的解析问题
 - 修复 `allowForms: ["inline"]`：已注册但被 form 过滤掉的 block/raw-only 标签会按原文保留，不再被当成 unknown inline 标签
+- 为 `onError` 增加保护，用户回调抛错时不再中断解析
+- 补全自定义 syntax 的可转义 token，`endTag` / `rawOpen` / `blockOpen` 现在也能按字面量转义
 - 新增 `createPipeBlockHandlers()` / `createPipeRawHandlers()` helper，用于结构化 pipe 参数拆分
 - 补充 `allowForms` 与新 helper 的回归测试
 - 补充自定义 syntax 边界测试、类型编译检查与更强的 fuzz 覆盖

@@ -18,12 +18,17 @@ export const createSyntax = (overrides?: Partial<SyntaxInput>): SyntaxConfig => 
   return {
     ...s,
     escapableTokens: [
-      s.rawClose,
-      s.blockClose,
-      s.tagOpen,
-      s.tagClose,
-      s.tagDivider,
-      s.escapeChar,
+      ...new Set([
+        s.endTag,
+        s.rawOpen,
+        s.blockOpen,
+        s.rawClose,
+        s.blockClose,
+        s.tagOpen,
+        s.tagClose,
+        s.tagDivider,
+        s.escapeChar,
+      ]),
     ].sort((a, b) => b.length - a.length),
   };
 };

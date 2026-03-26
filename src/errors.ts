@@ -53,5 +53,7 @@ export const emitError = (
   const base = ERROR_MESSAGES[code] ?? code;
   const message = `(L${line}:C${column}) ${base}: ${snippet}`;
 
-  onError({ code, message, line, column, snippet });
+  try {
+    onError({ code, message, line, column, snippet });
+  } catch {}
 };

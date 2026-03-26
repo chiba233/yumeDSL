@@ -323,6 +323,28 @@ const cases: Array<{ name: string; run: () => void }> = [
       }
     },
   },
+  {
+    name: "[Common/Syntax] 自定义多字符 token 的转义 -> endTag/rawOpen/blockOpen 应能按字面量保留",
+    run: () => {
+      const tokens = parseRichText("@@bold[[A ~]]>> B ~]]% C ~]]* D]]>>", {
+        handlers: { bold: testHandlers.bold },
+        syntax: {
+          tagPrefix: "@@",
+          tagOpen: "[[",
+          tagClose: "]]",
+          endTag: "]]>>",
+          rawOpen: "]]%",
+          blockOpen: "]]*",
+          rawClose: "%end@@",
+          blockClose: "*end@@",
+          escapeChar: "~",
+        },
+      });
+      assert.deepEqual(normalizeTokens(tokens), [
+        { type: "bold", value: [{ type: "text", value: "A ]]>> B ]]% C ]]* D" }] },
+      ]);
+    },
+  },
 
   // --- [Inline] ---
   {
@@ -395,6 +417,29 @@ const cases: Array<{ name: string; run: () => void }> = [
       assert.equal(errors[0].line, 2);
       assert.equal(errors[0].column, 1);
       assert.match(errors[0].message, /Inline tag not closed/);
+    },
+  },
+  {
+    name: "[Inline/Error] 孤立闭合符 -> 应当上报 UNEXPECTED_CLOSE 错误",
+    run: () => {
+      const { errors } = parseWithErrors("hello )$$ world");
+      assert.equal(errors.length, 1);
+      assert.equal(errors[0].code, "UNEXPECTED_CLOSE");
+      assert.match(errors[0].message, /Unexpected close tag/);
+    },
+  },
+  {
+    name: "[Inline/Error] onError 回调抛异常 -> 解析器不应中断",
+    run: () => {
+      assert.doesNotThrow(() => {
+        const tokens = parseRichText("$$bold(unclosed", {
+          handlers: testHandlers,
+          onError: () => {
+            throw new Error("user callback failed");
+          },
+        });
+        assert.deepEqual(normalizeTokens(tokens), [{ type: "text", value: "$$bold(unclosed" }]);
+      });
     },
   },
   {
@@ -552,6 +597,15 @@ const cases: Array<{ name: string; run: () => void }> = [
     name: "[Raw/Boundary] 未闭合 raw 标签 -> 应当退化为普通文本",
     run: () => {
       assert.equal(strip("$$raw-code(ts)%\nconst a = 1"), "$$raw-code(ts)%\nconst a = 1");
+    },
+  },
+  {
+    name: "[Raw/Error] 未闭合 raw 标签 -> 应当上报 RAW_NOT_CLOSED 错误",
+    run: () => {
+      const { errors } = parseWithErrors("$$raw-code(ts)%\nconst a = 1");
+      assert.equal(errors.length, 1);
+      assert.equal(errors[0].code, "RAW_NOT_CLOSED");
+      assert.match(errors[0].message, /Raw block not closed/);
     },
   },
   {
@@ -959,6 +1013,26 @@ const cases: Array<{ name: string; run: () => void }> = [
       assert.equal(errors.length, 1);
       assert.equal(errors[0].code, "BLOCK_CLOSE_MALFORMED");
       assert.match(errors[0].message, /Malformed block close/);
+    },
+  },
+  {
+    name: "[Block/Error] 未闭合 block 标签 -> 应当上报 BLOCK_NOT_CLOSED 错误",
+    run: () => {
+      const { errors } = parseWithErrors("$$collapse(Title)*\nhello");
+      assert.equal(errors.length, 1);
+      assert.equal(errors[0].code, "BLOCK_NOT_CLOSED");
+      assert.match(errors[0].message, /Block tag not closed/);
+    },
+  },
+  {
+    name: "[Depth/Error] 超过嵌套深度限制 -> 应当上报 DEPTH_LIMIT 错误",
+    run: () => {
+      const { errors } = parseWithErrors("$$bold($$bold($$bold(deep)$$)$$)$$", {
+        depthLimit: 1,
+      });
+      assert.equal(errors.length, 1);
+      assert.equal(errors[0].code, "DEPTH_LIMIT");
+      assert.match(errors[0].message, /Nesting too deep/);
     },
   },
 ];

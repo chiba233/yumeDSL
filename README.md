@@ -827,7 +827,14 @@ You will not need these if you only use `createSimpleInlineHandlers` / `createPa
 | `declareMultilineTags(names)`       | Setup code                                 | Declare which tags need multiline line-break normalization |
 | `createSimpleBlockHandlers(names)`  | Setup code                                 | Create block-form handlers for simple tags in bulk         |
 | `createSimpleRawHandlers(names)`    | Setup code                                 | Create raw handlers for simple tags in bulk                |
+| `createPipeBlockHandlers(names)`    | Setup code                                 | Create block handlers that expose both `arg` and `args`    |
+| `createPipeRawHandlers(names)`      | Setup code                                 | Create raw handlers that expose both `arg` and `args`      |
 | `createPassthroughTags(names)`      | Setup code                                 | Register tag names with empty handlers in bulk             |
+
+> `createToken()` and active syntax management use module-level state.
+> `resetTokenIdSeed()` is intended for tests, and custom `syntax` overrides are safest in synchronous parsing flows.
+> If you need strict request isolation for SSR or concurrent async parsing, prefer isolating parser usage per runtime
+> boundary.
 
 ### PipeArgs
 
@@ -916,6 +923,11 @@ interface SyntaxConfig extends SyntaxInput {
 
 You do not need `createSyntax` for normal usage — `options.syntax` accepts a `Partial<SyntaxInput>` and the parser
 resolves it internally.
+
+> Note:
+> Syntax overrides are applied through module-local active state during parsing.
+> This is safe for normal synchronous calls, but if you share one module instance across concurrent async request flows,
+> isolate parser work carefully.
 
 ---
 
@@ -1074,6 +1086,8 @@ Without `onError`, the same recovery happens silently — no error is thrown.
 - Fix custom syntax parsing for multi-character `tagOpen` / `tagClose` / `tagDivider` tokens
 - Fix `allowForms: ["inline"]` so registered block/raw-only tags filtered out by form restriction keep their inline
   markup literally instead of being treated as unknown inline tags
+- Guard `onError` callbacks so user-thrown exceptions do not abort parsing
+- Expand custom syntax escaping so `endTag` / `rawOpen` / `blockOpen` can also be escaped literally
 - Add `createPipeBlockHandlers()` and `createPipeRawHandlers()` helpers for structural pipe-arg parsing
 - Add regression tests for `allowForms` and the new handler helpers
 - Add custom syntax edge tests, compile-time type checks, and stronger fuzz coverage
