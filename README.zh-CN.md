@@ -32,7 +32,7 @@
   - [parseRichText / stripRichText](#parserichtext--striprichtext)
 - [处理器辅助函数](#处理器辅助函数)
   - [createSimpleInlineHandlers](#createsimpleinlinehandlers)
-  - [createPassthroughTags](#createpassthroughtags)
+  - [createPassthroughTags（进阶）](#createpassthroughtags进阶)
 - [ParseOptions](#parseoptions)
 - [Token 结构](#token-结构)
   - [强类型](#强类型)
@@ -378,13 +378,16 @@ createSimpleInlineHandlers(["bold", "italic", "underline"])
 function createSimpleInlineHandlers(names: readonly string[]): Record<string, TagHandler>;
 ```
 
-### `createPassthroughTags(names)`
+### `createPassthroughTags(names)`（进阶）
 
-创建空的标签处理器，仅让解析器识别标签名，不包含任何自定义逻辑。
-解析器的内置回退机制产出 `{ type: tagName, value: materializedTokens }` — 与 `createSimpleInlineHandlers` 输出结构相同。
+> 大多数场景推荐使用上面的 `createSimpleInlineHandlers`。
 
-区别在于：passthrough 处理器没有 `inline` 方法，因此外部代码检查 `handler.inline` 时会得到 `undefined`。如果需要显式处理器使用
-`createSimpleInlineHandlers`；如果只需要解析器识别标签名使用 `createPassthroughTags`。
+创建空的标签处理器（`{}`），仅让解析器识别标签名，不包含任何逻辑。
+解析器对已注册但没有 `inline` 方法的标签会产出 `{ type: tagName, value: materializedTokens }` — 与
+`createSimpleInlineHandlers` 输出结构相同。
+
+区别在于**显式 vs 隐式**：`createSimpleInlineHandlers` 显式声明了每个标签的行内行为；`createPassthroughTags`
+依赖你了解解析器对已注册标签的默认产出行为。同时 `handler.inline` 会是 `undefined`，如果外部代码需要检查处理器方法则需注意。
 
 ```ts
 import { createParser, createPassthroughTags } from "yume-dsl-rich-text";
@@ -898,7 +901,9 @@ dsl.parse("Hello $$bold(world", { onError: (e) => errors.push(e) });
 
 - 新增 `ParseOptions.allowForms` 选项 — 限制解析器接受的标签形式（`"inline"`、`"raw"`、`"block"`），被禁用的形式优雅降级
 - 新增 `createSimpleInlineHandlers(names)` 辅助函数 — 批量注册简单行内标签，无需编写重复的处理器对象
-- 新增 `createPassthroughTags(names)` 辅助函数 — 批量注册空处理器的标签名
+- 新增 `createPassthroughTags(names)` 辅助函数 — 批量注册空处理器的标签名（进阶用法）
+- 两个辅助函数均通过 `const` 泛型保留字面量 key 类型 — `createSimpleInlineHandlers(["bold", "italic"])` 推导为
+  `Record<"bold" | "italic", TagHandler>`
 - 导出 `TagForm` 类型
 
 ### 0.1.7

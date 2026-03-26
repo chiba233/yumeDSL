@@ -12,10 +12,12 @@ import { materializeTextTokens } from "./builders.js";
  *   // other handlers …
  * };
  */
-export const createPassthroughTags = (names: readonly string[]): Record<string, TagHandler> => {
-  const result: Record<string, TagHandler> = {};
+export const createPassthroughTags = <const T extends readonly string[]>(
+  names: T,
+): Record<T[number], TagHandler> => {
+  const result = {} as Record<T[number], TagHandler>;
   for (const name of names) {
-    result[name] = {};
+    result[name as T[number]] = {};
   }
   return result;
 };
@@ -30,12 +32,12 @@ export const createPassthroughTags = (names: readonly string[]): Record<string, 
  *   // other handlers …
  * };
  */
-export const createSimpleInlineHandlers = (
-  names: readonly string[],
-): Record<string, TagHandler> => {
-  const result: Record<string, TagHandler> = {};
+export const createSimpleInlineHandlers = <const T extends readonly string[]>(
+  names: T,
+): Record<T[number], TagHandler> => {
+  const result = {} as Record<T[number], TagHandler>;
   for (const name of names) {
-    result[name] = {
+    result[name as T[number]] = {
       inline: (tokens: TextToken[]): TokenDraft => ({
         type: name,
         value: materializeTextTokens(tokens),

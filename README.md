@@ -31,7 +31,7 @@ You define your own semantics and rendering layer.
   - [parseRichText / stripRichText](#parserichtext--striprichtext)
 - [Handler Helpers](#handler-helpers)
   - [createSimpleInlineHandlers](#createsimpleinlinehandlers)
-  - [createPassthroughTags](#createpassthroughtags)
+  - [createPassthroughTags (advanced)](#createpassthroughtags-advanced)
 - [ParseOptions](#parseoptions)
 - [Token Structure](#token-structure)
   - [Strong Typing](#strong-typing)
@@ -384,15 +384,17 @@ createSimpleInlineHandlers(["bold", "italic", "underline"])
 function createSimpleInlineHandlers(names: readonly string[]): Record<string, TagHandler>;
 ```
 
-### `createPassthroughTags(names)`
+### `createPassthroughTags(names)` (advanced)
 
-Creates empty tag handlers that register tag names with the parser without any custom logic.
-The parser's built-in fallback produces `{ type: tagName, value: materializedTokens }` — same output shape as
-`createSimpleInlineHandlers`.
+> For most use cases, prefer `createSimpleInlineHandlers` above.
 
-The difference: passthrough handlers have no `inline` method, so external code inspecting `handler.inline` will see
-`undefined`. Use `createSimpleInlineHandlers` if you need explicit handlers; use `createPassthroughTags` if you only
-need the parser to recognize the tag names.
+Creates empty tag handlers (`{}`) that register tag names with the parser but contain no logic.
+The parser produces `{ type: tagName, value: materializedTokens }` for recognized tags without an `inline` method — the
+same output shape as `createSimpleInlineHandlers`.
+
+The difference is **explicit vs implicit**: `createSimpleInlineHandlers` explicitly declares each tag's inline behavior;
+`createPassthroughTags` relies on you knowing that the parser's default for recognized tags already produces typed
+tokens. This also means `handler.inline` is `undefined`, which matters if external code inspects handlers directly.
 
 ```ts
 import { createParser, createPassthroughTags } from "yume-dsl-rich-text";
@@ -912,7 +914,9 @@ Without `onError`, the same recovery happens silently — no error is thrown.
   accepts; disallowed forms degrade gracefully
 - Add `createSimpleInlineHandlers(names)` helper — register simple inline tags in bulk without writing repetitive
   handler objects
-- Add `createPassthroughTags(names)` helper — register tag names with empty handlers in bulk
+- Add `createPassthroughTags(names)` helper — register tag names with empty handlers in bulk (advanced use case)
+- Both helpers preserve literal key types via `const` generics — `createSimpleInlineHandlers(["bold", "italic"])` infers
+  `Record<"bold" | "italic", TagHandler>`
 - Export `TagForm` type
 
 ### 0.1.7

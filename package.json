@@ -1,6 +1,6 @@
 {
   "name": "yume-dsl-rich-text",
-  "version": "0.1.8",
+  "version": "0.1.7",
   "description": "A recursive rich-text DSL parser with pluggable tag handlers",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
