@@ -14,12 +14,12 @@ Can be embedded inside Markdown or any other markup as a secondary syntax layer.
 This package does not ship built-in tags, rendering, or UI integration.  
 You define your own semantics and rendering layer.
 
-Ecosystem packages:
+## Ecosystem
 
-| Package                                                                                         | Role                                               |
-|-------------------------------------------------------------------------------------------------|----------------------------------------------------|
-| [`@yume-dsl/render-core`](https://github.com/chiba233/yume-dsl-render-core)                     | Generic renderer core — token tree to output nodes |
-| [`@yume-dsl/markdown-it-rich-text`](https://github.com/chiba233/markdown-it-yume-dsl-rich-text) | markdown-it adapter                                |
+| Package                                                                      | Role                                            |
+|------------------------------------------------------------------------------|-------------------------------------------------|
+| **`yume-dsl-rich-text`**                                                     | Parser core — text to token tree (this package) |
+| [`@yume-dsl/render-core`](https://github.com/chiba233/yume-dsl-render-core/) | Render core — token tree to output nodes        |
 
 ---
 
