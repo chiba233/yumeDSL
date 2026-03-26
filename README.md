@@ -1014,6 +1014,14 @@ Without `onError`, the same recovery happens silently — no error is thrown.
 ### 0.1.9
 
 - Remove source maps to reduce package size
+- Fix `allowForms` so disabling `"inline"` also blocks inline syntax for tags that still have `raw` / `block`
+  handlers
+- Fix `createSimpleBlockHandlers()` / `createSimpleRawHandlers()` so block-only and raw-only helpers no longer accept
+  inline syntax implicitly
+- Fix custom syntax parsing for multi-character `tagOpen` / `tagClose` / `tagDivider` tokens
+- Add regression tests for `allowForms` and the new handler helpers
+- Add custom syntax edge tests, compile-time type checks, and stronger fuzz coverage
+- Clarify README wording around multiline block/raw helpers and fallback behavior
 
 ### 0.1.8
 

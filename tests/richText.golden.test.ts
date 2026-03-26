@@ -252,6 +252,75 @@ const cases: Array<{ name: string; run: () => void }> = [
       }
     },
   },
+  {
+    name: "[Common/Robustness] 自定义 syntax 随机脏输入压力测试 -> 解析器应当保持输出稳定",
+    run: () => {
+      const parts = [
+        "@@bold<<",
+        "@@thin<<",
+        "@@unknown<<",
+        "@@panel<<T>>*\n",
+        "@@code<<ts>>%\n",
+        ">>@@",
+        "*end@@",
+        "%end@@",
+        "~>>@@",
+        "~%end@@",
+        "text\n",
+        "||",
+        "<<",
+        ">>",
+        "\n",
+        "hello",
+        "世界",
+        " ",
+      ] as const;
+
+      const syntax = {
+        tagPrefix: "@@",
+        tagOpen: "<<",
+        tagClose: ">>",
+        tagDivider: "||",
+        endTag: ">>@@",
+        rawOpen: ">>%",
+        blockOpen: ">>*",
+        rawClose: "%end@@",
+        blockClose: "*end@@",
+        escapeChar: "~",
+      } as const;
+
+      const handlers = {
+        bold: testHandlers.bold,
+        thin: testHandlers.thin,
+        panel: {
+          block: (arg: string | undefined, tokens: TextToken[]) => ({
+            type: "panel",
+            arg,
+            value: tokens,
+          }),
+        },
+        code: {
+          raw: (arg: string | undefined, content: string) => ({
+            type: "code",
+            arg,
+            value: content,
+          }),
+        },
+      };
+
+      for (let seed = 101; seed <= 140; seed++) {
+        const source = createDeterministicDirtyText(seed, parts, 20);
+        assert.doesNotThrow(() => {
+          const tokens = parseRichText(source, {
+            handlers,
+            depthLimit: 4,
+            syntax,
+          });
+          assert.ok(Array.isArray(tokens));
+        });
+      }
+    },
+  },
 
   // --- [Inline] ---
   {
@@ -389,6 +458,55 @@ const cases: Array<{ name: string; run: () => void }> = [
       ]);
     },
   },
+  {
+    name: "[Inline/Syntax] 自定义多字符开闭符 -> 应当正确解析 inline 标签",
+    run: () => {
+      const tokens = parseRichText("@@bold<<hi>>@@", {
+        handlers: { bold: testHandlers.bold },
+        syntax: {
+          tagPrefix: "@@",
+          tagOpen: "<<",
+          tagClose: ">>",
+          endTag: ">>@@",
+          rawOpen: ">>%",
+          blockOpen: ">>*",
+          rawClose: "%end@@",
+          blockClose: "*end@@",
+          escapeChar: "~",
+        },
+      });
+      assert.deepEqual(normalizeTokens(tokens), [
+        { type: "bold", value: [{ type: "text", value: "hi" }] },
+      ]);
+    },
+  },
+  {
+    name: "[Inline/Syntax] 自定义多字符分隔符 -> parsePipeArgs 应当正确分段",
+    run: () => {
+      const tokens = parseRichText("@@link<<https://a.com || click me>>@@", {
+        handlers: { link: testHandlers.link },
+        syntax: {
+          tagPrefix: "@@",
+          tagOpen: "<<",
+          tagClose: ">>",
+          tagDivider: "||",
+          endTag: ">>@@",
+          rawOpen: ">>%",
+          blockOpen: ">>*",
+          rawClose: "%end@@",
+          blockClose: "*end@@",
+          escapeChar: "~",
+        },
+      });
+      assert.deepEqual(normalizeTokens(tokens), [
+        {
+          type: "link",
+          url: "https://a.com",
+          value: [{ type: "text", value: "click me" }],
+        },
+      ]);
+    },
+  },
 
   // --- [Raw] ---
   {
@@ -514,6 +632,36 @@ const cases: Array<{ name: string; run: () => void }> = [
       ]);
     },
   },
+  {
+    name: "[Raw/Syntax] 自定义多字符开闭符 -> 应当正确解析 raw 标签",
+    run: () => {
+      const tokens = parseRichText("@@code<<ts>>%\nconst x = 1\n%end@@", {
+        handlers: {
+          code: {
+            raw: (arg: string | undefined, content: string) => ({
+              type: "code",
+              arg,
+              value: content,
+            }),
+          },
+        },
+        syntax: {
+          tagPrefix: "@@",
+          tagOpen: "<<",
+          tagClose: ">>",
+          endTag: ">>@@",
+          rawOpen: ">>%",
+          blockOpen: ">>*",
+          rawClose: "%end@@",
+          blockClose: "*end@@",
+          escapeChar: "~",
+        },
+      });
+      assert.deepEqual(normalizeTokens(tokens), [
+        { type: "code", arg: "ts", value: "const x = 1\n" },
+      ]);
+    },
+  },
 
   // --- [Block] ---
   {
@@ -554,6 +702,45 @@ const cases: Array<{ name: string; run: () => void }> = [
     },
   },
   {
+    name: "[Block/Syntax] 自定义多字符开闭符 -> 应当正确解析 block 标签",
+    run: () => {
+      const tokens = parseRichText("@@info<<Notice>>*\nA @@bold<<B>>@@\n*end@@", {
+        handlers: {
+          bold: testHandlers.bold,
+          info: {
+            block: (arg: string | undefined, tokens: TextToken[]) => ({
+              type: "info",
+              arg,
+              value: tokens,
+            }),
+          },
+        },
+        syntax: {
+          tagPrefix: "@@",
+          tagOpen: "<<",
+          tagClose: ">>",
+          endTag: ">>@@",
+          rawOpen: ">>%",
+          blockOpen: ">>*",
+          rawClose: "%end@@",
+          blockClose: "*end@@",
+          escapeChar: "~",
+        },
+      });
+      assert.deepEqual(normalizeTokens(tokens), [
+        {
+          type: "info",
+          arg: "Notice",
+          value: [
+            { type: "text", value: "A " },
+            { type: "bold", value: [{ type: "text", value: "B" }] },
+            { type: "text", value: "\n" },
+          ],
+        },
+      ]);
+    },
+  },
+  {
     name: "[Forms] allowForms 只允许 inline -> raw 与 block 应当整体退化为文本",
     run: () => {
       const input =
@@ -577,6 +764,29 @@ const cases: Array<{ name: string; run: () => void }> = [
         allowForms: ["raw", "block"],
       });
       assert.deepEqual(normalizeTokens(tokens), [{ type: "text", value: "x y" }]);
+    },
+  },
+  {
+    name: "[Forms] allowForms 禁用 inline -> 保留 raw/block 的标签不应再接受 inline 语法",
+    run: () => {
+      const tokens = parseRichText("$$info(T)$$ $$code(ts)$$", {
+        handlers: helperHandlers,
+        allowForms: ["raw", "block"],
+      });
+      assert.deepEqual(normalizeTokens(tokens), [
+        { type: "text", value: "$$info(T)$$ $$code(ts)$$" },
+      ]);
+    },
+  },
+  {
+    name: "[Helpers] block/raw-only helper -> 不应偷偷接受 inline 语法",
+    run: () => {
+      const tokens = parseRichText("$$info(T)$$ $$code(ts)$$", {
+        handlers: helperHandlers,
+      });
+      assert.deepEqual(normalizeTokens(tokens), [
+        { type: "text", value: "$$info(T)$$ $$code(ts)$$" },
+      ]);
     },
   },
   {

@@ -63,10 +63,10 @@ export const splitTokensByPipe = (tokens: TextToken[]): TextToken[][] => {
         continue;
       }
 
-      if (val[i] === tagDivider) {
+      if (val.startsWith(tagDivider, i)) {
         flushText();
         parts.push([]);
-        i++;
+        i += tagDivider.length;
         while (i < val.length && val[i] === " ") i++;
         continue;
       }

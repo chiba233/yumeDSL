@@ -993,6 +993,12 @@ dsl.parse("Hello $$bold(world", { onError: (e) => errors.push(e) });
 ### 0.1.9
 
 - 移除 source map 文件以减小发布包体积
+- 修复 `allowForms`：当禁用 `"inline"` 时，仍保留 `raw` / `block` handler 的标签不再错误接受 inline 语法
+- 修复 `createSimpleBlockHandlers()` / `createSimpleRawHandlers()`：块级 / 原始 helper 不再隐式接受 inline 语法
+- 修复自定义 syntax 对多字符 `tagOpen` / `tagClose` / `tagDivider` 的解析问题
+- 补充 `allowForms` 与新 helper 的回归测试
+- 补充自定义 syntax 边界测试、类型编译检查与更强的 fuzz 覆盖
+- 微调 README，对多行 block/raw helper 与降级行为的说明更直观
 
 ### 0.1.8
 

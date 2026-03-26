@@ -16,7 +16,7 @@ export const tryParseComplexTag = (
   text: string,
   tagOpenPos: number,
   tag: string,
-  tagNameEnd: number,
+  argStart: number,
   inlineEnd: number,
   depthLimit: number,
   mode: ParseMode,
@@ -30,12 +30,12 @@ export const tryParseComplexTag = (
 ): ComplexTagParseResult => {
   const handler = handlers[tag];
   if (!handler?.raw && !handler?.block) {
-    return { handled: false, nextIndex: tagNameEnd };
+    return { handled: false, nextIndex: argStart };
   }
 
-  const argClose = findTagArgClose(text, tagNameEnd + 1);
+  const argClose = findTagArgClose(text, argStart);
   if (argClose === -1) {
-    return { handled: false, nextIndex: tagNameEnd };
+    return { handled: false, nextIndex: argStart };
   }
 
   const { blockOpen, blockClose, rawOpen, rawClose, escapeChar } = getSyntax();
@@ -44,11 +44,11 @@ export const tryParseComplexTag = (
   const isRaw = text.startsWith(rawOpen, argClose);
 
   if (!isBlock && !isRaw) {
-    return { handled: false, nextIndex: tagNameEnd };
+    return { handled: false, nextIndex: argStart };
   }
 
   if (inlineEnd !== -1 && inlineEnd <= argClose) {
-    return { handled: false, nextIndex: tagNameEnd };
+    return { handled: false, nextIndex: argStart };
   }
 
   if (isBlock) {
@@ -94,7 +94,7 @@ export const tryParseComplexTag = (
       };
     }
 
-    const arg = text.slice(tagNameEnd + 1, argClose).trim();
+    const arg = text.slice(argStart, argClose).trim();
     const blockContent = normalizeBlockTagContent(
       tag,
       text.slice(contentStart, end),
@@ -160,7 +160,7 @@ export const tryParseComplexTag = (
     };
   }
 
-  const arg = text.slice(tagNameEnd + 1, argClose).trim();
+  const arg = text.slice(argStart, argClose).trim();
   const rawContent = text.slice(contentStart, end);
   const normalizedRawContent =
     mode === "highlight" ? rawContent : rawContent.split(escapeChar + rawClose).join(rawClose);

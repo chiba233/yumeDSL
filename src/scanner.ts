@@ -15,11 +15,15 @@ export const findTagArgClose = (text: string, start: number): number => {
       continue;
     }
 
-    if (text[pos] === tagOpen) {
+    if (text.startsWith(tagOpen, pos)) {
       depth++;
-    } else if (text[pos] === tagClose) {
+      pos += tagOpen.length;
+      continue;
+    } else if (text.startsWith(tagClose, pos)) {
       depth--;
       if (depth === 0) return pos;
+      pos += tagClose.length;
+      continue;
     }
 
     pos++;
@@ -42,7 +46,7 @@ const readTagHeadAt = (text: string, pos: number): TagHead | null => {
     tagNameEnd++;
   }
 
-  if (text[tagNameEnd] !== tagOpen) {
+  if (!text.startsWith(tagOpen, tagNameEnd)) {
     return null;
   }
 

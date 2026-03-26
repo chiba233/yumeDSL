@@ -253,6 +253,17 @@ const smokeTest = (mod: DistModule, label: string) => {
         ]);
       },
     },
+    {
+      name: `[${label}] block/raw-only helper 不接受 inline 语法`,
+      run: () => {
+        const handlers = {
+          ...mod.createSimpleBlockHandlers(["info"]),
+          ...mod.createSimpleRawHandlers(["code"]),
+        };
+        const tokens = mod.parseRichText("$$info(x)$$ $$code(ts)$$", { handlers });
+        assert.deepEqual(normalize(tokens), [{ type: "text", value: "$$info(x)$$ $$code(ts)$$" }]);
+      },
+    },
   ];
 };
 

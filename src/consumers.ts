@@ -16,6 +16,12 @@ import { tryParseComplexTag } from "./complex.js";
 import { createToken } from "./createToken.js";
 import { consumeBlockTagTrailingLineBreak } from "./blockTagFormatting.js";
 
+const supportsInlineForm = (handler: ParseContext["handlers"][string] | undefined): boolean => {
+  if (!handler) return true;
+  if (handler.inline) return true;
+  return !handler.raw && !handler.block;
+};
+
 export const tryConsumeDepthLimitedTag = (ctx: ParseContext, info: TagStartInfo): boolean => {
   if (ctx.stack.length < ctx.depthLimit) return false;
 
@@ -31,7 +37,7 @@ export const tryConsumeDepthLimitedTag = (ctx: ParseContext, info: TagStartInfo)
     );
   }
 
-  const tagInfo = getTagCloserType(ctx.text, info.tagNameEnd + 1);
+  const tagInfo = getTagCloserType(ctx.text, info.inlineContentStart);
 
   if (!tagInfo) {
     ctx.buffer += ctx.text.slice(ctx.i, info.inlineContentStart);
@@ -106,7 +112,7 @@ export const tryConsumeComplexTag = (
     ctx.text,
     info.tagOpenPos,
     info.tag,
-    info.tagNameEnd,
+    info.inlineContentStart,
     inlineEnd,
     ctx.depthLimit,
     ctx.mode,
@@ -139,6 +145,11 @@ export const tryConsumeInlineTag = (
   info: TagStartInfo,
   inlineEnd: number,
 ): boolean => {
+  const handler = ctx.handlers[info.tag];
+  if (!supportsInlineForm(handler)) {
+    return false;
+  }
+
   if (inlineEnd === -1) {
     emitError(
       ctx.onError,
@@ -154,7 +165,7 @@ export const tryConsumeInlineTag = (
 
   ctx.stack.push({
     tag: info.tag,
-    richType: info.tag in ctx.handlers ? info.tag : null,
+    richType: handler ? info.tag : null,
     tokens: [],
     openPos: info.tagOpenPos,
     openLen: info.inlineContentStart - info.tagOpenPos,
