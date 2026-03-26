@@ -10,21 +10,19 @@ import { testHandlers } from "./handlers.ts";
 
 // ── Load both module formats ──
 
-const esm = await import("../dist/index.js");
+const esm = await import("yume-dsl-rich-text");
 
 const require = createRequire(import.meta.url);
-const cjs = require("../dist/index.cjs");
+const cjs = require("yume-dsl-rich-text");
 
 // ── helpers ──
 
 type DistModule = typeof esm;
 
 const smokeTest = (mod: DistModule, label: string) => {
-  const parse = (text: string) =>
-    mod.parseRichText(text, { handlers: testHandlers });
+  const parse = (text: string) => mod.parseRichText(text, { handlers: testHandlers });
 
-  const strip = (text: string) =>
-    mod.stripRichText(text, { handlers: testHandlers });
+  const strip = (text: string) => mod.stripRichText(text, { handlers: testHandlers });
 
   const normalize = (tokens: any[]): unknown[] =>
     tokens.map(({ id, value, ...rest }: any) => ({
@@ -370,9 +368,6 @@ const smokeTest = (mod: DistModule, label: string) => {
   ];
 };
 
-const cases = [
-  ...smokeTest(esm, "ESM"),
-  ...smokeTest(cjs, "CJS"),
-];
+const cases = [...smokeTest(esm, "ESM"), ...smokeTest(cjs, "CJS")];
 
 await runGoldenCases("Dist Smoke", " Dist smoke case", cases);
