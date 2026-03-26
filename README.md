@@ -1,4 +1,4 @@
-**English** | [中文](./README.zh-CN.md)
+**English** | [中文](./GUIDE.zh-CN.md)
 
 # yume-dsl-rich-text(ユメテキスト)
 
@@ -6,6 +6,10 @@
 
 [![npm](https://img.shields.io/npm/v/yume-dsl-rich-text)](https://www.npmjs.com/package/yume-dsl-rich-text)
 [![GitHub](https://img.shields.io/badge/GitHub-chiba233%2FyumeDSL-181717?logo=github)](https://github.com/chiba233/yumeDSL)
+[![CI](https://github.com/chiba233/yumeDSL/actions/workflows/publish-dsl.yml/badge.svg)](https://github.com/chiba233/yumeDSL/actions/workflows/publish-dsl.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Contributing](https://img.shields.io/badge/Contributing-guide-blue.svg)](./CONTRIBUTING.md)
+[![Security](https://img.shields.io/badge/Security-policy-red.svg)](./SECURITY.md)
 
 A zero-dependency, recursive rich-text DSL parser with pluggable tag handlers and configurable syntax.
 Can be embedded inside Markdown or any other markup as a secondary syntax layer.
@@ -1476,6 +1480,11 @@ tagMap.date = DateText;
 ---
 
 ## Changelog
+
+### 0.1.16
+
+- Update Markdown
+- Optimize npm package size by excluding non-essential docs (~30% smaller)
 
 ### 0.1.15
 

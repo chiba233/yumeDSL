@@ -6,6 +6,10 @@
 
 [![npm](https://img.shields.io/npm/v/yume-dsl-rich-text)](https://www.npmjs.com/package/yume-dsl-rich-text)
 [![GitHub](https://img.shields.io/badge/GitHub-chiba233%2FyumeDSL-181717?logo=github)](https://github.com/chiba233/yumeDSL)
+[![CI](https://github.com/chiba233/yumeDSL/actions/workflows/publish-dsl.yml/badge.svg)](https://github.com/chiba233/yumeDSL/actions/workflows/publish-dsl.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Contributing](https://img.shields.io/badge/贡献指南-guide-blue.svg)](./CONTRIBUTING.zh-CN.md)
+[![Security](https://img.shields.io/badge/安全策略-policy-red.svg)](./SECURITY.md)
 
 零依赖、递归解析的富文本 DSL 解析器，支持可插拔的标签处理器和可配置语法。
 亦可嵌入 Markdown 或其他标记语言中作为二级语法层使用。
@@ -1439,6 +1443,11 @@ tagMap.date = DateText;
 ---
 
 ## 更新日志
+
+### 0.1.16
+
+- 更新markdown文案
+- 优化 npm 包体积，排除非必要文档（缩小约 30%）
 
 ### 0.1.15
 

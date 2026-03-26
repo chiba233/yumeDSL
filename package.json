@@ -18,8 +18,6 @@
   "files": [
     "dist",
     "README.md",
-    "CONTRIBUTING.md",
-    "SECURITY.md",
     "LICENSE"
   ],
   "type": "module",
