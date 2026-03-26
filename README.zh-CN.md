@@ -547,6 +547,7 @@ function createPassthroughTags(names: readonly string[]): Record<string, TagHand
 ```ts
 interface ParseOptions {
   handlers?: Record<string, TagHandler>;
+  createId?: (token: TokenDraft) => string;
   allowForms?: readonly ("inline" | "raw" | "block")[];
   blockTags?: string[];
   depthLimit?: number;
@@ -559,6 +560,7 @@ interface ParseOptions {
 ### 字段
 
 - `handlers`：标签名 → 处理器定义
+- `createId`：覆盖本次解析的 token id 生成策略
 - `allowForms`：限制解析器接受的标签形式（默认：全部启用）
 - `blockTags`：需要块级换行规范化的标签
 - `depthLimit`：最大嵌套深度，默认 `50`
@@ -805,7 +807,7 @@ const tokens = dsl.parse(input);
 | `extractText(tokens)`               | 需要纯文本值的处理器            | 将 token 树展平为单个字符串                 |
 | `materializeTextTokens(tokens)`     | 返回处理后子 token 的处理器     | 递归反转义 token 树中的文本 token           |
 | `unescapeInline(str)`               | 处理原始字符串的处理器           | 反转义单个字符串中的 DSL 转义序列               |
-| `createToken(draft)`                | 手动构建 token 的处理器       | 为 `TokenDraft` 添加自增 `id`          |
+| `createToken(draft)`                | 手动构建 token 的处理器       | 为 `TokenDraft` 添加 `id`            |
 | `resetTokenIdSeed()`                | 测试代码                  | 重置 token id 计数器，用于确定性测试输出         |
 | `createSimpleInlineHandlers(names)` | 初始化代码                 | 批量创建简单标签的行内处理器                    |
 | `declareMultilineTags(names)`       | 初始化代码                 | 声明哪些标签需要多行换行符修剪                   |
@@ -815,8 +817,8 @@ const tokens = dsl.parse(input);
 | `createPipeRawHandlers(names)`      | 初始化代码                 | 创建同时暴露 `arg` 与 `args` 的 raw 处理器   |
 | `createPassthroughTags(names)`      | 初始化代码                 | 批量注册空处理器的标签名                      |
 
-> `createToken()` 和自定义 syntax 的内部切换依赖模块级状态。
-> `resetTokenIdSeed()` 主要用于测试；自定义 `syntax` 也更适合同步解析流程。
+> 解析期间，token id 默认按单次 parse 局部递增（`rt-0`、`rt-1` ...）。
+> `createToken()` 只有在解析器外单独调用时才会使用模块级计数器，`resetTokenIdSeed()` 也主要用于这种测试场景。
 > 如果你在 SSR 或并发异步请求里要求严格隔离，建议按运行时边界隔离 parser 的使用。
 
 ### PipeArgs
@@ -1065,6 +1067,11 @@ dsl.parse("Hello $$bold(world", { onError: (e) => errors.push(e) });
 ---
 
 ## 更新日志
+
+### 0.1.11
+
+- 默认将解析器生成的 token id 改为单次 parse 局部递增（每次解析从 `rt-0` 开始）
+- 新增 `createId` 选项，允许按单次 parse / parser 覆盖 token id 生成策略
 
 ### 0.1.10
 

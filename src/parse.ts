@@ -2,6 +2,7 @@ import type { ParseContext, ParseOptions, TagForm, TagHandler, TextToken } from 
 import { extractText } from "./builders.js";
 import { tryConsumeEscape, tryConsumeTagClose, tryConsumeTagStart } from "./consumers.js";
 import { finalizeUnclosedTags, flushBuffer } from "./context.js";
+import { withCreateId } from "./createToken.js";
 import { createSyntax, withSyntax } from "./syntax.js";
 
 const deriveBlockTags = (handlers: Record<string, unknown>): Set<string> => {
@@ -122,17 +123,21 @@ export const parseRichText = (text: string, options: ParseOptions = {}): TextTok
   const allowInline = !options.allowForms || options.allowForms.includes("inline");
   const blockTagSet = options.blockTags ? new Set(options.blockTags) : deriveBlockTags(handlers);
   const syntax = createSyntax(options.syntax);
+  let seed = 0;
+  const createId = options.createId ?? (() => `rt-${seed++}`);
 
   return withSyntax(syntax, () =>
-    internalParse(
-      text,
-      options.depthLimit ?? 50,
-      { mode: options.mode ?? "render" },
-      allowInline,
-      registeredTags,
-      options.onError,
-      handlers,
-      blockTagSet,
+    withCreateId(createId, () =>
+      internalParse(
+        text,
+        options.depthLimit ?? 50,
+        { mode: options.mode ?? "render" },
+        allowInline,
+        registeredTags,
+        options.onError,
+        handlers,
+        blockTagSet,
+      ),
     ),
   );
 };

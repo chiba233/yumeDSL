@@ -151,6 +151,15 @@ const smokeTest = (mod: DistModule, label: string) => {
         assert.deepEqual(parse(""), []);
       },
     },
+    {
+      name: `[${label}] parseRichText 默认 id 按每次解析重置`,
+      run: () => {
+        const first = mod.parseRichText("hello", { handlers: testHandlers });
+        const second = mod.parseRichText("world", { handlers: testHandlers });
+        assert.equal(first[0].id, "rt-0");
+        assert.equal(second[0].id, "rt-0");
+      },
+    },
 
     // ── stripRichText ──
     {
@@ -216,6 +225,19 @@ const smokeTest = (mod: DistModule, label: string) => {
         assert.equal(t.type, "test");
         assert.equal(t.value, "v");
         assert.equal(typeof t.id, "string");
+      },
+    },
+    {
+      name: `[${label}] parseRichText 支持自定义 createId`,
+      run: () => {
+        let i = 0;
+        const tokens = mod.parseRichText("$$bold(hi)$$", {
+          handlers: testHandlers,
+          createId: () => `custom-${i++}`,
+        });
+        assert.equal(tokens[0].id, "custom-1");
+        const child = Array.isArray(tokens[0].value) ? tokens[0].value[0] : null;
+        assert.equal(child?.id, "custom-0");
       },
     },
     {

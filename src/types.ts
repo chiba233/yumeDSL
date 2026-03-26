@@ -13,6 +13,8 @@ export interface TokenDraft {
   [key: string]: unknown;
 }
 
+export type CreateId = (token: TokenDraft) => string;
+
 export type ErrorCode =
   | "DEPTH_LIMIT"
   | "UNEXPECTED_CLOSE"
@@ -59,6 +61,8 @@ export type TagForm = "inline" | "raw" | "block";
 export interface ParseOptions {
   /** Tag handler map – keys are tag names, values define how each tag is parsed. */
   handlers?: Record<string, TagHandler>;
+  /** Override token id generation for this parse. Defaults to a parse-local `rt-0`, `rt-1`, ... counter. */
+  createId?: CreateId;
   /**
    * Restrict which tag forms the parser will accept.
    * Forms not listed are treated as if the handler does not support them (graceful degradation).

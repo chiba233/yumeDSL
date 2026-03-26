@@ -4,6 +4,7 @@ export type { Parser } from "./parse.js";
 
 // ── Types ──
 export type {
+  CreateId,
   TextToken,
   TokenDraft,
   ErrorCode,

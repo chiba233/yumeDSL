@@ -1,4 +1,4 @@
-import type { ParseOptions, TagForm, TagHandler } from "../src/index.ts";
+import type { CreateId, ParseOptions, TagForm, TagHandler } from "../src/index.ts";
 import {
   createPassthroughTags,
   createPipeBlockHandlers,
@@ -43,6 +43,14 @@ const validOptions: ParseOptions = {
 };
 
 void validOptions;
+
+const createId: CreateId = () => "fixed";
+const validOptionsWithCreateId: ParseOptions = {
+  handlers,
+  createId,
+};
+
+void validOptionsWithCreateId;
 
 // @ts-expect-error invalid form should be rejected
 const invalidOptions: ParseOptions = { allowForms: ["inline", "weird"] };

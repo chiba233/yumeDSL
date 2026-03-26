@@ -558,6 +558,7 @@ function createPassthroughTags(names: readonly string[]): Record<string, TagHand
 ```ts
 interface ParseOptions {
   handlers?: Record<string, TagHandler>;
+  createId?: (token: TokenDraft) => string;
   allowForms?: readonly ("inline" | "raw" | "block")[];
   blockTags?: string[];
   depthLimit?: number;
@@ -570,6 +571,7 @@ interface ParseOptions {
 ### Fields
 
 - `handlers`: tag name → handler definition
+- `createId`: override token id generation for this parse
 - `allowForms`: restrict which tag forms are parsed (default: all forms enabled)
 - `blockTags`: tags treated as block-level for line-break normalization
 - `depthLimit`: maximum nesting depth, default `50`
@@ -822,7 +824,7 @@ You will not need these if you only use `createSimpleInlineHandlers` / `createPa
 | `extractText(tokens)`               | Handlers that need plain-text values       | Flatten a token tree into a single string                  |
 | `materializeTextTokens(tokens)`     | Handlers returning processed child tokens  | Recursively unescape text tokens in a tree                 |
 | `unescapeInline(str)`               | Handlers processing raw strings            | Unescape DSL escape sequences in a single string           |
-| `createToken(draft)`                | Handlers building tokens manually          | Add an auto-incremented `id` to a `TokenDraft`             |
+| `createToken(draft)`                | Handlers building tokens manually          | Add an `id` to a `TokenDraft`                              |
 | `resetTokenIdSeed()`                | Test code                                  | Reset the token id counter for deterministic test output   |
 | `createSimpleInlineHandlers(names)` | Setup code                                 | Create inline handlers for simple tags in bulk             |
 | `declareMultilineTags(names)`       | Setup code                                 | Declare which tags need multiline line-break normalization |
@@ -832,8 +834,9 @@ You will not need these if you only use `createSimpleInlineHandlers` / `createPa
 | `createPipeRawHandlers(names)`      | Setup code                                 | Create raw handlers that expose both `arg` and `args`      |
 | `createPassthroughTags(names)`      | Setup code                                 | Register tag names with empty handlers in bulk             |
 
-> `createToken()` and active syntax management use module-level state.
-> `resetTokenIdSeed()` is intended for tests, and custom `syntax` overrides are safest in synchronous parsing flows.
+> During parsing, token ids default to a parse-local sequence (`rt-0`, `rt-1`, ...).
+> `createToken()` only uses the module-level counter when called outside an active parse, and `resetTokenIdSeed()` is
+> mainly intended for tests around that standalone usage.
 > If you need strict request isolation for SSR or concurrent async parsing, prefer isolating parser usage per runtime
 > boundary.
 
@@ -1088,6 +1091,11 @@ Without `onError`, the same recovery happens silently — no error is thrown.
 ---
 
 ## Changelog
+
+### 0.1.11
+
+- Make parser-generated token ids parse-local by default (`rt-0`, `rt-1`, ... per parse)
+- Add `createId` option to override token id generation per parse / parser
 
 ### 0.1.10
 
