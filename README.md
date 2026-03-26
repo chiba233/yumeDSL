@@ -190,11 +190,8 @@ Unregistered tags degrade gracefully instead of throwing or crashing.
 ## DSL Syntax
 
 By default, the DSL uses `$$` as the tag prefix.
-
-Default tag-name rules:
-
-- First character: `a-z`, `A-Z`, `_`
-- Remaining characters: `a-z`, `A-Z`, `0-9`, `_`, `-`
+Tag names allow `a-z`, `A-Z`, `0-9`, `_`, `-` (first character must not be a digit or `-`).
+See [Custom Tag Name Characters](#custom-tag-name-characters) to override these rules.
 
 Three forms are supported:
 
@@ -301,25 +298,6 @@ dsl.strip("Hello $$bold(world)$$!");
 dsl.parse(text, { onError: (e) => console.warn(e) });
 ```
 
-You can also pre-bind custom tag-name rules:
-
-```ts
-import { createParser, createTagNameConfig } from "yume-dsl-rich-text";
-
-const dsl = createParser({
-  handlers: {
-    "ui:button": {
-      inline: (value) => ({ type: "ui:button", value }),
-    },
-  },
-  tagName: createTagNameConfig({
-    isTagChar: (char) => /[A-Za-z0-9_:-]/.test(char),
-  }),
-});
-
-dsl.parse("$$ui:button(hello)$$");
-```
-
 **What `createParser` binds:**
 
 | Option       | What it does when pre-bound                               |
@@ -364,24 +342,6 @@ function stripRichText(text: string, options?: ParseOptions): string;
 ```
 
 For most applications, prefer [`createParser`](#createparser--recommended-entry-point) instead.
-
-Use these when you want full per-call control over tag-name rules:
-
-```ts
-import { createTagNameConfig, parseRichText } from "yume-dsl-rich-text";
-
-const tokens = parseRichText("$$1ui:button(hello)$$", {
-  handlers: {
-    "1ui:button": {
-      inline: (value) => ({ type: "1ui:button", value }),
-    },
-  },
-  tagName: createTagNameConfig({
-    isTagStartChar: (char) => /[A-Za-z0-9_]/.test(char),
-    isTagChar: (char) => /[A-Za-z0-9_:-]/.test(char),
-  }),
-});
-```
 
 ---
 
@@ -880,9 +840,33 @@ const tokens = dsl.parse(input);
 
 ## Utility Exports
 
-These helpers serve **handler authors** — they solve common problems when writing custom `TagHandler` implementations.
+### Configuration
 
-You will not need these if you only use `createSimpleInlineHandlers` / `createPassthroughTags`.
+| Export                           | Description                                             |
+|----------------------------------|---------------------------------------------------------|
+| `DEFAULT_SYNTAX`                 | The built-in syntax tokens (`$$`, `(`, `)$$`, etc.)     |
+| `createSyntax(overrides)`        | Override syntax tokens with default fallback            |
+| `DEFAULT_TAG_NAME`               | The built-in tag-name character rules                   |
+| `createTagNameConfig(overrides)` | Override tag-name character rules with default fallback |
+
+### Handler Helpers
+
+Convenience functions for creating handlers in bulk — most projects only need these.
+
+| Export                              | Description                                                |
+|-------------------------------------|------------------------------------------------------------|
+| `createSimpleInlineHandlers(names)` | Create inline handlers for simple tags in bulk             |
+| `createSimpleBlockHandlers(names)`  | Create block-form handlers for simple tags in bulk         |
+| `createSimpleRawHandlers(names)`    | Create raw handlers for simple tags in bulk                |
+| `createPipeBlockHandlers(names)`    | Create block handlers that expose both `arg` and `args`    |
+| `createPipeRawHandlers(names)`      | Create raw handlers that expose both `arg` and `args`      |
+| `createPassthroughTags(names)`      | Register tag names with empty handlers in bulk             |
+| `declareMultilineTags(names)`       | Declare which tags need multiline line-break normalization |
+
+### Handler Utilities
+
+Lower-level tools for writing custom `TagHandler` implementations.
+You will not need these if you only use the handler helpers above.
 
 | Export                              | Who uses it                                | Description                                                |
 |-------------------------------------|--------------------------------------------|------------------------------------------------------------|
@@ -895,14 +879,6 @@ You will not need these if you only use `createSimpleInlineHandlers` / `createPa
 | `unescapeInline(str)`               | Handlers processing raw strings            | Unescape DSL escape sequences in a single string           |
 | `createToken(draft)`                | Handlers building tokens manually          | Add an `id` to a `TokenDraft`                              |
 | `resetTokenIdSeed()`                | Test code                                  | Reset the token id counter for deterministic test output   |
-| `createSimpleInlineHandlers(names)` | Setup code                                 | Create inline handlers for simple tags in bulk             |
-| `declareMultilineTags(names)`       | Setup code                                 | Declare which tags need multiline line-break normalization |
-| `createSimpleBlockHandlers(names)`  | Setup code                                 | Create block-form handlers for simple tags in bulk         |
-| `createSimpleRawHandlers(names)`    | Setup code                                 | Create raw handlers for simple tags in bulk                |
-| `createPipeBlockHandlers(names)`    | Setup code                                 | Create block handlers that expose both `arg` and `args`    |
-| `createPipeRawHandlers(names)`      | Setup code                                 | Create raw handlers that expose both `arg` and `args`      |
-| `createPassthroughTags(names)`      | Setup code                                 | Register tag names with empty handlers in bulk             |
-| `createTagNameConfig(overrides)`    | Setup code                                 | Override tag-name character rules with default fallback    |
 
 > During parsing, token ids default to a parse-local sequence (`rt-0`, `rt-1`, ...).
 > `createToken()` only uses the module-level counter when called outside an active parse, and `resetTokenIdSeed()` is
@@ -1020,29 +996,58 @@ resolves it internally.
 
 ## Custom Tag Name Characters
 
-By default, tag names follow these rules:
+The parser decides which characters may appear in a tag name via two functions:
 
-- `isTagStartChar`: `a-z`, `A-Z`, `_`
-- `isTagChar`: `a-z`, `A-Z`, `0-9`, `_`, `-`
+| Function         | Default                       | Role                            |
+|------------------|-------------------------------|---------------------------------|
+| `isTagStartChar` | `a-z`, `A-Z`, `_`             | First character of the tag name |
+| `isTagChar`      | `a-z`, `A-Z`, `0-9`, `_`, `-` | Remaining characters            |
 
-Use `createTagNameConfig()` when you want to override only part of the defaults and let unspecified fields fall back.
+These defaults are exported as `DEFAULT_TAG_NAME`.
+
+### Overriding
+
+Pass a `tagName` option to `createParser` or `parseRichText`.
+You only need to specify the functions you want to change — unspecified fields fall back to `DEFAULT_TAG_NAME`.
+`createTagNameConfig()` is a convenience helper that does this merge, but you can also pass a plain partial object
+directly.
+
+**Via `createParser`** (pre-bound, recommended):
 
 ```ts
-import { DEFAULT_TAG_NAME, createTagNameConfig } from "yume-dsl-rich-text";
+import { createParser, createTagNameConfig } from "yume-dsl-rich-text";
 
-const tagName = createTagNameConfig({
-  isTagChar: (char) => /[A-Za-z0-9_:-]/.test(char),
+const dsl = createParser({
+  handlers: {
+    "ui:button": {
+      inline: (value) => ({ type: "ui:button", value }),
+    },
+  },
+  tagName: createTagNameConfig({
+    isTagChar: (char) => /[A-Za-z0-9_:-]/.test(char),
+  }),
 });
 
-DEFAULT_TAG_NAME.isTagStartChar("_"); // true
-tagName.isTagChar(":"); // true
+dsl.parse("$$ui:button(hello)$$");
 ```
 
-Pass `tagName` into either `createParser(...)` or `parseRichText(...)`.
+**Via `parseRichText`** (per-call):
 
-> **Note:** `createTagNameConfig()` is a convenience helper — you can also pass a plain partial object
-> (e.g. `{ isTagChar: ... }`) directly to `tagName` and the parser will fill in the missing fields
-> with the same defaults automatically.
+```ts
+import { parseRichText } from "yume-dsl-rich-text";
+
+const tokens = parseRichText("$$1ui:button(hello)$$", {
+  handlers: {
+    "1ui:button": {
+      inline: (value) => ({ type: "1ui:button", value }),
+    },
+  },
+  tagName: {
+    isTagStartChar: (char) => /[A-Za-z0-9_]/.test(char),
+    isTagChar: (char) => /[A-Za-z0-9_:-]/.test(char),
+  },
+});
+```
 
 ---
 
@@ -1189,6 +1194,14 @@ Without `onError`, the same recovery happens silently — no error is thrown.
 ---
 
 ## Changelog
+
+### 0.1.13
+
+- Reorganize `index.ts` exports into clearer groups: Configuration, Handler Helpers, Handler Utilities, and typed
+  sub-groups
+- Reorganize README "Utility Exports" section into Configuration / Handler Helpers / Handler Utilities sub-tables
+- Consolidate all `tagName` documentation into a single "Custom Tag Name Characters" section
+- Fix dist smoke test TS7016 in IDEA by switching to self-referencing package import + `paths` mapping
 
 ### 0.1.12
 

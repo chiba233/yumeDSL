@@ -2,36 +2,9 @@
 export { parseRichText, stripRichText, createParser } from "./parse.js";
 export type { Parser } from "./parse.js";
 
-// ── Types ──
-export type {
-  BlockTagInput,
-  BlockTagLookup,
-  CreateId,
-  TagNameConfig,
-  MultilineForm,
-  TextToken,
-  TokenDraft,
-  ErrorCode,
-  ParseError,
-  ParseOptions,
-  TagForm,
-  TagHandler,
-  SyntaxInput,
-  SyntaxConfig,
-} from "./types.js";
-
-// ── Utilities for handler authors ──
-export {
-  extractText,
-  materializeTextTokens,
-  splitTokensByPipe,
-  parsePipeArgs,
-  parsePipeTextArgs,
-  parsePipeTextList,
-} from "./builders.js";
-export type { PipeArgs } from "./builders.js";
-export { unescapeInline } from "./escape.js";
-export { createToken, resetTokenIdSeed } from "./createToken.js";
+// ── Configuration ──
+export { DEFAULT_SYNTAX, createSyntax } from "./syntax.js";
+export { DEFAULT_TAG_NAME, createTagNameConfig } from "./chars.js";
 
 // ── Handler helpers ──
 export {
@@ -44,6 +17,46 @@ export {
   declareMultilineTags,
 } from "./handlerHelpers.js";
 
-// ── Syntax configuration ──
-export { DEFAULT_SYNTAX, createSyntax } from "./syntax.js";
-export { DEFAULT_TAG_NAME, createTagNameConfig } from "./chars.js";
+// ── Handler utilities ──
+export {
+  extractText,
+  materializeTextTokens,
+  splitTokensByPipe,
+  parsePipeArgs,
+  parsePipeTextArgs,
+  parsePipeTextList,
+} from "./builders.js";
+export { unescapeInline } from "./escape.js";
+export { createToken, resetTokenIdSeed } from "./createToken.js";
+
+// ── Types: core ──
+export type {
+  ParseOptions,
+  TagHandler,
+  TagForm,
+  TextToken,
+  TokenDraft,
+} from "./types.js";
+
+// ── Types: configuration ──
+export type {
+  SyntaxInput,
+  SyntaxConfig,
+  TagNameConfig,
+} from "./types.js";
+
+// ── Types: block tags ──
+export type {
+  BlockTagInput,
+  BlockTagLookup,
+  MultilineForm,
+} from "./types.js";
+
+// ── Types: errors & utilities ──
+export type {
+  ErrorCode,
+  ParseError,
+  CreateId,
+} from "./types.js";
+
+export type { PipeArgs } from "./builders.js";

@@ -25,9 +25,9 @@
 - [安装](#安装)
 - [快速开始](#快速开始)
 - [DSL 语法](#dsl-语法)
-  - [行内标签](#行内标签)
-  - [原始标签](#原始标签)
-  - [块级标签](#块级标签)
+  - [Inline 标签](#Inline 标签)
+  - [Raw 标签](#Raw 标签)
+  - [Block 标签](#Block 标签)
   - [管道参数](#管道参数)
   - [转义序列](#转义序列)
 - [API](#api)
@@ -104,7 +104,7 @@
 - 零依赖
 - 递归解析，支持深度限制
 - 可插拔的标签处理器
-- 行内 / 原始 / 块级三种标签形式
+- inline / raw / block 三种标签形式
 - 处理器辅助函数，支持批量注册标签
 - 可配置语法符号
 - 未知标签优雅降级
@@ -185,47 +185,44 @@ const plain = dsl.strip("Hello $$bold(world)$$!");
 ## DSL 语法
 
 默认使用 `$$` 作为标签前缀。
-
-默认标签名规则：
-
-- 首字符：`a-z`、`A-Z`、`_`
-- 后续字符：`a-z`、`A-Z`、`0-9`、`_`、`-`
+标签名允许 `a-z`、`A-Z`、`0-9`、`_`、`-`（首字符不能是数字或 `-`）。
+如需自定义，参见[自定义标签名字符规则](#自定义标签名字符规则)。
 
 支持三种形式：
 
-### 行内标签
+### Inline 标签
 
 ```text
 $$tagName(content)$$
 ```
 
-行内内容递归解析，嵌套自然生效。
+Inline 内容递归解析，嵌套自然生效。
 
 ```text
 $$bold(Hello $$italic(world)$$)$$
 ```
 
-### 原始标签
+### Raw 标签
 
 ```text
 $$tagName(arg)%
-原始内容，按原样保留
+Raw 内容，按原样保留
 %end$$
 ```
 
-原始内容不会递归解析。
+Raw 内容不会递归解析。
 
 关闭标记 `%end$$` 必须独占一行。
 
-### 块级标签
+### Block 标签
 
 ```text
 $$tagName(arg)*
-块级内容，递归解析
+Block 内容，递归解析
 *end$$
 ```
 
-块级内容递归解析。
+Block 内容递归解析。
 
 关闭标记 `*end$$` 必须独占一行。
 
@@ -294,25 +291,6 @@ dsl.strip("Hello $$bold(world)$$!");
 dsl.parse(text, { onError: (e) => console.warn(e) });
 ```
 
-也可以在 parser 上预绑定自定义标签名字符规则：
-
-```ts
-import { createParser, createTagNameConfig } from "yume-dsl-rich-text";
-
-const dsl = createParser({
-  handlers: {
-    "ui:button": {
-      inline: (value) => ({ type: "ui:button", value }),
-    },
-  },
-  tagName: createTagNameConfig({
-    isTagChar: (char) => /[A-Za-z0-9_:-]/.test(char),
-  }),
-});
-
-dsl.parse("$$ui:button(hello)$$");
-```
-
 **`createParser` 绑定了什么：**
 
 | 选项           | 预绑定后的效果                                  |
@@ -358,24 +336,6 @@ function stripRichText(text: string, options?: ParseOptions): string;
 
 大多数应用场景建议使用 [`createParser`](#createparser--推荐入口)。
 
-如果你想对单次调用精确控制标签名规则，可以直接在这里传：
-
-```ts
-import { createTagNameConfig, parseRichText } from "yume-dsl-rich-text";
-
-const tokens = parseRichText("$$1ui:button(hello)$$", {
-  handlers: {
-    "1ui:button": {
-      inline: (value) => ({ type: "1ui:button", value }),
-    },
-  },
-  tagName: createTagNameConfig({
-    isTagStartChar: (char) => /[A-Za-z0-9_]/.test(char),
-    isTagChar: (char) => /[A-Za-z0-9_:-]/.test(char),
-  }),
-});
-```
-
 ---
 
 ## 处理器辅助函数
@@ -385,7 +345,7 @@ const tokens = parseRichText("$$1ui:button(hello)$$", {
 
 ### `createSimpleInlineHandlers(names)`
 
-为一组标签名创建行内处理器。
+为一组标签名创建inline 处理器。
 每个处理器将子 token 物化后包装为 `{ type: tagName, value: materializedTokens }`。
 
 这是注册简单标签的**推荐方式**。
@@ -478,8 +438,8 @@ function declareMultilineTags(names: readonly BlockTagInput[]): BlockTagInput[];
 
 ### `createSimpleBlockHandlers(names)`
 
-创建块级处理器，对应 DSL 的多行 block 形式：`$$tag(arg)* ... *end$$`。
-闭合标记 `*end$$` 必须独占一行，因此它更适合作为独立块使用，而不是和普通行内文本混排。
+创建block 处理器，对应 DSL 的多行 block 形式：`$$tag(arg)* ... *end$$`。
+闭合标记 `*end$$` 必须独占一行，因此它更适合作为独立块使用，而不是和普通 inline 文本混排。
 每个处理器直接透传 `arg` 和递归解析后的内容：`{ type: tagName, arg, value: content }`。
 
 ```ts
@@ -502,7 +462,7 @@ function createSimpleBlockHandlers(names: readonly string[]): Record<string, Tag
 
 ### `createSimpleRawHandlers(names)`
 
-为一组标签名创建原始处理器，对应 DSL 的多行 raw 形式。每个处理器直接透传 `arg` 和原始字符串内容：
+为一组标签名创建raw 处理器，对应 DSL 的多行 raw 形式。每个处理器直接透传 `arg` 和 raw 字符串内容：
 `{ type: tagName, arg, value: content }`。
 
 解析后的 token 结构如下：
@@ -515,7 +475,7 @@ function createSimpleBlockHandlers(names: readonly string[]): Record<string, Tag
 }
 ```
 
-适用于按原样保留内容的原始标签 — `$$tagName(arg)%...%end$$`。
+适用于按原样保留内容的Raw 标签 — `$$tagName(arg)%...%end$$`。
 和 block 标签一样，`%end$$` 也必须独占一行，因此更适合作为多行块书写。
 
 ```ts
@@ -587,7 +547,7 @@ function createPipeRawHandlers(names: readonly string[]): Record<string, TagHand
 解析器对已注册但没有 `inline` 方法的标签会产出 `{ type: tagName, value: materializedTokens }` — 与
 `createSimpleInlineHandlers` 输出结构相同。
 
-区别在于**显式 vs 隐式**：`createSimpleInlineHandlers` 显式声明了每个标签的行内行为；`createPassthroughTags`
+区别在于**显式 vs 隐式**：`createSimpleInlineHandlers` 显式声明了每个标签的 inline 行为；`createPassthroughTags`
 依赖你了解解析器对已注册标签的默认产出行为。同时 `handler.inline` 会是 `undefined`，如果外部代码需要检查处理器方法则需注意。
 
 ```ts
@@ -626,11 +586,11 @@ interface ParseOptions {
 - `handlers`：标签名 → 处理器定义
 - `createId`：覆盖本次解析的 token id 生成策略
 - `allowForms`：限制解析器接受的标签形式（默认：全部启用）
-- `blockTags`：需要块级换行规范化的标签 — 接受纯字符串或 `{ tag, forms }` 对象以按形式控制
+- `blockTags`：需要 block 换行规范化的标签 — 接受纯字符串或 `{ tag, forms }` 对象以按形式控制
 - `depthLimit`：最大嵌套深度，默认 `50`
 - `mode`：
-  - `"render"` 规范化块级换行
-  - `"highlight"` 保留原始换行
+  - `"render"` 规范化 block 换行
+  - `"highlight"` 保留原文换行
 - `onError`：解析错误回调
 - `syntax`：覆盖默认语法符号
 
@@ -642,20 +602,20 @@ interface ParseOptions {
 `$$unknown(...)$$` 会整体按原文保留，而不是去壳。
 
 ```ts
-// 只允许行内标签 — 块级和原始语法被忽略
+// 只允许 inline 标签 — block 和 raw 语法被忽略
 const dsl = createParser({
   handlers,
   allowForms: ["inline"],
 });
 
-// 允许行内和块级，但不允许原始
+// 允许 inline 和 block，但不允许 raw
 const dsl2 = createParser({
   handlers,
   allowForms: ["inline", "block"],
 });
 ```
 
-适用于用户生成内容（评论、聊天消息），希望允许简单的行内格式但禁止多行块级或原始标签的场景。
+适用于用户生成内容（评论、聊天消息），希望允许简单的 inline 格式但禁止多行 block 或 raw 标签的场景。
 
 省略时启用全部形式。
 
@@ -761,7 +721,7 @@ function render(token: MyToken): string {
 
 - **管道参数** — 如 `$$link(url | 显示文本)$$`
 - **输出 token 上的额外字段** — 如 `url`、`lang`、`title`
-- **多种形式** — 同一标签同时支持行内、原始和块级语法
+- **多种形式** — 同一标签同时支持 inline、raw 和 block 语法
 - **转换逻辑** — 如代码块的语言别名映射
 
 ### TagHandler 接口
@@ -807,7 +767,7 @@ const dsl = createParser({
       },
     },
 
-    // 自定义：原始形式 → 内容按原样保留
+    // 自定义：raw 形式 → 内容按原样保留
     code: {
       raw: (arg, content) => ({
         type: "code-block",
@@ -816,7 +776,7 @@ const dsl = createParser({
       }),
     },
 
-    // 自定义：同时支持行内和块级形式
+    // 自定义：同时支持 inline 和 block 形式
     info: {
       inline: (tokens) => {
         const args = parsePipeArgs(tokens);
@@ -858,29 +818,45 @@ const tokens = dsl.parse(input);
 
 ## 工具函数导出
 
-这些辅助函数服务于**处理器作者** — 它们解决编写自定义 `TagHandler` 时的常见问题。
+### 配置
 
-如果你只使用 `createSimpleInlineHandlers` / `createPassthroughTags`，则不需要这些函数。
+| 导出                               | 说明                       |
+|----------------------------------|--------------------------|
+| `DEFAULT_SYNTAX`                 | 内置语法符号（`$$`、`(`、`)$$` 等） |
+| `createSyntax(overrides)`        | 覆盖语法符号，未提供字段回退默认值        |
+| `DEFAULT_TAG_NAME`               | 内置标签名字符规则                |
+| `createTagNameConfig(overrides)` | 覆盖标签名字符规则，未提供字段回退默认值     |
 
-| 导出                                  | 使用者                   | 说明                                |
-|-------------------------------------|-----------------------|-----------------------------------|
-| `parsePipeArgs(tokens)`             | 带 `\|` 参数的自定义处理器      | 按管道分割 token 并访问解析后的部分             |
-| `parsePipeTextArgs(text)`           | 解析原始参数的自定义处理器         | 同上，但输入为纯文本字符串                     |
-| `parsePipeTextList(text)`           | 只需 `string[]` 的自定义处理器 | 将管道分隔字符串直接拆分为 trim 后的 `string[]`  |
-| `splitTokensByPipe(tokens)`         | 底层处理器代码               | 原始 token 分割器，不含辅助方法               |
-| `extractText(tokens)`               | 需要纯文本值的处理器            | 将 token 树展平为单个字符串                 |
-| `materializeTextTokens(tokens)`     | 返回处理后子 token 的处理器     | 递归反转义 token 树中的文本 token           |
-| `unescapeInline(str)`               | 处理原始字符串的处理器           | 反转义单个字符串中的 DSL 转义序列               |
-| `createToken(draft)`                | 手动构建 token 的处理器       | 为 `TokenDraft` 添加 `id`            |
-| `resetTokenIdSeed()`                | 测试代码                  | 重置 token id 计数器，用于确定性测试输出         |
-| `createSimpleInlineHandlers(names)` | 初始化代码                 | 批量创建简单标签的行内处理器                    |
-| `declareMultilineTags(names)`       | 初始化代码                 | 声明哪些标签需要多行换行符修剪                   |
-| `createSimpleBlockHandlers(names)`  | 初始化代码                 | 批量创建简单标签的块级处理器                    |
-| `createSimpleRawHandlers(names)`    | 初始化代码                 | 批量创建简单标签的原始处理器                    |
-| `createPipeBlockHandlers(names)`    | 初始化代码                 | 创建同时暴露 `arg` 与 `args` 的 block 处理器 |
-| `createPipeRawHandlers(names)`      | 初始化代码                 | 创建同时暴露 `arg` 与 `args` 的 raw 处理器   |
-| `createPassthroughTags(names)`      | 初始化代码                 | 批量注册空处理器的标签名                      |
-| `createTagNameConfig(overrides)`    | 初始化代码                 | 覆盖标签名字符规则，未提供字段回退默认值              |
+### 处理器辅助函数
+
+批量创建处理器的便利函数 — 大多数项目只需要这些。
+
+| 导出                                  | 说明                                |
+|-------------------------------------|-----------------------------------|
+| `createSimpleInlineHandlers(names)` | 批量创建简单标签的inline 处理器               |
+| `createSimpleBlockHandlers(names)`  | 批量创建简单标签的block 处理器                |
+| `createSimpleRawHandlers(names)`    | 批量创建简单标签的raw 处理器                  |
+| `createPipeBlockHandlers(names)`    | 创建同时暴露 `arg` 与 `args` 的 block 处理器 |
+| `createPipeRawHandlers(names)`      | 创建同时暴露 `arg` 与 `args` 的 raw 处理器   |
+| `createPassthroughTags(names)`      | 批量注册空处理器的标签名                      |
+| `declareMultilineTags(names)`       | 声明哪些标签需要多行换行符修剪                   |
+
+### 处理器工具函数
+
+编写自定义 `TagHandler` 时使用的底层工具。
+如果你只使用上面的辅助函数，则不需要这些。
+
+| 导出                              | 使用者                   | 说明                               |
+|---------------------------------|-----------------------|----------------------------------|
+| `parsePipeArgs(tokens)`         | 带 `\|` 参数的自定义处理器      | 按管道分割 token 并访问解析后的部分            |
+| `parsePipeTextArgs(text)`       | 解析 raw 参数的自定义处理器      | 同上，但输入为纯文本字符串                    |
+| `parsePipeTextList(text)`       | 只需 `string[]` 的自定义处理器 | 将管道分隔字符串直接拆分为 trim 后的 `string[]` |
+| `splitTokensByPipe(tokens)`     | 底层处理器代码               | 按 pipe 分割 token 的底层工具，不含辅助方法     |
+| `extractText(tokens)`           | 需要纯文本值的处理器            | 将 token 树展平为单个字符串                |
+| `materializeTextTokens(tokens)` | 返回处理后子 token 的处理器     | 递归反转义 token 树中的文本 token          |
+| `unescapeInline(str)`           | 处理 raw 字符串的处理器        | 反转义单个字符串中的 DSL 转义序列              |
+| `createToken(draft)`            | 手动构建 token 的处理器       | 为 `TokenDraft` 添加 `id`           |
+| `resetTokenIdSeed()`            | 测试代码                  | 重置 token id 计数器，用于确定性测试输出        |
 
 > 解析期间，token id 默认按单次 parse 局部递增（`rt-0`、`rt-1` ...）。
 > `createToken()` 只有在解析器外单独调用时才会使用模块级计数器，`resetTokenIdSeed()` 也主要用于这种测试场景。
@@ -901,7 +877,7 @@ interface PipeArgs {
 
 | 字段                          | 说明                         |
 |-----------------------------|----------------------------|
-| `parts`                     | 按 `\|` 分割的原始 token 数组      |
+| `parts`                     | 按 `\|` 分割的未处理的 token 数组    |
 | `text(i)`                   | 第 `i` 部分的纯文本，已反转义并去除首尾空格   |
 | `materializedTokens(i)`     | 第 `i` 部分已反转义的 token        |
 | `materializedTailTokens(i)` | 从索引 `i` 起所有部分合并成的 token 数组 |
@@ -993,28 +969,57 @@ interface SyntaxConfig extends SyntaxInput {
 
 ## 自定义标签名字符规则
 
-默认情况下，标签名规则是：
+解析器通过两个函数决定哪些字符可以出现在标签名中：
 
-- `isTagStartChar`：`a-z`、`A-Z`、`_`
-- `isTagChar`：`a-z`、`A-Z`、`0-9`、`_`、`-`
+| 函数               | 默认值                       | 作用       |
+|------------------|---------------------------|----------|
+| `isTagStartChar` | `a-z`、`A-Z`、`_`           | 标签名的首字符  |
+| `isTagChar`      | `a-z`、`A-Z`、`0-9`、`_`、`-` | 首字符之后的字符 |
 
-当你只想覆盖默认规则中的一部分，并让未提供字段回退默认值时，使用 `createTagNameConfig()`：
+默认值导出为 `DEFAULT_TAG_NAME`。
+
+### 覆盖方式
+
+向 `createParser` 或 `parseRichText` 传入 `tagName` 选项。
+只需指定要修改的函数，未指定的字段自动回退 `DEFAULT_TAG_NAME`。
+`createTagNameConfig()` 是执行这个合并的便利函数，但你也可以直接传入部分对象。
+
+**通过 `createParser`**（预绑定，推荐）：
 
 ```ts
-import { DEFAULT_TAG_NAME, createTagNameConfig } from "yume-dsl-rich-text";
+import { createParser, createTagNameConfig } from "yume-dsl-rich-text";
 
-const tagName = createTagNameConfig({
-  isTagChar: (char) => /[A-Za-z0-9_:-]/.test(char),
+const dsl = createParser({
+  handlers: {
+    "ui:button": {
+      inline: (value) => ({ type: "ui:button", value }),
+    },
+  },
+  tagName: createTagNameConfig({
+    isTagChar: (char) => /[A-Za-z0-9_:-]/.test(char),
+  }),
 });
 
-DEFAULT_TAG_NAME.isTagStartChar("_"); // true
-tagName.isTagChar(":"); // true
+dsl.parse("$$ui:button(hello)$$");
 ```
 
-这个 `tagName` 可以传给 `createParser(...)`，也可以传给 `parseRichText(...)`。
+**通过 `parseRichText`**（单次调用）：
 
-> **注意：** `createTagNameConfig()` 只是一个便利函数 — 你也可以直接向 `tagName` 传入一个部分对象
-> （如 `{ isTagChar: ... }`），解析器会自动用相同的默认值补齐未提供的字段。
+```ts
+import { parseRichText } from "yume-dsl-rich-text";
+
+const tokens = parseRichText("$$1ui:button(hello)$$", {
+  handlers: {
+    "1ui:button": {
+      inline: (value) => ({ type: "1ui:button", value }),
+    },
+  },
+  tagName: {
+    isTagStartChar: (char) => /[A-Za-z0-9_]/.test(char),
+    isTagChar: (char) => /[A-Za-z0-9_:-]/.test(char),
+  },
+});
+```
 
 ---
 
@@ -1062,11 +1067,11 @@ type ErrorCode =
 |-------------------------|-------------------|
 | `DEPTH_LIMIT`           | 嵌套超过 `depthLimit` |
 | `UNEXPECTED_CLOSE`      | 孤立的关闭标签，无匹配的打开标签  |
-| `INLINE_NOT_CLOSED`     | 行内标签未闭合           |
-| `BLOCK_NOT_CLOSED`      | 块级关闭标记缺失          |
-| `BLOCK_CLOSE_MALFORMED` | 块级关闭标记存在但格式错误     |
-| `RAW_NOT_CLOSED`        | 原始关闭标记缺失          |
-| `RAW_CLOSE_MALFORMED`   | 原始关闭标记存在但格式错误     |
+| `INLINE_NOT_CLOSED`     | Inline 标签未闭合      |
+| `BLOCK_NOT_CLOSED`      | Block 关闭标记缺失      |
+| `BLOCK_CLOSE_MALFORMED` | Block 关闭标记存在但格式错误 |
+| `RAW_NOT_CLOSED`        | Raw 关闭标记缺失        |
+| `RAW_CLOSE_MALFORMED`   | Raw 关闭标记存在但格式错误   |
 
 ---
 
@@ -1105,7 +1110,7 @@ dsl.parse("Hello $$bold(world)$$ and $$italic(goodbye)$$");
 ```ts
 const dsl = createParser({
   handlers: {
-    // "note" 只支持行内，不支持原始
+    // "note" 只支持 inline，不支持 raw
     note: { inline: (tokens) => ({ type: "note", value: tokens }) },
   },
 });
@@ -1114,7 +1119,7 @@ dsl.parse("$$note(ok)%\nraw content\n%end$$");
 ```
 
 ```ts
-// 原始形式不受支持 → 整个标签降级为回退文本
+// raw 形式不受支持 → 整个标签降级为回退文本
 [
   { type: "text", value: "$$note(ok)%\nraw content\n%end$$", id: "rt-0" },
 ]
@@ -1134,7 +1139,7 @@ const dsl = createParser({
 });
 
 dsl.parse("$$bold(hello)$$");
-// → [{ type: "bold", ... }]   ✓ 行内正常工作
+// → [{ type: "bold", ... }]   ✓ inline 正常工作
 
 dsl.parse("$$code(ts)%\nconst x = 1;\n%end$$");
 // → [{ type: "text", value: "$$code(ts)%\nconst x = 1;\n%end$$", ... }]
@@ -1159,6 +1164,13 @@ dsl.parse("Hello $$bold(world", { onError: (e) => errors.push(e) });
 ---
 
 ## 更新日志
+
+### 0.1.13
+
+- 重组 `index.ts` 导出分组：配置、处理器辅助函数、处理器工具函数、类型子分组
+- 重组 README「工具函数导出」章节为 配置 / 处理器辅助函数 / 处理器工具函数 子表格
+- 将所有 `tagName` 文档集中到「自定义标签名字符规则」章节
+- 修复 IDEA 中 dist smoke test 的 TS7016 错误（改用包名自引用 + `paths` 映射）
 
 ### 0.1.12
 
@@ -1189,7 +1201,7 @@ dsl.parse("Hello $$bold(world", { onError: (e) => errors.push(e) });
 - 移除 source map 文件以减小发布包体积
 - 修复 `allowForms`：当禁用 `"inline"` 时，仍保留 `raw` / `block` handler 的标签不再错误接受 inline 语法
 - 修复 `allowForms`：当禁用 `"inline"` 时，未注册的 `$$unknown(...)$$` 也会按原文保留
-- 修复 `createSimpleBlockHandlers()` / `createSimpleRawHandlers()`：块级 / 原始 helper 不再隐式接受 inline 语法
+- 修复 `createSimpleBlockHandlers()` / `createSimpleRawHandlers()`：block / raw helper 不再隐式接受 inline 语法
 - 修复自定义 syntax 对多字符 `tagOpen` / `tagClose` / `tagDivider` 的解析问题
 - 修复 `allowForms: ["inline"]`：已注册但被 form 过滤掉的 block/raw-only 标签会按原文保留，不再被当成 unknown inline 标签
 - 为 `onError` 增加保护，用户回调抛错时不再中断解析
@@ -1202,10 +1214,10 @@ dsl.parse("Hello $$bold(world", { onError: (e) => errors.push(e) });
 ### 0.1.8
 
 - 新增 `ParseOptions.allowForms` 选项 — 限制解析器接受的标签形式（`"inline"`、`"raw"`、`"block"`），被禁用的形式优雅降级
-- 新增 `createSimpleInlineHandlers(names)` 辅助函数 — 批量注册简单行内标签，无需编写重复的处理器对象
+- 新增 `createSimpleInlineHandlers(names)` 辅助函数 — 批量注册简单 inline 标签，无需编写重复的处理器对象
 - 新增 `declareMultilineTags(names)` 辅助函数 — 声明哪些标签需要多行换行符修剪（`blockTags`）
-- 新增 `createSimpleBlockHandlers(names)` 辅助函数 — 批量注册简单块级标签
-- 新增 `createSimpleRawHandlers(names)` 辅助函数 — 批量注册简单原始标签
+- 新增 `createSimpleBlockHandlers(names)` 辅助函数 — 批量注册简单 block 标签
+- 新增 `createSimpleRawHandlers(names)` 辅助函数 — 批量注册简单 raw 标签
 - 新增 `createPassthroughTags(names)` 辅助函数 — 批量注册空处理器的标签名（进阶用法）
 - 所有辅助函数均通过 `const` 泛型保留字面量 key 类型 — `createSimpleInlineHandlers(["bold", "italic"])` 推导为
   `Record<"bold" | "italic", TagHandler>`
@@ -1251,7 +1263,7 @@ dsl.parse("Hello $$bold(world", { onError: (e) => errors.push(e) });
 ### 0.1.0
 
 - 首次发布
-- 支持行内、原始和块级标签形式的递归 DSL 解析器
+- 支持 inline、raw 和 block 标签形式的递归 DSL 解析器
 - 可插拔的标签处理器，支持优雅降级
 - 可配置语法符号
 - 工具函数：`parsePipeArgs`、`extractText`、`materializeTextTokens` 等
