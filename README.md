@@ -131,10 +131,10 @@ What this package **does not do**:
 
 ## Ecosystem
 
-| Package                                                     | Role                                                    |
-|-------------------------------------------------------------|---------------------------------------------------------|
-| [`yume-dsl-rich-text`](https://github.com/chiba233/yumeDSL) | Parser core — text to token tree                        |
-| **`@yume-dsl/render-core`**                                 | Render core — token tree to output nodes (this package) |
+| Package                                                                      | Role                                                    |
+|------------------------------------------------------------------------------|---------------------------------------------------------|
+| **`yume-dsl-rich-text`**                                                     | Parser core — text to token tree                        |
+| [`@yume-dsl/render-core`](https://github.com/chiba233/yume-dsl-render-core/) | Render core — token tree to output nodes (this package) |
 
 ---
 
@@ -885,17 +885,17 @@ Convenience functions for creating handlers in bulk — most projects only need 
 Lower-level tools for writing custom `TagHandler` implementations.
 You will not need these if you only use the handler helpers above.
 
-| Export                              | Who uses it                                | Description                                                |
-|-------------------------------------|--------------------------------------------|------------------------------------------------------------|
-| `parsePipeArgs(tokens)`             | Custom handlers with `\|`-separated params | Split tokens by pipe and access parsed parts               |
-| `parsePipeTextArgs(text)`           | Custom handlers parsing raw args           | Same as above, but from a plain text string                |
-| `parsePipeTextList(text)`           | Custom handlers needing `string[]` args    | Split a pipe-delimited string into trimmed `string[]`      |
-| `splitTokensByPipe(tokens)`         | Low-level handler code                     | Raw token splitter without helper methods                  |
-| `extractText(tokens)`               | Handlers that need plain-text values       | Flatten a token tree into a single string                  |
-| `materializeTextTokens(tokens)`     | Handlers returning processed child tokens  | Recursively unescape text tokens in a tree                 |
-| `unescapeInline(str)`               | Handlers processing raw strings            | Unescape DSL escape sequences in a single string           |
-| `createToken(draft)`                | Handlers building tokens manually          | Add an `id` to a `TokenDraft`                              |
-| `resetTokenIdSeed()`                | Test code                                  | Reset the token id counter for deterministic test output   |
+| Export                          | Who uses it                                | Description                                              |
+|---------------------------------|--------------------------------------------|----------------------------------------------------------|
+| `parsePipeArgs(tokens)`         | Custom handlers with `\|`-separated params | Split tokens by pipe and access parsed parts             |
+| `parsePipeTextArgs(text)`       | Custom handlers parsing raw args           | Same as above, but from a plain text string              |
+| `parsePipeTextList(text)`       | Custom handlers needing `string[]` args    | Split a pipe-delimited string into trimmed `string[]`    |
+| `splitTokensByPipe(tokens)`     | Low-level handler code                     | Raw token splitter without helper methods                |
+| `extractText(tokens)`           | Handlers that need plain-text values       | Flatten a token tree into a single string                |
+| `materializeTextTokens(tokens)` | Handlers returning processed child tokens  | Recursively unescape text tokens in a tree               |
+| `unescapeInline(str)`           | Handlers processing raw strings            | Unescape DSL escape sequences in a single string         |
+| `createToken(draft)`            | Handlers building tokens manually          | Add an `id` to a `TokenDraft`                            |
+| `resetTokenIdSeed()`            | Test code                                  | Reset the token id counter for deterministic test output |
 
 > During parsing, token ids default to a parse-local sequence (`rt-0`, `rt-1`, ...).
 > `createToken()` only uses the module-level counter when called outside an active parse, and `resetTokenIdSeed()` is
