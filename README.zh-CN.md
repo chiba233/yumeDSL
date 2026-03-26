@@ -18,8 +18,8 @@
 
 | 包                                                                            | 角色                      |
 |------------------------------------------------------------------------------|-------------------------|
-| **`yume-dsl-rich-text`**                                                     | 解析器核心 — 文本到 token 树     |
-| [`@yume-dsl/render-core`](https://github.com/chiba233/yume-dsl-render-core/) | 渲染核心 — token 树到输出节点（本包） |
+| **`yume-dsl-rich-text`**                                                     | 解析器核心 — 文本到 token 树（本包） |
+| [`@yume-dsl/render-core`](https://github.com/chiba233/yume-dsl-render-core/) | 渲染核心 — token 树到输出节点     |
 
 ---
 

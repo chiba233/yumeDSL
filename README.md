@@ -131,10 +131,10 @@ What this package **does not do**:
 
 ## Ecosystem
 
-| Package                                                                      | Role                                                    |
-|------------------------------------------------------------------------------|---------------------------------------------------------|
-| **`yume-dsl-rich-text`**                                                     | Parser core — text to token tree                        |
-| [`@yume-dsl/render-core`](https://github.com/chiba233/yume-dsl-render-core/) | Render core — token tree to output nodes (this package) |
+| Package                                                                      | Role                                            |
+|------------------------------------------------------------------------------|-------------------------------------------------|
+| **`yume-dsl-rich-text`**                                                     | Parser core — text to token tree (this package) |
+| [`@yume-dsl/render-core`](https://github.com/chiba233/yume-dsl-render-core/) | Render core — token tree to output nodes        |
 
 ---
 
