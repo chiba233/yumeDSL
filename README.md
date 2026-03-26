@@ -996,6 +996,10 @@ Without `onError`, the same recovery happens silently — no error is thrown.
 
 ## Changelog
 
+### 0.1.9
+
+- Remove source maps to reduce package size
+
 ### 0.1.8
 
 - Add `allowForms` option to `ParseOptions` — restrict which tag forms (`"inline"`, `"raw"`, `"block"`) the parser

@@ -984,6 +984,10 @@ dsl.parse("Hello $$bold(world", { onError: (e) => errors.push(e) });
 
 ## 更新日志
 
+### 0.1.9
+
+- 移除 source map 文件以减小发布包体积
+
 ### 0.1.8
 
 - 新增 `ParseOptions.allowForms` 选项 — 限制解析器接受的标签形式（`"inline"`、`"raw"`、`"block"`），被禁用的形式优雅降级
