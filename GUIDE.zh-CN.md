@@ -2,6 +2,12 @@
 
 # yume-dsl-rich-text (ユメテキスト)
 
+### [▶ 在线演示 — DSL Fallback Museum](https://qwwq.org/blog/dsl-fallback-museum)
+
+Shiki 代码高亮插件（未发布）· 合法插件用法 · 各种故意书写错误 · 错误报告
+
+---
+
 <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white" />
 
 [![npm](https://img.shields.io/npm/v/yume-dsl-rich-text)](https://www.npmjs.com/package/yume-dsl-rich-text)
@@ -63,6 +69,7 @@
 - [错误处理](#错误处理)
 - [优雅降级](#优雅降级)
 - [Vue 3 渲染](#vue-3-渲染)
+- [在线演示](#在线演示)
 - [更新日志](#更新日志)
 - [许可证](#许可证)
 
@@ -1444,13 +1451,10 @@ tagMap.date = DateText;
 
 ## 更新日志
 
-### 0.1.16
+### 0.1.15 – 0.1.17
 
-- 更新markdown文案
+- 新增[在线演示](https://qwwq.org/blog/dsl-fallback-museum) — 展示 Shiki 代码高亮插件、合法插件用法、故意书写错误的标记及错误报告
 - 优化 npm 包体积，排除非必要文档（缩小约 30%）
-
-### 0.1.15
-
 - 新增 Vue 3 渲染指南，提供开箱即用的递归渲染组件示例
 - 新增社区文档：`CONTRIBUTING.md`、`SECURITY.md`、Issue 模板、PR 模板
 - 新增 `CONTRIBUTING.zh-CN.md` 中文贡献指南

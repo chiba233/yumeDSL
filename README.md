@@ -2,6 +2,12 @@
 
 # yume-dsl-rich-text(ユメテキスト)
 
+### [▶ Live Demo — DSL Fallback Museum](https://qwwq.org/blog/dsl-fallback-museum)
+
+Shiki code-highlighting plugin (unpublished) · legitimate plugins · intentional malformed markup · error reporting
+
+---
+
 <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white" />
 
 [![npm](https://img.shields.io/npm/v/yume-dsl-rich-text)](https://www.npmjs.com/package/yume-dsl-rich-text)
@@ -63,6 +69,7 @@ You define your own semantics and rendering layer.
 - [Error Handling](#error-handling)
 - [Graceful Degradation](#graceful-degradation)
 - [Vue 3 Rendering](#vue-3-rendering)
+- [Live Demo](#live-demo)
 - [Changelog](#changelog)
 - [License](#license)
 
@@ -1481,13 +1488,10 @@ tagMap.date = DateText;
 
 ## Changelog
 
-### 0.1.16
+### 0.1.15 – 0.1.17
 
-- Update Markdown
+- Add [Live Demo](https://qwwq.org/blog/dsl-fallback-museum) — showcasing Shiki code-highlighting plugin, legitimate plugins, malformed markup, and error reporting
 - Optimize npm package size by excluding non-essential docs (~30% smaller)
-
-### 0.1.15
-
 - Add Vue 3 rendering guide with drop-in recursive component example
 - Add community docs: `CONTRIBUTING.md`, `SECURITY.md`, issue templates, PR template
 - Add Chinese translations for `CONTRIBUTING.zh-CN.md`
