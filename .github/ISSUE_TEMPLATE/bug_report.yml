@@ -1,0 +1,80 @@
+name: Bug Report
+description: Report a bug or unexpected behavior
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Package version
+      description: "Run `npm ls yume-dsl-rich-text` or check your package.json"
+      placeholder: "e.g. 0.1.13"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug description
+      description: A clear description of what the bug is.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: |
+        Provide the minimal code to reproduce the issue.
+        If possible, include the DSL input string and the expected vs actual output.
+      placeholder: |
+        import { createParser, createSimpleInlineHandlers } from "yume-dsl-rich-text";
+
+        const dsl = createParser({
+          handlers: { ...createSimpleInlineHandlers(["bold"]) },
+        });
+
+        const result = dsl.parse("$$bold(hello)$$");
+        console.log(result);
+        // Expected: ...
+        // Actual: ...
+      render: typescript
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Runtime
+      options:
+        - Node.js
+        - Bun
+        - Deno
+        - Browser
+        - Other
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Anything else that might help (error messages, screenshots, stack traces, etc.)
+    validations:
+      required: false

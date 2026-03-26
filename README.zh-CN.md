@@ -58,6 +58,7 @@
 - [自定义标签名字符规则](#自定义标签名字符规则)
 - [错误处理](#错误处理)
 - [优雅降级](#优雅降级)
+- [Vue 3 渲染](#vue-3-渲染)
 - [更新日志](#更新日志)
 - [许可证](#许可证)
 
@@ -123,12 +124,6 @@
 - 确定性线性扫描
 
 ---
-
-## 生态
-
-- [`@yume-dsl/markdown-it-rich-text`](https://github.com/chiba233/markdown-it-yume-dsl)  
-  一个从本项目派生出来的 `markdown-it` 适配包，用于把 `yume-dsl-rich-text` 嵌入 `:::yume` 风格的
-  Markdown 容器中。
 
 ---
 
@@ -1179,7 +1174,277 @@ dsl.parse("Hello $$bold(world", { onError: (e) => errors.push(e) });
 
 ---
 
+## Vue 3 渲染
+
+解析器输出 `TextToken[]` 树 — 下面是一个开箱即用的递归 Vue 3 组件，可直接渲染它。
+
+### 1. 配置解析器
+
+```ts
+// dsl.ts
+import {
+  createParser,
+  createSimpleInlineHandlers,
+  parsePipeArgs,
+  parsePipeTextArgs,
+  createToken,
+  materializeTextTokens,
+  type TagHandler,
+  type TokenDraft,
+} from "yume-dsl-rich-text";
+
+const titledHandler = (type: string, defaultTitle: string): TagHandler => ({
+  inline: (tokens): TokenDraft => {
+    const args = parsePipeArgs(tokens);
+    if (args.parts.length <= 1) {
+      return { type, title: defaultTitle, value: args.materializedTokens(0) };
+    }
+    return { type, title: args.text(0), value: args.materializedTailTokens(1) };
+  },
+  block: (arg, tokens): TokenDraft => ({
+    type,
+    title: arg || defaultTitle,
+    value: tokens,
+  }),
+  raw: (arg, content): TokenDraft => ({
+    type,
+    title: arg || defaultTitle,
+    value: [createToken({ type: "text", value: content })],
+  }),
+});
+
+const collapseBase = titledHandler("collapse", "点击展开");
+
+export const dsl = createParser({
+  handlers: {
+    ...createSimpleInlineHandlers([
+      "bold", "thin", "underline", "strike", "code", "center",
+    ]),
+
+    link: {
+      inline: (tokens): TokenDraft => {
+        const args = parsePipeArgs(tokens);
+        const url = args.text(0);
+        const display =
+          args.parts.length > 1
+            ? args.materializedTailTokens(1)
+            : args.materializedTokens(0);
+        return { type: "link", url, value: display };
+      },
+    },
+
+    info:    titledHandler("info", "提示"),
+    warning: titledHandler("warning", "警告"),
+
+    collapse: { block: collapseBase.block, raw: collapseBase.raw },
+
+    "raw-code": {
+      raw: (arg, content): TokenDraft => {
+        const args = parsePipeTextArgs(arg ?? "");
+        return {
+          type: "raw-code",
+          codeLang: args.text(0),
+          title: args.text(1) || "代码：",
+          label: args.text(2) ?? "",
+          value: content,
+        };
+      },
+    },
+
+    date: {
+      inline: (tokens): TokenDraft => {
+        const args = parsePipeArgs(tokens);
+        return {
+          type: "date",
+          date: args.text(0),
+          format: args.text(1) || undefined,
+          value: "",
+        };
+      },
+    },
+
+    fromNow: {
+      inline: (tokens): TokenDraft => {
+        const args = parsePipeArgs(tokens);
+        return {
+          type: "fromNow",
+          date: args.text(0),
+          value: "",
+        };
+      },
+    },
+  },
+});
+```
+
+### 2. 创建递归渲染组件
+
+```vue
+<!-- RichTextRenderer.vue -->
+<script lang="ts" setup>
+import type { TextToken } from "yume-dsl-rich-text";
+import { type Component, h } from "vue";
+
+defineOptions({ name: "RichTextRenderer" });
+
+const props = defineProps<{
+  tokens: TextToken[];
+}>();
+
+/* ── 标签 → 元素 / 组件映射 ── */
+type RenderTarget = string | Component;
+
+const tagMap: Record<string, RenderTarget> = {
+  bold:      "strong",
+  thin:      "span",
+  underline: "span",
+  strike:    "s",
+  center:    "span",
+  code:      "code",
+  link:      "a",
+  // 在这里添加你自己的组件映射，例如：
+  // info:     NAlert,
+  // collapse: CollapseWrapper,
+};
+
+/* ── 每个类型的 props ── */
+const getComponentProps = (token: TextToken) => {
+  switch (token.type) {
+    case "link":
+      return {
+        href: normalizeUrl(token.url as string),
+        rel: "noopener noreferrer",
+        target: "_blank",
+      };
+    case "info":
+    case "warning":
+      return { title: token.title };
+    case "collapse":
+      return { title: token.title ?? "" };
+    case "raw-code":
+      return {
+        code: token.value as string,
+        codeLang: token.codeLang,
+        title: token.title,
+        label: token.label,
+      };
+    default:
+      return {};
+  }
+};
+
+/* ── 每个类型的 CSS 类 ── */
+const getComponentClass = (token: TextToken) => [
+  `rich-${token.type}`,
+  {
+    "rich-underline": token.type === "underline",
+    "rich-strike":    token.type === "strike",
+    "rich-center":    token.type === "center",
+    "rich-code":      token.type === "code",
+  },
+];
+
+/* ── URL 安全校验 ── */
+const normalizeUrl = (raw: string): string | undefined => {
+  if (!raw) return undefined;
+  try {
+    const url = raw.match(/^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//)
+      ? new URL(raw)
+      : new URL("https://" + raw);
+    return ["http:", "https:"].includes(url.protocol) ? url.href : undefined;
+  } catch {
+    return undefined;
+  }
+};
+</script>
+
+<template>
+  <template v-for="token in tokens" :key="token.id">
+    <!-- 纯文本 -->
+    <span v-if="token.type === 'text'" v-text="token.value" />
+
+    <!-- raw-code：value 是字符串，不递归 -->
+    <component
+      v-else-if="token.type === 'raw-code'"
+      :is="tagMap[token.type] ?? 'pre'"
+      :class="getComponentClass(token)"
+      v-bind="getComponentProps(token)"
+    >{{ token.value }}</component>
+
+    <!-- 其他：递归渲染子节点 -->
+    <component
+      v-else
+      :is="tagMap[token.type] ?? 'span'"
+      :class="getComponentClass(token)"
+      v-bind="getComponentProps(token)"
+    >
+      <RichTextRenderer
+        v-if="Array.isArray(token.value) && token.value.length"
+        :tokens="token.value"
+      />
+      <template v-else-if="typeof token.value === 'string'">
+        {{ token.value }}
+      </template>
+    </component>
+  </template>
+</template>
+```
+
+### 3. 使用
+
+```vue
+<script setup>
+import { dsl } from "./dsl";
+import RichTextRenderer from "./RichTextRenderer.vue";
+
+const tokens = dsl.parse(
+  "你好 $$bold(世界)$$！访问 $$link(https://example.com|我的网站)$$。"
+);
+</script>
+
+<template>
+  <RichTextRenderer :tokens="tokens" />
+</template>
+```
+
+### 扩展 UI 组件库
+
+`tagMap` 是集成入口。将任意标签类型映射到 Vue 组件即可：
+
+```ts
+import { NAlert, NCollapse, NCollapseItem } from "naive-ui";
+import CodeBlock from "./CodeBlock.vue";
+
+const tagMap: Record<string, RenderTarget> = {
+  bold:       "strong",
+  link:       "a",
+  info:       NAlert,        // $$info(标题)* ... *end$$ 渲染为 <n-alert>
+  warning:    NAlert,
+  "raw-code": CodeBlock,     // $$raw-code(ts)% ... %end$$ 渲染为你的代码块组件
+  collapse:   CollapseWrapper,
+};
+```
+
+对于需要运行时逻辑的标签（如日期格式化），使用函数式组件：
+
+```ts
+import { type FunctionalComponent, h } from "vue";
+
+const DateText: FunctionalComponent<{ date?: string }> = (props) =>
+  h("span", formatDate(props.date));
+
+tagMap.date = DateText;
+```
+
+---
+
 ## 更新日志
+
+### 0.1.15
+
+- 新增 Vue 3 渲染指南，提供开箱即用的递归渲染组件示例
+- 新增社区文档：`CONTRIBUTING.md`、`SECURITY.md`、Issue 模板、PR 模板
+- 新增 `CONTRIBUTING.zh-CN.md` 中文贡献指南
 
 ### 0.1.14
 

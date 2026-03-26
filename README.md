@@ -58,6 +58,7 @@ You define your own semantics and rendering layer.
 - [Custom Tag Name Characters](#custom-tag-name-characters)
 - [Error Handling](#error-handling)
 - [Graceful Degradation](#graceful-degradation)
+- [Vue 3 Rendering](#vue-3-rendering)
 - [Changelog](#changelog)
 - [License](#license)
 
@@ -1210,7 +1211,277 @@ Without `onError`, the same recovery happens silently — no error is thrown.
 
 ---
 
+## Vue 3 Rendering
+
+The parser produces a `TextToken[]` tree — here is a drop-in recursive Vue 3 component that renders it.
+
+### 1. Set up the parser
+
+```ts
+// dsl.ts
+import {
+  createParser,
+  createSimpleInlineHandlers,
+  parsePipeArgs,
+  parsePipeTextArgs,
+  createToken,
+  materializeTextTokens,
+  type TagHandler,
+  type TokenDraft,
+} from "yume-dsl-rich-text";
+
+const titledHandler = (type: string, defaultTitle: string): TagHandler => ({
+  inline: (tokens): TokenDraft => {
+    const args = parsePipeArgs(tokens);
+    if (args.parts.length <= 1) {
+      return { type, title: defaultTitle, value: args.materializedTokens(0) };
+    }
+    return { type, title: args.text(0), value: args.materializedTailTokens(1) };
+  },
+  block: (arg, tokens): TokenDraft => ({
+    type,
+    title: arg || defaultTitle,
+    value: tokens,
+  }),
+  raw: (arg, content): TokenDraft => ({
+    type,
+    title: arg || defaultTitle,
+    value: [createToken({ type: "text", value: content })],
+  }),
+});
+
+const collapseBase = titledHandler("collapse", "Click to expand");
+
+export const dsl = createParser({
+  handlers: {
+    ...createSimpleInlineHandlers([
+      "bold", "thin", "underline", "strike", "code", "center",
+    ]),
+
+    link: {
+      inline: (tokens): TokenDraft => {
+        const args = parsePipeArgs(tokens);
+        const url = args.text(0);
+        const display =
+          args.parts.length > 1
+            ? args.materializedTailTokens(1)
+            : args.materializedTokens(0);
+        return { type: "link", url, value: display };
+      },
+    },
+
+    info:    titledHandler("info", "Info"),
+    warning: titledHandler("warning", "Warning"),
+
+    collapse: { block: collapseBase.block, raw: collapseBase.raw },
+
+    "raw-code": {
+      raw: (arg, content): TokenDraft => {
+        const args = parsePipeTextArgs(arg ?? "");
+        return {
+          type: "raw-code",
+          codeLang: args.text(0),
+          title: args.text(1) || "Code:",
+          label: args.text(2) ?? "",
+          value: content,
+        };
+      },
+    },
+
+    date: {
+      inline: (tokens): TokenDraft => {
+        const args = parsePipeArgs(tokens);
+        return {
+          type: "date",
+          date: args.text(0),
+          format: args.text(1) || undefined,
+          value: "",
+        };
+      },
+    },
+
+    fromNow: {
+      inline: (tokens): TokenDraft => {
+        const args = parsePipeArgs(tokens);
+        return {
+          type: "fromNow",
+          date: args.text(0),
+          value: "",
+        };
+      },
+    },
+  },
+});
+```
+
+### 2. Create the recursive renderer component
+
+```vue
+<!-- RichTextRenderer.vue -->
+<script lang="ts" setup>
+import type { TextToken } from "yume-dsl-rich-text";
+import { type Component, h } from "vue";
+
+defineOptions({ name: "RichTextRenderer" });
+
+const props = defineProps<{
+  tokens: TextToken[];
+}>();
+
+/* ── tag → element / component map ── */
+type RenderTarget = string | Component;
+
+const tagMap: Record<string, RenderTarget> = {
+  bold:      "strong",
+  thin:      "span",
+  underline: "span",
+  strike:    "s",
+  center:    "span",
+  code:      "code",
+  link:      "a",
+  // Add your own component mappings here, e.g.:
+  // info:     NAlert,
+  // collapse: CollapseWrapper,
+};
+
+/* ── per-type props ── */
+const getComponentProps = (token: TextToken) => {
+  switch (token.type) {
+    case "link":
+      return {
+        href: normalizeUrl(token.url as string),
+        rel: "noopener noreferrer",
+        target: "_blank",
+      };
+    case "info":
+    case "warning":
+      return { title: token.title };
+    case "collapse":
+      return { title: token.title ?? "" };
+    case "raw-code":
+      return {
+        code: token.value as string,
+        codeLang: token.codeLang,
+        title: token.title,
+        label: token.label,
+      };
+    default:
+      return {};
+  }
+};
+
+/* ── per-type CSS classes ── */
+const getComponentClass = (token: TextToken) => [
+  `rich-${token.type}`,
+  {
+    "rich-underline": token.type === "underline",
+    "rich-strike":    token.type === "strike",
+    "rich-center":    token.type === "center",
+    "rich-code":      token.type === "code",
+  },
+];
+
+/* ── URL sanitiser ── */
+const normalizeUrl = (raw: string): string | undefined => {
+  if (!raw) return undefined;
+  try {
+    const url = raw.match(/^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//)
+      ? new URL(raw)
+      : new URL("https://" + raw);
+    return ["http:", "https:"].includes(url.protocol) ? url.href : undefined;
+  } catch {
+    return undefined;
+  }
+};
+</script>
+
+<template>
+  <template v-for="token in tokens" :key="token.id">
+    <!-- plain text -->
+    <span v-if="token.type === 'text'" v-text="token.value" />
+
+    <!-- raw-code: value is a string, no recursion -->
+    <component
+      v-else-if="token.type === 'raw-code'"
+      :is="tagMap[token.type] ?? 'pre'"
+      :class="getComponentClass(token)"
+      v-bind="getComponentProps(token)"
+    >{{ token.value }}</component>
+
+    <!-- everything else: recurse into children -->
+    <component
+      v-else
+      :is="tagMap[token.type] ?? 'span'"
+      :class="getComponentClass(token)"
+      v-bind="getComponentProps(token)"
+    >
+      <RichTextRenderer
+        v-if="Array.isArray(token.value) && token.value.length"
+        :tokens="token.value"
+      />
+      <template v-else-if="typeof token.value === 'string'">
+        {{ token.value }}
+      </template>
+    </component>
+  </template>
+</template>
+```
+
+### 3. Use it
+
+```vue
+<script setup>
+import { dsl } from "./dsl";
+import RichTextRenderer from "./RichTextRenderer.vue";
+
+const tokens = dsl.parse(
+  "Hello $$bold(world)$$! Visit $$link(https://example.com|my site)$$."
+);
+</script>
+
+<template>
+  <RichTextRenderer :tokens="tokens" />
+</template>
+```
+
+### Extending with UI libraries
+
+The `tagMap` object is the integration point. Map any tag type to a Vue component:
+
+```ts
+import { NAlert, NCollapse, NCollapseItem } from "naive-ui";
+import CodeBlock from "./CodeBlock.vue";
+
+const tagMap: Record<string, RenderTarget> = {
+  bold:       "strong",
+  link:       "a",
+  info:       NAlert,        // renders $$info(title)* ... *end$$ as <n-alert>
+  warning:    NAlert,
+  "raw-code": CodeBlock,     // renders $$raw-code(ts)% ... %end$$ as your code block
+  collapse:   CollapseWrapper,
+};
+```
+
+For tags that need runtime logic (e.g. date formatting), use a functional component:
+
+```ts
+import { type FunctionalComponent, h } from "vue";
+
+const DateText: FunctionalComponent<{ date?: string }> = (props) =>
+  h("span", formatDate(props.date));
+
+tagMap.date = DateText;
+```
+
+---
+
 ## Changelog
+
+### 0.1.15
+
+- Add Vue 3 rendering guide with drop-in recursive component example
+- Add community docs: `CONTRIBUTING.md`, `SECURITY.md`, issue templates, PR template
+- Add Chinese translations for `CONTRIBUTING.zh-CN.md`
 
 ### 0.1.14
 

@@ -1,7 +1,7 @@
 {
   "name": "yume-dsl-rich-text",
   "version": "0.1.13",
-  "description": "A recursive rich-text DSL parser with pluggable tag handlers",
+  "description": "Single-pass recursive rich-text DSL parser without regex, with pluggable tag handlers",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -18,6 +18,8 @@
   "files": [
     "dist",
     "README.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
     "LICENSE"
   ],
   "type": "module",
@@ -32,14 +34,11 @@
     "rich-text",
     "parser",
     "custom-markup",
-    "extensible",
-    "pluggable",
-    "recursive",
-    "nested",
     "single-pass",
+    "recursive",
+    "pluggable",
     "no-regex",
     "markdown-alternative",
-    "content-rendering",
     "blog-engine"
   ],
   "author": "Hoshino Yumeka",
