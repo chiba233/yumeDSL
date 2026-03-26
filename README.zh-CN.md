@@ -796,23 +796,24 @@ const tokens = dsl.parse(input);
 
 如果你只使用 `createSimpleInlineHandlers` / `createPassthroughTags`，则不需要这些函数。
 
-| 导出                                  | 使用者               | 说明                                |
-|-------------------------------------|-------------------|-----------------------------------|
-| `parsePipeArgs(tokens)`             | 带 `\|` 参数的自定义处理器  | 按管道分割 token 并访问解析后的部分             |
-| `parsePipeTextArgs(text)`           | 解析原始参数的自定义处理器     | 同上，但输入为纯文本字符串                     |
-| `splitTokensByPipe(tokens)`         | 底层处理器代码           | 原始 token 分割器，不含辅助方法               |
-| `extractText(tokens)`               | 需要纯文本值的处理器        | 将 token 树展平为单个字符串                 |
-| `materializeTextTokens(tokens)`     | 返回处理后子 token 的处理器 | 递归反转义 token 树中的文本 token           |
-| `unescapeInline(str)`               | 处理原始字符串的处理器       | 反转义单个字符串中的 DSL 转义序列               |
-| `createToken(draft)`                | 手动构建 token 的处理器   | 为 `TokenDraft` 添加自增 `id`          |
-| `resetTokenIdSeed()`                | 测试代码              | 重置 token id 计数器，用于确定性测试输出         |
-| `createSimpleInlineHandlers(names)` | 初始化代码             | 批量创建简单标签的行内处理器                    |
-| `declareMultilineTags(names)`       | 初始化代码             | 声明哪些标签需要多行换行符修剪                   |
-| `createSimpleBlockHandlers(names)`  | 初始化代码             | 批量创建简单标签的块级处理器                    |
-| `createSimpleRawHandlers(names)`    | 初始化代码             | 批量创建简单标签的原始处理器                    |
-| `createPipeBlockHandlers(names)`    | 初始化代码             | 创建同时暴露 `arg` 与 `args` 的 block 处理器 |
-| `createPipeRawHandlers(names)`      | 初始化代码             | 创建同时暴露 `arg` 与 `args` 的 raw 处理器   |
-| `createPassthroughTags(names)`      | 初始化代码             | 批量注册空处理器的标签名                      |
+| 导出                                  | 使用者                   | 说明                                |
+|-------------------------------------|-----------------------|-----------------------------------|
+| `parsePipeArgs(tokens)`             | 带 `\|` 参数的自定义处理器      | 按管道分割 token 并访问解析后的部分             |
+| `parsePipeTextArgs(text)`           | 解析原始参数的自定义处理器         | 同上，但输入为纯文本字符串                     |
+| `parsePipeTextList(text)`           | 只需 `string[]` 的自定义处理器 | 将管道分隔字符串直接拆分为 trim 后的 `string[]`  |
+| `splitTokensByPipe(tokens)`         | 底层处理器代码               | 原始 token 分割器，不含辅助方法               |
+| `extractText(tokens)`               | 需要纯文本值的处理器            | 将 token 树展平为单个字符串                 |
+| `materializeTextTokens(tokens)`     | 返回处理后子 token 的处理器     | 递归反转义 token 树中的文本 token           |
+| `unescapeInline(str)`               | 处理原始字符串的处理器           | 反转义单个字符串中的 DSL 转义序列               |
+| `createToken(draft)`                | 手动构建 token 的处理器       | 为 `TokenDraft` 添加自增 `id`          |
+| `resetTokenIdSeed()`                | 测试代码                  | 重置 token id 计数器，用于确定性测试输出         |
+| `createSimpleInlineHandlers(names)` | 初始化代码                 | 批量创建简单标签的行内处理器                    |
+| `declareMultilineTags(names)`       | 初始化代码                 | 声明哪些标签需要多行换行符修剪                   |
+| `createSimpleBlockHandlers(names)`  | 初始化代码                 | 批量创建简单标签的块级处理器                    |
+| `createSimpleRawHandlers(names)`    | 初始化代码                 | 批量创建简单标签的原始处理器                    |
+| `createPipeBlockHandlers(names)`    | 初始化代码                 | 创建同时暴露 `arg` 与 `args` 的 block 处理器 |
+| `createPipeRawHandlers(names)`      | 初始化代码                 | 创建同时暴露 `arg` 与 `args` 的 raw 处理器   |
+| `createPassthroughTags(names)`      | 初始化代码                 | 批量注册空处理器的标签名                      |
 
 > `createToken()` 和自定义 syntax 的内部切换依赖模块级状态。
 > `resetTokenIdSeed()` 主要用于测试；自定义 `syntax` 也更适合同步解析流程。
@@ -837,6 +838,19 @@ interface PipeArgs {
 | `text(i)`                   | 第 `i` 部分的纯文本，已反转义并去除首尾空格   |
 | `materializedTokens(i)`     | 第 `i` 部分已反转义的 token        |
 | `materializedTailTokens(i)` | 从索引 `i` 起所有部分合并成的 token 数组 |
+
+### parsePipeTextList
+
+如果只需要文本值的 `string[]`（不需要 token 树），可以使用 `parsePipeTextList` 简写：
+
+```ts
+import { parsePipeTextList } from "yume-dsl-rich-text";
+
+parsePipeTextList("ts | Demo | Label");
+// → ["ts", "Demo", "Label"]
+```
+
+这也是 `createPipeBlockHandlers` 和 `createPipeRawHandlers` 内部使用的方法。
 
 ---
 
@@ -1051,6 +1065,13 @@ dsl.parse("Hello $$bold(world", { onError: (e) => errors.push(e) });
 ---
 
 ## 更新日志
+
+### 0.1.10
+
+- 新增 `parsePipeTextList(text)` 工具函数 — 将管道分隔的参数字符串直接拆分为 `string[]`，无需中间 token 分配
+- 重构 `createPipeBlockHandlers()` / `createPipeRawHandlers()`，内部改用 `parsePipeTextList`
+- 为 inline 形式门控函数（`supportsInlineForm`）添加决策表注释，防止后续修改引入回归
+- 为 `materializeTextTokens` 添加 JSDoc，明确其仅对 text 类型叶节点做反转义
 
 ### 0.1.9
 

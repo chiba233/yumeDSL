@@ -1,5 +1,5 @@
 import type { TagHandler, TextToken, TokenDraft } from "./types.js";
-import { materializeTextTokens, parsePipeTextArgs } from "./builders.js";
+import { materializeTextTokens, parsePipeTextList } from "./builders.js";
 
 /**
  * Create passthrough tag handlers that simply register tag names
@@ -132,15 +132,12 @@ export const createPipeBlockHandlers = <const T extends readonly string[]>(
   const result = {} as Record<T[number], TagHandler>;
   for (const name of names) {
     result[name as T[number]] = {
-      block: (arg: string | undefined, content: TextToken[]): TokenDraft => {
-        const parsed = arg === undefined ? null : parsePipeTextArgs(arg);
-        return {
-          type: name,
-          arg,
-          args: parsed ? parsed.parts.map((_, i) => parsed.text(i)) : [],
-          value: content,
-        };
-      },
+      block: (arg: string | undefined, content: TextToken[]): TokenDraft => ({
+        type: name,
+        arg,
+        args: arg === undefined ? [] : parsePipeTextList(arg),
+        value: content,
+      }),
     };
   }
   return result;
@@ -157,15 +154,12 @@ export const createPipeRawHandlers = <const T extends readonly string[]>(
   const result = {} as Record<T[number], TagHandler>;
   for (const name of names) {
     result[name as T[number]] = {
-      raw: (arg: string | undefined, content: string): TokenDraft => {
-        const parsed = arg === undefined ? null : parsePipeTextArgs(arg);
-        return {
-          type: name,
-          arg,
-          args: parsed ? parsed.parts.map((_, i) => parsed.text(i)) : [],
-          value: content,
-        };
-      },
+      raw: (arg: string | undefined, content: string): TokenDraft => ({
+        type: name,
+        arg,
+        args: arg === undefined ? [] : parsePipeTextList(arg),
+        value: content,
+      }),
     };
   }
   return result;

@@ -22,6 +22,7 @@ export {
   splitTokensByPipe,
   parsePipeArgs,
   parsePipeTextArgs,
+  parsePipeTextList,
 } from "./builders.js";
 export type { PipeArgs } from "./builders.js";
 export { unescapeInline } from "./escape.js";

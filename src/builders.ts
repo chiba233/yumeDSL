@@ -14,6 +14,11 @@ export const extractText = (tokens?: TextToken[]): string => {
   return result;
 };
 
+/**
+ * Recursively unescapes DSL escape sequences in **text-type leaf tokens only**.
+ * Non-text tokens and their string values (e.g. `raw-code` content) are left
+ * untouched — only `{ type: "text", value: string }` leaves are processed.
+ */
 export const materializeTextTokens = (tokens: TextToken[]): TextToken[] => {
   return tokens.map((token) => {
     if (typeof token.value === "string") {
@@ -92,3 +97,16 @@ export const parsePipeArgs = (tokens: TextToken[]): PipeArgs => {
 };
 
 export const parsePipeTextArgs = (text: string): PipeArgs => parsePipeArgs([createTextToken(text)]);
+
+/**
+ * Split a plain-text pipe-delimited arg string into trimmed string segments.
+ * Shorthand for the common pattern of `parsePipeTextArgs(text)` followed by
+ * mapping every part back to a trimmed string.
+ *
+ * @example
+ * parsePipeTextList("ts | Demo | Label")  // → ["ts", "Demo", "Label"]
+ */
+export const parsePipeTextList = (text: string): string[] => {
+  const parsed = parsePipeTextArgs(text);
+  return parsed.parts.map((_, i) => parsed.text(i));
+};

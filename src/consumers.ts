@@ -16,6 +16,21 @@ import { tryParseComplexTag } from "./complex.js";
 import { createToken } from "./createToken.js";
 import { consumeBlockTagTrailingLineBreak } from "./blockTagFormatting.js";
 
+/**
+ * Decide whether a tag may be consumed via the inline code path.
+ *
+ * Decision table (evaluated top-to-bottom, first match wins):
+ *
+ *  allowInline=false                          → reject  (global inline disabled)
+ *  handler missing + tag NOT registered       → accept  (unknown tag → passthrough)
+ *  handler missing + tag IS registered        → reject  (registered but filtered out by allowForms)
+ *  handler has `inline`                       → accept  (explicit inline support)
+ *  handler has only `raw` / `block`           → reject  (block/raw-only tag)
+ *  handler is empty `{}`                      → accept  (passthrough handler)
+ *
+ * ⚠ This function is the inline-form rules centre.
+ *   Changes here affect every tag in every parse mode — add tests, not shortcuts.
+ */
 const supportsInlineForm = (
   handler: ParseContext["handlers"][string] | undefined,
   allowInline: boolean,

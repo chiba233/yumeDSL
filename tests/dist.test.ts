@@ -44,6 +44,7 @@ const smokeTest = (mod: DistModule, label: string) => {
         assert.equal(typeof mod.splitTokensByPipe, "function");
         assert.equal(typeof mod.parsePipeArgs, "function");
         assert.equal(typeof mod.parsePipeTextArgs, "function");
+        assert.equal(typeof mod.parsePipeTextList, "function");
         assert.equal(typeof mod.unescapeInline, "function");
         assert.equal(typeof mod.createToken, "function");
         assert.equal(typeof mod.resetTokenIdSeed, "function");

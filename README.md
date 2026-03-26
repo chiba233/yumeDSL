@@ -817,6 +817,7 @@ You will not need these if you only use `createSimpleInlineHandlers` / `createPa
 |-------------------------------------|--------------------------------------------|------------------------------------------------------------|
 | `parsePipeArgs(tokens)`             | Custom handlers with `\|`-separated params | Split tokens by pipe and access parsed parts               |
 | `parsePipeTextArgs(text)`           | Custom handlers parsing raw args           | Same as above, but from a plain text string                |
+| `parsePipeTextList(text)`           | Custom handlers needing `string[]` args    | Split a pipe-delimited string into trimmed `string[]`      |
 | `splitTokensByPipe(tokens)`         | Low-level handler code                     | Raw token splitter without helper methods                  |
 | `extractText(tokens)`               | Handlers that need plain-text values       | Flatten a token tree into a single string                  |
 | `materializeTextTokens(tokens)`     | Handlers returning processed child tokens  | Recursively unescape text tokens in a tree                 |
@@ -855,6 +856,19 @@ interface PipeArgs {
 | `text(i)`                   | Plain text of part `i`, unescaped and trimmed                |
 | `materializedTokens(i)`     | Unescaped tokens of part `i`                                 |
 | `materializedTailTokens(i)` | All parts from index `i` onward, merged into one token array |
+
+### parsePipeTextList
+
+If you only need the text values as `string[]` (no token trees), `parsePipeTextList` is a shorthand:
+
+```ts
+import { parsePipeTextList } from "yume-dsl-rich-text";
+
+parsePipeTextList("ts | Demo | Label");
+// → ["ts", "Demo", "Label"]
+```
+
+This is what `createPipeBlockHandlers` and `createPipeRawHandlers` use internally.
 
 ---
 
@@ -1074,6 +1088,15 @@ Without `onError`, the same recovery happens silently — no error is thrown.
 ---
 
 ## Changelog
+
+### 0.1.10
+
+- Add `parsePipeTextList(text)` utility — split a pipe-delimited arg string directly into `string[]` without
+  intermediate token allocation
+- Refactor `createPipeBlockHandlers()` / `createPipeRawHandlers()` to use `parsePipeTextList` internally
+- Add decision-table comment to the inline-form gating function (`supportsInlineForm`) to guard against future
+  regressions
+- Add JSDoc to `materializeTextTokens` clarifying it only unescapes text-type leaf tokens
 
 ### 0.1.9
 
