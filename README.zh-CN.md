@@ -1181,6 +1181,10 @@ dsl.parse("Hello $$bold(world", { onError: (e) => errors.push(e) });
 
 ## 更新日志
 
+### 0.1.14
+
+- 更新readme和添加黄金测试。
+
 ### 0.1.13
 
 - 重组 `index.ts` 导出分组：配置、处理器辅助函数、处理器工具函数、类型子分组
