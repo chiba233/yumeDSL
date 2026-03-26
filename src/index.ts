@@ -7,6 +7,7 @@ export type {
   BlockTagInput,
   BlockTagLookup,
   CreateId,
+  TagNameConfig,
   MultilineForm,
   TextToken,
   TokenDraft,
@@ -45,3 +46,4 @@ export {
 
 // ── Syntax configuration ──
 export { DEFAULT_SYNTAX, createSyntax } from "./syntax.js";
+export { DEFAULT_TAG_NAME, createTagNameConfig } from "./chars.js";

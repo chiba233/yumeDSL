@@ -1,5 +1,5 @@
 import type { TagHead, TagStartInfo } from "./types.js";
-import { getLineEnd, isTagChar, isTagStartChar, isWholeLineToken } from "./chars.js";
+import { getLineEnd, getTagNameConfig, isWholeLineToken } from "./chars.js";
 import { getSyntax } from "./syntax.js";
 import { readEscapedSequence } from "./escape.js";
 
@@ -34,6 +34,7 @@ export const findTagArgClose = (text: string, start: number): number => {
 
 const readTagHeadAt = (text: string, pos: number): TagHead | null => {
   const { tagPrefix, tagOpen } = getSyntax();
+  const { isTagChar, isTagStartChar } = getTagNameConfig();
   if (!text.startsWith(tagPrefix, pos)) return null;
 
   const tagStart = pos + tagPrefix.length;

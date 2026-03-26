@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import {
+  createParser,
   createPassthroughTags,
   createPipeBlockHandlers,
   createPipeRawHandlers,
   createSimpleBlockHandlers,
   createSimpleInlineHandlers,
   createSimpleRawHandlers,
+  createTagNameConfig,
   declareMultilineTags,
   parsePipeTextList,
   parseRichText,
@@ -351,6 +353,62 @@ const cases: Array<{ name: string; run: () => void }> = [
       });
       assert.deepEqual(normalizeTokens(tokens), [
         { type: "bold", value: [{ type: "text", value: "A ]]>> B ]]% C ]]* D" }] },
+      ]);
+    },
+  },
+  {
+    name: "[Common/TagName] 自定义起始字符规则 -> 应当允许数字开头标签",
+    run: () => {
+      const tokens = parseRichText("$$1tag(hello)$$", {
+        handlers: {
+          "1tag": {
+            inline: (value) => ({ type: "1tag", value }),
+          },
+        },
+        tagName: {
+          isTagStartChar: (char) => /[A-Za-z0-9_]/.test(char),
+        },
+      });
+      assert.deepEqual(normalizeTokens(tokens), [
+        { type: "1tag", value: [{ type: "text", value: "hello" }] },
+      ]);
+    },
+  },
+  {
+    name: "[Common/TagName] 自定义后续字符规则 -> 应当允许冒号出现在标签名中",
+    run: () => {
+      const tagName = createTagNameConfig({
+        isTagChar: (char) => /[A-Za-z0-9_:-]/.test(char),
+      });
+      const tokens = parseRichText("$$ui:button(hello)$$", {
+        handlers: {
+          "ui:button": {
+            inline: (value) => ({ type: "ui:button", value }),
+          },
+        },
+        tagName,
+      });
+      assert.deepEqual(normalizeTokens(tokens), [
+        { type: "ui:button", value: [{ type: "text", value: "hello" }] },
+      ]);
+    },
+  },
+  {
+    name: "[Common/TagName] createParser 默认配置 -> 应当继承自定义标签字符规则",
+    run: () => {
+      const parser = createParser({
+        handlers: {
+          "1tag": {
+            inline: (value) => ({ type: "1tag", value }),
+          },
+        },
+        tagName: {
+          isTagStartChar: (char) => /[A-Za-z0-9_]/.test(char),
+        },
+      });
+      const tokens = parser.parse("$$1tag(hello)$$");
+      assert.deepEqual(normalizeTokens(tokens), [
+        { type: "1tag", value: [{ type: "text", value: "hello" }] },
       ]);
     },
   },

@@ -49,6 +49,7 @@ const smokeTest = (mod: DistModule, label: string) => {
         assert.equal(typeof mod.createToken, "function");
         assert.equal(typeof mod.resetTokenIdSeed, "function");
         assert.equal(typeof mod.createSyntax, "function");
+        assert.equal(typeof mod.createTagNameConfig, "function");
         assert.equal(typeof mod.createSimpleInlineHandlers, "function");
         assert.equal(typeof mod.createSimpleBlockHandlers, "function");
         assert.equal(typeof mod.createSimpleRawHandlers, "function");
@@ -158,6 +159,24 @@ const smokeTest = (mod: DistModule, label: string) => {
         const second = mod.parseRichText("world", { handlers: testHandlers });
         assert.equal(first[0].id, "rt-0");
         assert.equal(second[0].id, "rt-0");
+      },
+    },
+    {
+      name: `[${label}] parseRichText 支持自定义 tagName`,
+      run: () => {
+        const tokens = mod.parseRichText("$$ui:button(hi)$$", {
+          handlers: {
+            "ui:button": {
+              inline: (value: any) => ({ type: "ui:button", value }),
+            },
+          },
+          tagName: mod.createTagNameConfig({
+            isTagChar: (char: string) => /[A-Za-z0-9_:-]/.test(char),
+          }),
+        });
+        assert.deepEqual(normalize(tokens), [
+          { type: "ui:button", value: [{ type: "text", value: "hi" }] },
+        ]);
       },
     },
 

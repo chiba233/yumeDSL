@@ -56,6 +56,13 @@ export interface SyntaxConfig extends SyntaxInput {
   escapableTokens: string[];
 }
 
+export interface TagNameConfig {
+  /** Decide whether a character may start a tag name. */
+  isTagStartChar: (char: string) => boolean;
+  /** Decide whether a character may appear after the first tag-name character. */
+  isTagChar: (char: string) => boolean;
+}
+
 export type TagForm = "inline" | "raw" | "block";
 
 /**
@@ -117,6 +124,8 @@ export interface ParseOptions {
   onError?: (error: ParseError) => void;
   /** Override DSL syntax tokens (default: `$$tag(…)$$` family). */
   syntax?: Partial<SyntaxInput>;
+  /** Override how tag-name characters are recognized. */
+  tagName?: Partial<TagNameConfig>;
 }
 
 // ── Internal types (not re-exported from index) ──

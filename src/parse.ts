@@ -9,6 +9,7 @@ import type {
   TextToken,
 } from "./types.js";
 import { extractText } from "./builders.js";
+import { createTagNameConfig, withTagNameConfig } from "./chars.js";
 import { tryConsumeEscape, tryConsumeTagClose, tryConsumeTagStart } from "./consumers.js";
 import { finalizeUnclosedTags, flushBuffer } from "./context.js";
 import { withCreateId } from "./createToken.js";
@@ -160,20 +161,23 @@ export const parseRichText = (text: string, options: ParseOptions = {}): TextTok
     ? buildBlockTagLookup(options.blockTags)
     : deriveBlockTags(handlers);
   const syntax = createSyntax(options.syntax);
+  const tagName = createTagNameConfig(options.tagName);
   let seed = 0;
   const createId = options.createId ?? (() => `rt-${seed++}`);
 
   return withSyntax(syntax, () =>
-    withCreateId(createId, () =>
-      internalParse(
-        text,
-        options.depthLimit ?? 50,
-        { mode: options.mode ?? "render" },
-        allowInline,
-        registeredTags,
-        options.onError,
-        handlers,
-        blockTagSet,
+    withTagNameConfig(tagName, () =>
+      withCreateId(createId, () =>
+        internalParse(
+          text,
+          options.depthLimit ?? 50,
+          { mode: options.mode ?? "render" },
+          allowInline,
+          registeredTags,
+          options.onError,
+          handlers,
+          blockTagSet,
+        ),
       ),
     ),
   );

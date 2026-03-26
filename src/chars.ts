@@ -1,11 +1,22 @@
-export const isTagStartChar = (c: string) =>
+import type { TagNameConfig } from "./types.js";
+
+const defaultIsTagStartChar = (c: string) =>
   (c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || c === "_";
-export const isTagChar = (c: string) =>
+const defaultIsTagChar = (c: string) =>
   (c >= "a" && c <= "z") ||
   (c >= "A" && c <= "Z") ||
   (c >= "0" && c <= "9") ||
   c === "_" ||
   c === "-";
+
+export const DEFAULT_TAG_NAME: TagNameConfig = {
+  isTagStartChar: defaultIsTagStartChar,
+  isTagChar: defaultIsTagChar,
+};
+
+export const createTagNameConfig = (overrides?: Partial<TagNameConfig>): TagNameConfig =>
+  overrides ? { ...DEFAULT_TAG_NAME, ...overrides } : DEFAULT_TAG_NAME;
+
 export const getLineEnd = (text: string, pos: number): number => {
   const end = text.indexOf("\n", pos);
   if (end === -1) return text.length;
@@ -20,4 +31,18 @@ export const isWholeLineToken = (text: string, pos: number, token: string): bool
   if (!text.startsWith(token, pos)) return false;
   const lineEnd = getLineEnd(text, pos);
   return pos + token.length === lineEnd;
+};
+
+let activeTagName: TagNameConfig = createTagNameConfig();
+
+export const getTagNameConfig = (): TagNameConfig => activeTagName;
+
+export const withTagNameConfig = <T>(config: TagNameConfig, fn: () => T): T => {
+  const prev = activeTagName;
+  activeTagName = config;
+  try {
+    return fn();
+  } finally {
+    activeTagName = prev;
+  }
 };

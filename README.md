@@ -47,6 +47,7 @@ You define your own semantics and rendering layer.
   - [PipeArgs](#pipeargs)
 - [Custom Syntax](#custom-syntax)
   - [createSyntax](#createsyntax)
+- [Custom Tag Name Characters](#custom-tag-name-characters)
 - [Error Handling](#error-handling)
 - [Graceful Degradation](#graceful-degradation)
 - [Changelog](#changelog)
@@ -190,6 +191,11 @@ Unregistered tags degrade gracefully instead of throwing or crashing.
 
 By default, the DSL uses `$$` as the tag prefix.
 
+Default tag-name rules:
+
+- First character: `a-z`, `A-Z`, `_`
+- Remaining characters: `a-z`, `A-Z`, `0-9`, `_`, `-`
+
 Three forms are supported:
 
 ### Inline
@@ -258,7 +264,8 @@ Prefix syntax tokens with `\` to produce them literally.
 
 ### `createParser(defaults)` — recommended entry point
 
-`createParser` binds your `ParseOptions` (handlers, syntax, mode, depthLimit, onError) into a reusable instance.
+`createParser` binds your `ParseOptions` (handlers, syntax, tagName, mode, depthLimit, onError) into a reusable
+instance.
 This is the **recommended way** to use the parser — define your tag handlers once, then call `dsl.parse()` /
 `dsl.strip()` everywhere without repeating config.
 
@@ -294,12 +301,32 @@ dsl.strip("Hello $$bold(world)$$!");
 dsl.parse(text, { onError: (e) => console.warn(e) });
 ```
 
+You can also pre-bind custom tag-name rules:
+
+```ts
+import { createParser, createTagNameConfig } from "yume-dsl-rich-text";
+
+const dsl = createParser({
+  handlers: {
+    "ui:button": {
+      inline: (value) => ({ type: "ui:button", value }),
+    },
+  },
+  tagName: createTagNameConfig({
+    isTagChar: (char) => /[A-Za-z0-9_:-]/.test(char),
+  }),
+});
+
+dsl.parse("$$ui:button(hello)$$");
+```
+
 **What `createParser` binds:**
 
 | Option       | What it does when pre-bound                               |
 |--------------|-----------------------------------------------------------|
 | `handlers`   | Your tag definitions — no need to pass them on every call |
 | `syntax`     | Custom syntax tokens (if you override `$$` prefix, etc.)  |
+| `tagName`    | Custom tag-name character rules                           |
 | `mode`       | `"render"` or `"highlight"` — set once for your use case  |
 | `depthLimit` | Nesting limit — rarely changes per call                   |
 | `onError`    | Default error handler (can still be overridden per call)  |
@@ -337,6 +364,24 @@ function stripRichText(text: string, options?: ParseOptions): string;
 ```
 
 For most applications, prefer [`createParser`](#createparser--recommended-entry-point) instead.
+
+Use these when you want full per-call control over tag-name rules:
+
+```ts
+import { createTagNameConfig, parseRichText } from "yume-dsl-rich-text";
+
+const tokens = parseRichText("$$1ui:button(hello)$$", {
+  handlers: {
+    "1ui:button": {
+      inline: (value) => ({ type: "1ui:button", value }),
+    },
+  },
+  tagName: createTagNameConfig({
+    isTagStartChar: (char) => /[A-Za-z0-9_]/.test(char),
+    isTagChar: (char) => /[A-Za-z0-9_:-]/.test(char),
+  }),
+});
+```
 
 ---
 
@@ -857,6 +902,7 @@ You will not need these if you only use `createSimpleInlineHandlers` / `createPa
 | `createPipeBlockHandlers(names)`    | Setup code                                 | Create block handlers that expose both `arg` and `args`    |
 | `createPipeRawHandlers(names)`      | Setup code                                 | Create raw handlers that expose both `arg` and `args`      |
 | `createPassthroughTags(names)`      | Setup code                                 | Register tag names with empty handlers in bulk             |
+| `createTagNameConfig(overrides)`    | Setup code                                 | Override tag-name character rules with default fallback    |
 
 > During parsing, token ids default to a parse-local sequence (`rt-0`, `rt-1`, ...).
 > `createToken()` only uses the module-level counter when called outside an active parse, and `resetTokenIdSeed()` is
@@ -969,6 +1015,34 @@ resolves it internally.
 > Syntax overrides are applied through module-local active state during parsing.
 > This is safe for normal synchronous calls, but if you share one module instance across concurrent async request flows,
 > isolate parser work carefully.
+
+---
+
+## Custom Tag Name Characters
+
+By default, tag names follow these rules:
+
+- `isTagStartChar`: `a-z`, `A-Z`, `_`
+- `isTagChar`: `a-z`, `A-Z`, `0-9`, `_`, `-`
+
+Use `createTagNameConfig()` when you want to override only part of the defaults and let unspecified fields fall back.
+
+```ts
+import { DEFAULT_TAG_NAME, createTagNameConfig } from "yume-dsl-rich-text";
+
+const tagName = createTagNameConfig({
+  isTagChar: (char) => /[A-Za-z0-9_:-]/.test(char),
+});
+
+DEFAULT_TAG_NAME.isTagStartChar("_"); // true
+tagName.isTagChar(":"); // true
+```
+
+Pass `tagName` into either `createParser(...)` or `parseRichText(...)`.
+
+> **Note:** `createTagNameConfig()` is a convenience helper — you can also pass a plain partial object
+> (e.g. `{ isTagChar: ... }`) directly to `tagName` and the parser will fill in the missing fields
+> with the same defaults automatically.
 
 ---
 
@@ -1118,6 +1192,9 @@ Without `onError`, the same recovery happens silently — no error is thrown.
 
 ### 0.1.12
 
+- Add `tagName` to `ParseOptions` so users can customize `isTagStartChar` / `isTagChar`
+- Add `TagNameConfig`, `DEFAULT_TAG_NAME`, and `createTagNameConfig`
+- Update README with `parseRichText` and `createParser` examples for custom tag-name rules
 - Add per-form granularity to `declareMultilineTags` — entries can now be `{ tag, forms }` objects to restrict
   line-break normalization to specific multiline forms (`"raw"` / `"block"`)
 - Plain string entries remain fully backward compatible (normalize both raw and block forms)

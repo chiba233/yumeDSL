@@ -47,6 +47,7 @@
   - [PipeArgs](#pipeargs)
 - [自定义语法](#自定义语法)
   - [createSyntax](#createsyntax)
+- [自定义标签名字符规则](#自定义标签名字符规则)
 - [错误处理](#错误处理)
 - [优雅降级](#优雅降级)
 - [更新日志](#更新日志)
@@ -185,6 +186,11 @@ const plain = dsl.strip("Hello $$bold(world)$$!");
 
 默认使用 `$$` 作为标签前缀。
 
+默认标签名规则：
+
+- 首字符：`a-z`、`A-Z`、`_`
+- 后续字符：`a-z`、`A-Z`、`0-9`、`_`、`-`
+
 支持三种形式：
 
 ### 行内标签
@@ -253,7 +259,7 @@ const x = 1;
 
 ### `createParser(defaults)` — 推荐入口
 
-`createParser` 将你的 `ParseOptions`（handlers、syntax、mode、depthLimit、onError）绑定为一个可复用实例。
+`createParser` 将你的 `ParseOptions`（handlers、syntax、tagName、mode、depthLimit、onError）绑定为一个可复用实例。
 这是**推荐的使用方式** — 定义一次标签处理器，然后在各处调用 `dsl.parse()` / `dsl.strip()`，无需重复传入配置。
 
 ```ts
@@ -288,12 +294,32 @@ dsl.strip("Hello $$bold(world)$$!");
 dsl.parse(text, { onError: (e) => console.warn(e) });
 ```
 
+也可以在 parser 上预绑定自定义标签名字符规则：
+
+```ts
+import { createParser, createTagNameConfig } from "yume-dsl-rich-text";
+
+const dsl = createParser({
+  handlers: {
+    "ui:button": {
+      inline: (value) => ({ type: "ui:button", value }),
+    },
+  },
+  tagName: createTagNameConfig({
+    isTagChar: (char) => /[A-Za-z0-9_:-]/.test(char),
+  }),
+});
+
+dsl.parse("$$ui:button(hello)$$");
+```
+
 **`createParser` 绑定了什么：**
 
 | 选项           | 预绑定后的效果                                  |
 |--------------|------------------------------------------|
 | `handlers`   | 标签定义 — 不需要每次调用都传入                        |
 | `syntax`     | 自定义语法符号（如覆盖 `$$` 前缀等）                    |
+| `tagName`    | 自定义标签名字符规则                               |
 | `mode`       | `"render"` 或 `"highlight"` — 为你的场景设置一次即可 |
 | `depthLimit` | 嵌套深度限制 — 很少需要逐次修改                        |
 | `onError`    | 默认错误处理器（仍可按次覆盖）                          |
@@ -331,6 +357,24 @@ function stripRichText(text: string, options?: ParseOptions): string;
 ```
 
 大多数应用场景建议使用 [`createParser`](#createparser--推荐入口)。
+
+如果你想对单次调用精确控制标签名规则，可以直接在这里传：
+
+```ts
+import { createTagNameConfig, parseRichText } from "yume-dsl-rich-text";
+
+const tokens = parseRichText("$$1ui:button(hello)$$", {
+  handlers: {
+    "1ui:button": {
+      inline: (value) => ({ type: "1ui:button", value }),
+    },
+  },
+  tagName: createTagNameConfig({
+    isTagStartChar: (char) => /[A-Za-z0-9_]/.test(char),
+    isTagChar: (char) => /[A-Za-z0-9_:-]/.test(char),
+  }),
+});
+```
 
 ---
 
@@ -836,6 +880,7 @@ const tokens = dsl.parse(input);
 | `createPipeBlockHandlers(names)`    | 初始化代码                 | 创建同时暴露 `arg` 与 `args` 的 block 处理器 |
 | `createPipeRawHandlers(names)`      | 初始化代码                 | 创建同时暴露 `arg` 与 `args` 的 raw 处理器   |
 | `createPassthroughTags(names)`      | 初始化代码                 | 批量注册空处理器的标签名                      |
+| `createTagNameConfig(overrides)`    | 初始化代码                 | 覆盖标签名字符规则，未提供字段回退默认值              |
 
 > 解析期间，token id 默认按单次 parse 局部递增（`rt-0`、`rt-1` ...）。
 > `createToken()` 只有在解析器外单独调用时才会使用模块级计数器，`resetTokenIdSeed()` 也主要用于这种测试场景。
@@ -943,6 +988,33 @@ interface SyntaxConfig extends SyntaxInput {
 > 注意：
 > 自定义 syntax 在解析期间通过模块级活动状态生效。
 > 对普通同步调用是安全的；如果多个并发异步请求共享同一个模块实例，需要自行做好隔离。
+
+---
+
+## 自定义标签名字符规则
+
+默认情况下，标签名规则是：
+
+- `isTagStartChar`：`a-z`、`A-Z`、`_`
+- `isTagChar`：`a-z`、`A-Z`、`0-9`、`_`、`-`
+
+当你只想覆盖默认规则中的一部分，并让未提供字段回退默认值时，使用 `createTagNameConfig()`：
+
+```ts
+import { DEFAULT_TAG_NAME, createTagNameConfig } from "yume-dsl-rich-text";
+
+const tagName = createTagNameConfig({
+  isTagChar: (char) => /[A-Za-z0-9_:-]/.test(char),
+});
+
+DEFAULT_TAG_NAME.isTagStartChar("_"); // true
+tagName.isTagChar(":"); // true
+```
+
+这个 `tagName` 可以传给 `createParser(...)`，也可以传给 `parseRichText(...)`。
+
+> **注意：** `createTagNameConfig()` 只是一个便利函数 — 你也可以直接向 `tagName` 传入一个部分对象
+> （如 `{ isTagChar: ... }`），解析器会自动用相同的默认值补齐未提供的字段。
 
 ---
 
@@ -1090,6 +1162,9 @@ dsl.parse("Hello $$bold(world", { onError: (e) => errors.push(e) });
 
 ### 0.1.12
 
+- `ParseOptions` 新增 `tagName`，允许用户自定义 `isTagStartChar` / `isTagChar`
+- 新增 `TagNameConfig`、`DEFAULT_TAG_NAME`、`createTagNameConfig`
+- README 补充 `parseRichText` 和 `createParser` 下的自定义标签名规则示例
 - `declareMultilineTags` 新增按形式控制的细粒度声明 — 条目可使用 `{ tag, forms }` 对象将换行符修剪限定到特定多行形式
   （`"raw"` / `"block"`）
 - 纯字符串条目完全向后兼容（同时修剪 raw 和 block 形式）

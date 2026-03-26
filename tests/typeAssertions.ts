@@ -1,4 +1,4 @@
-import type { CreateId, ParseOptions, TagForm, TagHandler } from "../src/index.ts";
+import type { CreateId, ParseOptions, TagForm, TagHandler, TagNameConfig } from "../src/index.ts";
 import {
   createPassthroughTags,
   createPipeBlockHandlers,
@@ -6,6 +6,7 @@ import {
   createSimpleBlockHandlers,
   createSimpleInlineHandlers,
   createSimpleRawHandlers,
+  createTagNameConfig,
 } from "../src/index.ts";
 
 type Equal<A, B> =
@@ -51,6 +52,17 @@ const validOptionsWithCreateId: ParseOptions = {
 };
 
 void validOptionsWithCreateId;
+
+const tagName: TagNameConfig = createTagNameConfig({
+  isTagChar: (char) => /[A-Za-z0-9_:-]/.test(char),
+});
+
+const validOptionsWithTagName: ParseOptions = {
+  handlers,
+  tagName,
+};
+
+void validOptionsWithTagName;
 
 // @ts-expect-error invalid form should be rejected
 const invalidOptions: ParseOptions = { allowForms: ["inline", "weird"] };
