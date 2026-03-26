@@ -264,6 +264,16 @@ const smokeTest = (mod: DistModule, label: string) => {
         assert.deepEqual(normalize(tokens), [{ type: "text", value: "$$info(x)$$ $$code(ts)$$" }]);
       },
     },
+    {
+      name: `[${label}] allowForms 禁用 inline 时 unknown 标签保留原文`,
+      run: () => {
+        const tokens = mod.parseRichText("$$unknown(x)$$", {
+          handlers: {},
+          allowForms: ["raw", "block"],
+        });
+        assert.deepEqual(normalize(tokens), [{ type: "text", value: "$$unknown(x)$$" }]);
+      },
+    },
   ];
 };
 

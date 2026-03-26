@@ -16,7 +16,11 @@ import { tryParseComplexTag } from "./complex.js";
 import { createToken } from "./createToken.js";
 import { consumeBlockTagTrailingLineBreak } from "./blockTagFormatting.js";
 
-const supportsInlineForm = (handler: ParseContext["handlers"][string] | undefined): boolean => {
+const supportsInlineForm = (
+  handler: ParseContext["handlers"][string] | undefined,
+  allowInline: boolean,
+): boolean => {
+  if (!allowInline) return false;
   if (!handler) return true;
   if (handler.inline) return true;
   return !handler.raw && !handler.block;
@@ -146,7 +150,7 @@ export const tryConsumeInlineTag = (
   inlineEnd: number,
 ): boolean => {
   const handler = ctx.handlers[info.tag];
-  if (!supportsInlineForm(handler)) {
+  if (!supportsInlineForm(handler, ctx.allowInline)) {
     return false;
   }
 

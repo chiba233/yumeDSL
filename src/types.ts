@@ -92,6 +92,7 @@ export interface ParseContext {
   text: string;
   depthLimit: number;
   mode: ParseMode;
+  allowInline: boolean;
   onError: ((error: ParseError) => void) | undefined;
   handlers: Record<string, TagHandler>;
   blockTagSet: ReadonlySet<string>;

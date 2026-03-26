@@ -532,8 +532,8 @@ interface ParseOptions {
 Controls which tag forms the parser will accept. Forms not listed are treated as if the handler does not support them —
 the parser degrades gracefully.
 
-In practice, disabled forms are left as plain text. This is especially useful when you want to allow inline formatting
-but reject multiline block/raw tags in comments or chat input.
+In practice, disabled forms are left as plain text. This applies globally, including unregistered tags. If `"inline"`
+is disabled, `$$unknown(...)$$` is preserved literally instead of being unwrapped.
 
 ```ts
 // Only allow inline tags — block and raw syntax is ignored
@@ -1016,6 +1016,7 @@ Without `onError`, the same recovery happens silently — no error is thrown.
 - Remove source maps to reduce package size
 - Fix `allowForms` so disabling `"inline"` also blocks inline syntax for tags that still have `raw` / `block`
   handlers
+- Fix `allowForms` so disabling `"inline"` also preserves unregistered `$$unknown(...)$$` tags literally
 - Fix `createSimpleBlockHandlers()` / `createSimpleRawHandlers()` so block-only and raw-only helpers no longer accept
   inline syntax implicitly
 - Fix custom syntax parsing for multi-character `tagOpen` / `tagClose` / `tagDivider` tokens

@@ -757,13 +757,32 @@ const cases: Array<{ name: string; run: () => void }> = [
     },
   },
   {
-    name: "[Forms] allowForms 禁用 inline -> passthrough 与 inline helper 应当去壳为纯文本",
+    name: "[Forms] allowForms 禁用 inline -> passthrough 与 inline helper 也应整体保留原文",
     run: () => {
       const tokens = parseRichText("$$bold(x)$$ $$pass(y)$$", {
         handlers: helperHandlers,
         allowForms: ["raw", "block"],
       });
-      assert.deepEqual(normalizeTokens(tokens), [{ type: "text", value: "x y" }]);
+      assert.deepEqual(normalizeTokens(tokens), [
+        { type: "text", value: "$$bold(x)$$ $$pass(y)$$" },
+      ]);
+    },
+  },
+  {
+    name: "[Forms] allowForms 禁用 inline -> 未注册 inline 标签也应整体保留原文",
+    run: () => {
+      const tokens = parseRichText("$$unknown(hello)$$", {
+        handlers: {},
+        allowForms: ["raw", "block"],
+      });
+      assert.deepEqual(normalizeTokens(tokens), [{ type: "text", value: "$$unknown(hello)$$" }]);
+      assert.equal(
+        stripRichText("$$unknown(hello)$$", {
+          handlers: {},
+          allowForms: ["raw", "block"],
+        }),
+        "$$unknown(hello)$$",
+      );
     },
   },
   {
@@ -775,6 +794,98 @@ const cases: Array<{ name: string; run: () => void }> = [
       });
       assert.deepEqual(normalizeTokens(tokens), [
         { type: "text", value: "$$info(T)$$ $$code(ts)$$" },
+      ]);
+    },
+  },
+  {
+    name: "[Forms/Matrix] 同标签同时支持 inline/raw/block -> complex form 仍应优先于 inline",
+    run: () => {
+      const handlers = {
+        multi: {
+          inline: (tokens: TextToken[]) => ({ type: "multi-inline", value: tokens }),
+          raw: (arg: string | undefined, content: string) => ({
+            type: "multi-raw",
+            arg,
+            value: content,
+          }),
+          block: (arg: string | undefined, tokens: TextToken[]) => ({
+            type: "multi-block",
+            arg,
+            value: tokens,
+          }),
+        },
+      };
+
+      const tokens = parseRichText(
+        "$$multi(i)$$\n$$multi(r)%\nraw\n%end$$\n$$multi(b)*\nblock\n*end$$",
+        { handlers },
+      );
+
+      assert.deepEqual(normalizeTokens(tokens), [
+        { type: "multi-inline", value: [{ type: "text", value: "i" }] },
+        { type: "multi-raw", arg: "r", value: "raw\n" },
+        { type: "multi-block", arg: "b", value: [{ type: "text", value: "block\n" }] },
+      ]);
+    },
+  },
+  {
+    name: "[Forms/Matrix] 同标签多 form + allowForms 只允许 raw/block -> inline 形态应保留原文，complex 形态正常",
+    run: () => {
+      const handlers = {
+        multi: {
+          inline: (tokens: TextToken[]) => ({ type: "multi-inline", value: tokens }),
+          raw: (arg: string | undefined, content: string) => ({
+            type: "multi-raw",
+            arg,
+            value: content,
+          }),
+          block: (arg: string | undefined, tokens: TextToken[]) => ({
+            type: "multi-block",
+            arg,
+            value: tokens,
+          }),
+        },
+      };
+
+      const tokens = parseRichText(
+        "$$multi(i)$$\n$$multi(r)%\nraw\n%end$$\n$$multi(b)*\nblock\n*end$$",
+        { handlers, allowForms: ["raw", "block"] },
+      );
+
+      assert.deepEqual(normalizeTokens(tokens), [
+        { type: "text", value: "$$multi(i)$$\n" },
+        { type: "multi-raw", arg: "r", value: "raw\n" },
+        { type: "multi-block", arg: "b", value: [{ type: "text", value: "block\n" }] },
+      ]);
+    },
+  },
+  {
+    name: "[Forms/Matrix] 同标签多 form + allowForms 只允许 inline -> complex 形态应整体退化为文本",
+    run: () => {
+      const handlers = {
+        multi: {
+          inline: (tokens: TextToken[]) => ({ type: "multi-inline", value: tokens }),
+          raw: (arg: string | undefined, content: string) => ({
+            type: "multi-raw",
+            arg,
+            value: content,
+          }),
+          block: (arg: string | undefined, tokens: TextToken[]) => ({
+            type: "multi-block",
+            arg,
+            value: tokens,
+          }),
+        },
+      };
+
+      const tokens = parseRichText(
+        "$$multi(i)$$\n$$multi(r)%\nraw\n%end$$\n$$multi(b)*\nblock\n*end$$",
+        { handlers, allowForms: ["inline"] },
+      );
+
+      assert.deepEqual(normalizeTokens(tokens), [
+        { type: "multi-inline", value: [{ type: "text", value: "i" }] },
+        { type: "text", value: "\n$$multi(r)%\nraw\n%end$$\n$$multi(b)*\nblock\n*end$$" },
       ]);
     },
   },

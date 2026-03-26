@@ -57,6 +57,7 @@ const internalParse = (
   text: string,
   depthLimit: number,
   options: { mode?: ParseContext["mode"] } | undefined,
+  allowInline: boolean,
   onError: ParseContext["onError"],
   handlers: Record<string, import("./types").TagHandler>,
   blockTagSet: ReadonlySet<string>,
@@ -67,6 +68,7 @@ const internalParse = (
     text,
     depthLimit,
     mode: options?.mode ?? "render",
+    allowInline,
     onError,
     handlers,
     blockTagSet,
@@ -81,7 +83,15 @@ const internalParse = (
     innerDepthLimit: number,
     innerOptions?: { mode?: ParseContext["mode"] },
   ): TextToken[] => {
-    return internalParse(innerText, innerDepthLimit, innerOptions, onError, handlers, blockTagSet);
+    return internalParse(
+      innerText,
+      innerDepthLimit,
+      innerOptions,
+      allowInline,
+      onError,
+      handlers,
+      blockTagSet,
+    );
   };
 
   while (ctx.i < ctx.text.length) {
@@ -105,6 +115,7 @@ export const parseRichText = (text: string, options: ParseOptions = {}): TextTok
   const handlers = options.allowForms
     ? filterHandlersByForms(rawHandlers, new Set(options.allowForms))
     : rawHandlers;
+  const allowInline = !options.allowForms || options.allowForms.includes("inline");
   const blockTagSet = options.blockTags ? new Set(options.blockTags) : deriveBlockTags(handlers);
   const syntax = createSyntax(options.syntax);
 
@@ -113,6 +124,7 @@ export const parseRichText = (text: string, options: ParseOptions = {}): TextTok
       text,
       options.depthLimit ?? 50,
       { mode: options.mode ?? "render" },
+      allowInline,
       options.onError,
       handlers,
       blockTagSet,

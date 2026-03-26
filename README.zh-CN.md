@@ -520,8 +520,8 @@ interface ParseOptions {
 
 控制解析器接受哪些标签形式。未列出的形式按处理器不支持处理 — 解析器优雅降级。
 
-实际效果上，被禁用的形式会按普通文本保留。这很适合评论、聊天输入之类场景：允许行内格式，但拒绝多行
-block/raw 标签。
+实际效果上，被禁用的形式会按普通文本保留，而且这个规则也适用于未注册标签。例如禁用 `"inline"` 后，
+`$$unknown(...)$$` 会整体按原文保留，而不是去壳。
 
 ```ts
 // 只允许行内标签 — 块级和原始语法被忽略
@@ -994,6 +994,7 @@ dsl.parse("Hello $$bold(world", { onError: (e) => errors.push(e) });
 
 - 移除 source map 文件以减小发布包体积
 - 修复 `allowForms`：当禁用 `"inline"` 时，仍保留 `raw` / `block` handler 的标签不再错误接受 inline 语法
+- 修复 `allowForms`：当禁用 `"inline"` 时，未注册的 `$$unknown(...)$$` 也会按原文保留
 - 修复 `createSimpleBlockHandlers()` / `createSimpleRawHandlers()`：块级 / 原始 helper 不再隐式接受 inline 语法
 - 修复自定义 syntax 对多字符 `tagOpen` / `tagClose` / `tagDivider` 的解析问题
 - 补充 `allowForms` 与新 helper 的回归测试
