@@ -1,17 +1,52 @@
-import type { ParseContext, ParseOptions, TagForm, TagHandler, TextToken } from "./types.js";
+import type {
+  BlockTagInput,
+  BlockTagLookup,
+  MultilineForm,
+  ParseContext,
+  ParseOptions,
+  TagForm,
+  TagHandler,
+  TextToken,
+} from "./types.js";
 import { extractText } from "./builders.js";
 import { tryConsumeEscape, tryConsumeTagClose, tryConsumeTagStart } from "./consumers.js";
 import { finalizeUnclosedTags, flushBuffer } from "./context.js";
 import { withCreateId } from "./createToken.js";
 import { createSyntax, withSyntax } from "./syntax.js";
 
-const deriveBlockTags = (handlers: Record<string, unknown>): Set<string> => {
-  const set = new Set<string>();
+const buildBlockTagLookup = (inputs: readonly BlockTagInput[]): BlockTagLookup => {
+  const rawSet = new Set<string>();
+  const blockSet = new Set<string>();
+  for (const input of inputs) {
+    if (typeof input === "string") {
+      rawSet.add(input);
+      blockSet.add(input);
+    } else {
+      const forms: readonly MultilineForm[] = input.forms ?? ["raw", "block"];
+      for (const form of forms) {
+        if (form === "raw") rawSet.add(input.tag);
+        else blockSet.add(input.tag);
+      }
+    }
+  }
+  return {
+    has: (tag: string, form: MultilineForm) =>
+      form === "raw" ? rawSet.has(tag) : blockSet.has(tag),
+  };
+};
+
+const deriveBlockTags = (handlers: Record<string, unknown>): BlockTagLookup => {
+  const rawSet = new Set<string>();
+  const blockSet = new Set<string>();
   for (const [tag, handler] of Object.entries(handlers)) {
     const h = handler as Record<string, unknown>;
-    if (h.raw || h.block) set.add(tag);
+    if (h.raw) rawSet.add(tag);
+    if (h.block) blockSet.add(tag);
   }
-  return set;
+  return {
+    has: (tag: string, form: MultilineForm) =>
+      form === "raw" ? rawSet.has(tag) : blockSet.has(tag),
+  };
 };
 
 /**
@@ -62,7 +97,7 @@ const internalParse = (
   registeredTags: ReadonlySet<string>,
   onError: ParseContext["onError"],
   handlers: Record<string, import("./types").TagHandler>,
-  blockTagSet: ReadonlySet<string>,
+  blockTagSet: BlockTagLookup,
 ): TextToken[] => {
   if (!text) return [];
 
@@ -121,7 +156,9 @@ export const parseRichText = (text: string, options: ParseOptions = {}): TextTok
     ? filterHandlersByForms(rawHandlers, new Set(options.allowForms))
     : rawHandlers;
   const allowInline = !options.allowForms || options.allowForms.includes("inline");
-  const blockTagSet = options.blockTags ? new Set(options.blockTags) : deriveBlockTags(handlers);
+  const blockTagSet = options.blockTags
+    ? buildBlockTagLookup(options.blockTags)
+    : deriveBlockTags(handlers);
   const syntax = createSyntax(options.syntax);
   let seed = 0;
   const createId = options.createId ?? (() => `rt-${seed++}`);

@@ -4,7 +4,11 @@
 
 <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white" />
 
+[![npm](https://img.shields.io/npm/v/yume-dsl-rich-text)](https://www.npmjs.com/package/yume-dsl-rich-text)
+[![GitHub](https://img.shields.io/badge/GitHub-chiba233%2FyumeDSL-181717?logo=github)](https://github.com/chiba233/yumeDSL)
+
 零依赖、递归解析的富文本 DSL 解析器，支持可插拔的标签处理器和可配置语法。
+亦可嵌入 Markdown 或其他标记语言中作为二级语法层使用。
 
 **仅包含解析器核心。**
 本包不附带内置标签、渲染或 UI 集成。
@@ -387,14 +391,17 @@ function createSimpleInlineHandlers(names: readonly string[]): Record<string, Ta
 
 ### `declareMultilineTags(names)`
 
-声明哪些已注册的标签是多行类型。返回 `string[]`，传入 `ParseOptions.blockTags`。
+声明哪些已注册的标签是多行类型。返回 `BlockTagInput[]`，传入 `ParseOptions.blockTags`。
 
 该函数**不**注册标签或创建处理器 — 它只告诉解析器哪些标签需要换行符修剪（剥离 `)*` / `)%` 开启符后的前导 `\n`，以及
 `*end$$` / `%end$$` 关闭符前的尾随 `\n`）。
 
+每个条目可以是纯标签名（raw 和 block 形式均执行修剪 — 向后兼容），也可以是带 `forms` 数组的对象，将修剪限定到特定的多行形式。
+
 ```ts
 import { createParser, createSimpleInlineHandlers, declareMultilineTags } from "yume-dsl-rich-text";
 
+// 基础用法 — 所有多行形式均修剪（向后兼容）
 const dsl = createParser({
   handlers: {
     ...createSimpleInlineHandlers(["bold", "italic"]),
@@ -403,13 +410,26 @@ const dsl = createParser({
   },
   blockTags: declareMultilineTags(["info", "warning"]),
 });
+
+// 细粒度 — 将修剪限定到特定形式
+const dsl2 = createParser({
+  handlers: { /* ... */ },
+  blockTags: declareMultilineTags([
+    "info",                              // raw 和 block 均修剪
+    { tag: "code", forms: ["raw"] },     // 仅 raw 形式修剪
+    { tag: "note", forms: ["block"] },   // 仅 block 形式修剪
+  ]),
+});
 ```
 
 > **注意：** 如果省略 `blockTags`，解析器会从具有 `raw` 或 `block` 方法的处理器自动推导。
 > 当需要显式控制哪些标签接受换行符修剪时使用 `declareMultilineTags`。
 
 ```ts
-function declareMultilineTags(names: readonly string[]): string[];
+type MultilineForm = "raw" | "block";
+type BlockTagInput = string | { tag: string; forms?: readonly MultilineForm[] };
+
+function declareMultilineTags(names: readonly BlockTagInput[]): BlockTagInput[];
 ```
 
 ### `createSimpleBlockHandlers(names)`
@@ -549,7 +569,7 @@ interface ParseOptions {
   handlers?: Record<string, TagHandler>;
   createId?: (token: TokenDraft) => string;
   allowForms?: readonly ("inline" | "raw" | "block")[];
-  blockTags?: string[];
+  blockTags?: readonly BlockTagInput[];
   depthLimit?: number;
   mode?: "render" | "highlight";
   onError?: (error: ParseError) => void;
@@ -562,7 +582,7 @@ interface ParseOptions {
 - `handlers`：标签名 → 处理器定义
 - `createId`：覆盖本次解析的 token id 生成策略
 - `allowForms`：限制解析器接受的标签形式（默认：全部启用）
-- `blockTags`：需要块级换行规范化的标签
+- `blockTags`：需要块级换行规范化的标签 — 接受纯字符串或 `{ tag, forms }` 对象以按形式控制
 - `depthLimit`：最大嵌套深度，默认 `50`
 - `mode`：
   - `"render"` 规范化块级换行
@@ -1067,6 +1087,15 @@ dsl.parse("Hello $$bold(world", { onError: (e) => errors.push(e) });
 ---
 
 ## 更新日志
+
+### 0.1.12
+
+- `declareMultilineTags` 新增按形式控制的细粒度声明 — 条目可使用 `{ tag, forms }` 对象将换行符修剪限定到特定多行形式
+  （`"raw"` / `"block"`）
+- 纯字符串条目完全向后兼容（同时修剪 raw 和 block 形式）
+- 新增导出类型 `MultilineForm`、`BlockTagInput`、`BlockTagLookup`
+- 内部：将 `Set<string>` 块标签查询替换为按形式感知的 `BlockTagLookup`；`deriveBlockTags` 现在按 handler 方法各自注册对应形式，
+  自动推导更精确
 
 ### 0.1.11
 

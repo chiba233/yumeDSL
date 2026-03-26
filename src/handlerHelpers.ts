@@ -1,4 +1,4 @@
-import type { TagHandler, TextToken, TokenDraft } from "./types.js";
+import type { BlockTagInput, TagHandler, TextToken, TokenDraft } from "./types.js";
 import { materializeTextTokens, parsePipeTextList } from "./builders.js";
 
 /**
@@ -49,11 +49,15 @@ export const createSimpleInlineHandlers = <const T extends readonly string[]>(
 
 /**
  * Declare which already-registered tags are multiline types.
- * Returns a `string[]` to pass as `ParseOptions.blockTags`.
+ * Returns a `BlockTagInput[]` to pass as `ParseOptions.blockTags`.
  *
  * Tags listed here receive line-break normalization:
  * the parser strips the leading `\n` after `)*` / `)%` openers
  * and the trailing `\n` before `*end$$` / `%end$$` closers.
+ *
+ * Each entry is either a plain tag name (normalization for **both**
+ * raw and block forms — backward compatible) or an object with a
+ * `forms` array to restrict normalization to specific multiline forms.
  *
  * This does NOT register tags or create handlers — use
  * `createSimpleInlineHandlers`, `createSimpleRawHandlers`,
@@ -62,12 +66,23 @@ export const createSimpleInlineHandlers = <const T extends readonly string[]>(
  * @example
  * const dsl = createParser({
  *   handlers: { ... },
+ *   // backward compatible — all multiline forms normalized
  *   blockTags: declareMultilineTags(["info", "warning", "collapse"]),
  * });
+ *
+ * @example
+ * const dsl = createParser({
+ *   handlers: { ... },
+ *   // granular — code only normalizes in raw form
+ *   blockTags: declareMultilineTags([
+ *     "info",
+ *     { tag: "code", forms: ["raw"] },
+ *   ]),
+ * });
  */
-export const declareMultilineTags = <const T extends readonly string[]>(
+export const declareMultilineTags = <const T extends readonly BlockTagInput[]>(
   names: T,
-): T[number][] => [...names];
+): BlockTagInput[] => [...names];
 
 /**
  * Create simple block-only tag handlers (DSL block form: `)*...*end$$`).

@@ -4,7 +4,11 @@
 
 <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white" />
 
+[![npm](https://img.shields.io/npm/v/yume-dsl-rich-text)](https://www.npmjs.com/package/yume-dsl-rich-text)
+[![GitHub](https://img.shields.io/badge/GitHub-chiba233%2FyumeDSL-181717?logo=github)](https://github.com/chiba233/yumeDSL)
+
 A zero-dependency, recursive rich-text DSL parser with pluggable tag handlers and configurable syntax.
+Can be embedded inside Markdown or any other markup as a secondary syntax layer.
 
 **Parser core only.**  
 This package does not ship built-in tags, rendering, or UI integration.  
@@ -394,14 +398,20 @@ function createSimpleInlineHandlers(names: readonly string[]): Record<string, Ta
 
 ### `declareMultilineTags(names)`
 
-Declares which already-registered tags are multiline types. Returns a `string[]` to pass as `ParseOptions.blockTags`.
+Declares which already-registered tags are multiline types. Returns a `BlockTagInput[]` to pass as
+`ParseOptions.blockTags`.
 
 This does **not** register tags or create handlers — it only tells the parser which tags need line-break normalization (
 stripping the leading `\n` after `)*` / `)%` openers and the trailing `\n` before `*end$$` / `%end$$` closers).
 
+Each entry is either a plain tag name (normalization for **both** raw and block forms — backward compatible) or an
+object
+with a `forms` array to restrict normalization to specific multiline forms.
+
 ```ts
 import { createParser, createSimpleInlineHandlers, declareMultilineTags } from "yume-dsl-rich-text";
 
+// Basic usage — all multiline forms normalized (backward compatible)
 const dsl = createParser({
   handlers: {
     ...createSimpleInlineHandlers(["bold", "italic"]),
@@ -410,13 +420,26 @@ const dsl = createParser({
   },
   blockTags: declareMultilineTags(["info", "warning"]),
 });
+
+// Granular — restrict normalization to specific forms
+const dsl2 = createParser({
+  handlers: { /* ... */ },
+  blockTags: declareMultilineTags([
+    "info",                              // both raw & block normalized
+    { tag: "code", forms: ["raw"] },     // only raw form normalized
+    { tag: "note", forms: ["block"] },   // only block form normalized
+  ]),
+});
 ```
 
 > **Note:** If you omit `blockTags`, the parser auto-derives it from handlers that have `raw` or `block` methods.
 > Use `declareMultilineTags` when you need explicit control over which tags receive line-break normalization.
 
 ```ts
-function declareMultilineTags(names: readonly string[]): string[];
+type MultilineForm = "raw" | "block";
+type BlockTagInput = string | { tag: string; forms?: readonly MultilineForm[] };
+
+function declareMultilineTags(names: readonly BlockTagInput[]): BlockTagInput[];
 ```
 
 ### `createSimpleBlockHandlers(names)`
@@ -560,7 +583,7 @@ interface ParseOptions {
   handlers?: Record<string, TagHandler>;
   createId?: (token: TokenDraft) => string;
   allowForms?: readonly ("inline" | "raw" | "block")[];
-  blockTags?: string[];
+  blockTags?: readonly BlockTagInput[];
   depthLimit?: number;
   mode?: "render" | "highlight";
   onError?: (error: ParseError) => void;
@@ -573,7 +596,8 @@ interface ParseOptions {
 - `handlers`: tag name → handler definition
 - `createId`: override token id generation for this parse
 - `allowForms`: restrict which tag forms are parsed (default: all forms enabled)
-- `blockTags`: tags treated as block-level for line-break normalization
+- `blockTags`: tags treated as block-level for line-break normalization — accepts plain strings or `{ tag, forms }`
+  objects for per-form control
 - `depthLimit`: maximum nesting depth, default `50`
 - `mode`:
   - `"render"` normalizes block line breaks
@@ -1091,6 +1115,15 @@ Without `onError`, the same recovery happens silently — no error is thrown.
 ---
 
 ## Changelog
+
+### 0.1.12
+
+- Add per-form granularity to `declareMultilineTags` — entries can now be `{ tag, forms }` objects to restrict
+  line-break normalization to specific multiline forms (`"raw"` / `"block"`)
+- Plain string entries remain fully backward compatible (normalize both raw and block forms)
+- Add `MultilineForm`, `BlockTagInput`, `BlockTagLookup` exported types
+- Internal: replace `Set<string>` block-tag lookup with form-aware `BlockTagLookup`; `deriveBlockTags` now registers
+  each handler method under its own form for more precise auto-derivation
 
 ### 0.1.11
 

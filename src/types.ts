@@ -58,6 +58,33 @@ export interface SyntaxConfig extends SyntaxInput {
 
 export type TagForm = "inline" | "raw" | "block";
 
+/**
+ * Forms that support multiline (block-level) line-break normalization.
+ * Inline form is excluded because it is inherently single-line.
+ */
+export type MultilineForm = "raw" | "block";
+
+/**
+ * Entry for `blockTags` — either a plain tag name (all multiline forms)
+ * or an object restricting normalization to specific forms.
+ *
+ * @example
+ * // Both raw and block get normalization (backward compatible)
+ * "info"
+ *
+ * // Only raw form gets normalization
+ * { tag: "code", forms: ["raw"] }
+ */
+export type BlockTagInput = string | { tag: string; forms?: readonly MultilineForm[] };
+
+/**
+ * Internal lookup that checks whether a tag receives line-break
+ * normalization for a given multiline form.
+ */
+export interface BlockTagLookup {
+  has(tag: string, form: MultilineForm): boolean;
+}
+
 export interface ParseOptions {
   /** Tag handler map – keys are tag names, values define how each tag is parsed. */
   handlers?: Record<string, TagHandler>;
@@ -76,8 +103,12 @@ export interface ParseOptions {
   /**
    * Tags that receive block-level line-break normalization.
    * Defaults to every tag whose handler has a `raw` or `block` parser.
+   *
+   * Each entry is either a plain tag name (normalization for both raw and
+   * block forms) or `{ tag, forms }` to restrict normalization to specific
+   * multiline forms.
    */
-  blockTags?: string[];
+  blockTags?: readonly BlockTagInput[];
   /** Maximum nesting depth (default 50). */
   depthLimit?: number;
   /** `"render"` (default) strips leading/trailing line breaks inside blocks; `"highlight"` preserves them. */
@@ -100,7 +131,7 @@ export interface ParseContext {
   registeredTags: ReadonlySet<string>;
   onError: ((error: ParseError) => void) | undefined;
   handlers: Record<string, TagHandler>;
-  blockTagSet: ReadonlySet<string>;
+  blockTagSet: BlockTagLookup;
   root: TextToken[];
   stack: ParseStackNode[];
   buffer: string;

@@ -1,4 +1,4 @@
-import type { ParseMode } from "./types.js";
+import type { BlockTagLookup, MultilineForm, ParseMode } from "./types.js";
 
 export const stripSingleLeadingLineBreak = (text: string): string => {
   if (text.startsWith("\r\n")) return text.slice(2);
@@ -16,9 +16,10 @@ export const normalizeBlockTagContent = (
   tag: string,
   content: string,
   mode: ParseMode,
-  blockTagSet: ReadonlySet<string>,
+  blockTagSet: BlockTagLookup,
+  form: MultilineForm,
 ): string => {
-  if (!blockTagSet.has(tag)) return content;
+  if (!blockTagSet.has(tag, form)) return content;
   if (mode === "highlight") return content;
   return stripSingleLeadingLineBreak(content);
 };
@@ -28,9 +29,10 @@ export const consumeBlockTagTrailingLineBreak = (
   text: string,
   index: number,
   mode: ParseMode,
-  blockTagSet: ReadonlySet<string>,
+  blockTagSet: BlockTagLookup,
+  form: MultilineForm,
 ): number => {
-  if (!blockTagSet.has(tag)) return index;
+  if (!blockTagSet.has(tag, form)) return index;
   if (mode === "highlight") return index;
   return consumeSingleTrailingLineBreak(text, index);
 };

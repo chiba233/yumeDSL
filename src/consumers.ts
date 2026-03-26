@@ -111,6 +111,7 @@ export const tryConsumeDepthLimitedTag = (ctx: ParseContext, info: TagStartInfo)
       end + rawClose.length,
       ctx.mode,
       ctx.blockTagSet,
+      "raw",
     );
     return true;
   }
@@ -258,7 +259,14 @@ export const tryConsumeTagClose = (ctx: ParseContext): boolean => {
   finalizeClosedNode(ctx, node);
 
   ctx.i += endTag.length;
-  ctx.i = consumeBlockTagTrailingLineBreak(node.tag, ctx.text, ctx.i, ctx.mode, ctx.blockTagSet);
+  ctx.i = consumeBlockTagTrailingLineBreak(
+    node.tag,
+    ctx.text,
+    ctx.i,
+    ctx.mode,
+    ctx.blockTagSet,
+    "block",
+  );
 
   return true;
 };

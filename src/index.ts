@@ -4,7 +4,10 @@ export type { Parser } from "./parse.js";
 
 // ── Types ──
 export type {
+  BlockTagInput,
+  BlockTagLookup,
   CreateId,
+  MultilineForm,
   TextToken,
   TokenDraft,
   ErrorCode,

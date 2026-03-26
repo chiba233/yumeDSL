@@ -1,4 +1,10 @@
-import type { ComplexTagParseResult, ParseMode, TagHandler, TextToken } from "./types.js";
+import type {
+  BlockTagLookup,
+  ComplexTagParseResult,
+  ParseMode,
+  TagHandler,
+  TextToken,
+} from "./types.js";
 import {
   findBlockClose,
   findMalformedWholeLineTokenCandidate,
@@ -21,7 +27,7 @@ export const tryParseComplexTag = (
   depthLimit: number,
   mode: ParseMode,
   handlers: Record<string, TagHandler>,
-  blockTagSet: ReadonlySet<string>,
+  blockTagSet: BlockTagLookup,
   parseInlineContent: (
     text: string,
     depthLimit: number,
@@ -89,6 +95,7 @@ export const tryParseComplexTag = (
           end + blockClose.length,
           mode,
           blockTagSet,
+          "block",
         ),
         fallbackText: text.slice(tagOpenPos, end + blockClose.length),
       };
@@ -100,6 +107,7 @@ export const tryParseComplexTag = (
       text.slice(contentStart, end),
       mode,
       blockTagSet,
+      "block",
     );
 
     return {
@@ -110,6 +118,7 @@ export const tryParseComplexTag = (
         end + blockClose.length,
         mode,
         blockTagSet,
+        "block",
       ),
       token: createToken(
         handler.block(arg, parseInlineContent(blockContent, Math.max(depthLimit - 1, 0), { mode })),
@@ -155,6 +164,7 @@ export const tryParseComplexTag = (
         end + rawClose.length,
         mode,
         blockTagSet,
+        "raw",
       ),
       fallbackText: text.slice(tagOpenPos, end + rawClose.length),
     };
@@ -164,7 +174,7 @@ export const tryParseComplexTag = (
   const rawContent = text.slice(contentStart, end);
   const normalizedRawContent =
     mode === "highlight" ? rawContent : rawContent.split(escapeChar + rawClose).join(rawClose);
-  const content = normalizeBlockTagContent(tag, normalizedRawContent, mode, blockTagSet);
+  const content = normalizeBlockTagContent(tag, normalizedRawContent, mode, blockTagSet, "raw");
 
   return {
     handled: true,
@@ -174,6 +184,7 @@ export const tryParseComplexTag = (
       end + rawClose.length,
       mode,
       blockTagSet,
+      "raw",
     ),
     token: createToken(handler.raw(arg, content)),
   };
