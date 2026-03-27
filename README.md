@@ -26,10 +26,11 @@ You define your own semantics and rendering layer.
 
 ## Ecosystem
 
-| Package                                                                      | Role                                            |
-|------------------------------------------------------------------------------|-------------------------------------------------|
-| **`yume-dsl-rich-text`**                                                     | Parser core — text to token tree (this package) |
-| [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker) | Interpreter — token tree to output nodes        |
+| Package                                                           | Role                                             |
+|-------------------------------------------------------------------|--------------------------------------------------|
+| **`yume-dsl-rich-text`**                                          | Parser core — text to token tree (this package)  |
+| [`yume-dsl-token-walker`](https://github.com/chiba233/yumeDSL)    | Interpreter — token tree to output nodes         |
+| [`yume-dsl-shiki-highlight`](https://github.com/chiba233/yumeDSL) | Syntax highlighting — tokens or TextMate grammar |
 
 ---
 
@@ -43,28 +44,29 @@ You define your own semantics and rendering layer.
 - [Install](#install)
 - [Quick Start](#quick-start)
 - [DSL Syntax](#dsl-syntax)
-  - [Inline](#inline)
-  - [Raw](#raw)
-  - [Block](#block)
-  - [Pipe Parameters](#pipe-parameters)
-  - [Escape Sequences](#escape-sequences)
+    - [Inline](#inline)
+    - [Raw](#raw)
+    - [Block](#block)
+    - [Pipe Parameters](#pipe-parameters)
+    - [Escape Sequences](#escape-sequences)
 - [API](#api)
-  - [createParser](#createparserdefaults--recommended-entry-point)
-  - [parseRichText / stripRichText](#parserichtext--striprichtext)
+    - [createParser](#createparserdefaults--recommended-entry-point)
+    - [parseRichText / stripRichText](#parserichtext--striprichtext)
+    - [parseStructural](#parsestructural--handler-free-structural-parse)
 - [Handler Helpers](#handler-helpers)
-  - [createSimpleInlineHandlers](#createsimpleinlinehandlersnames)
-  - [declareMultilineTags](#declaremultilinetagsnames)
-  - [createSimpleBlockHandlers](#createsimpleblockhandlersnames)
-  - [createSimpleRawHandlers](#createsimplerawhandlersnames)
-  - [createPassthroughTags (advanced)](#createpassthroughtagsnames-advanced)
+    - [createSimpleInlineHandlers](#createsimpleinlinehandlersnames)
+    - [declareMultilineTags](#declaremultilinetagsnames)
+    - [createSimpleBlockHandlers](#createsimpleblockhandlersnames)
+    - [createSimpleRawHandlers](#createsimplerawhandlersnames)
+    - [createPassthroughTags (advanced)](#createpassthroughtagsnames-advanced)
 - [ParseOptions](#parseoptions)
 - [Token Structure](#token-structure)
-  - [Strong Typing](#strong-typing)
+    - [Strong Typing](#strong-typing)
 - [Writing Tag Handlers](#writing-tag-handlers)
 - [Utility Exports](#utility-exports)
-  - [PipeArgs](#pipeargs)
+    - [PipeArgs](#pipeargs)
 - [Custom Syntax](#custom-syntax)
-  - [createSyntax](#createsyntax)
+    - [createSyntax](#createsyntax)
 - [Custom Tag Name Characters](#custom-tag-name-characters)
 - [Error Handling](#error-handling)
 - [Graceful Degradation](#graceful-degradation)
@@ -166,20 +168,20 @@ yarn add yume-dsl-rich-text
 
 ```ts
 import {
-  createParser,
-  createSimpleInlineHandlers,
-  createSimpleBlockHandlers,
-  createSimpleRawHandlers,
-  declareMultilineTags,
+    createParser,
+    createSimpleInlineHandlers,
+    createSimpleBlockHandlers,
+    createSimpleRawHandlers,
+    declareMultilineTags,
 } from "yume-dsl-rich-text";
 
 const dsl = createParser({
-  handlers: {
-    ...createSimpleInlineHandlers(["bold", "italic", "underline", "strike"]),
-    ...createSimpleBlockHandlers(["info", "warning"]),
-    ...createSimpleRawHandlers(["code"]),
-  },
-  blockTags: declareMultilineTags(["info", "warning", "code"]),
+    handlers: {
+        ...createSimpleInlineHandlers(["bold", "italic", "underline", "strike"]),
+        ...createSimpleBlockHandlers(["info", "warning"]),
+        ...createSimpleRawHandlers(["code"]),
+    },
+    blockTags: declareMultilineTags(["info", "warning", "code"]),
 });
 ```
 
@@ -193,13 +195,13 @@ Result:
 
 ```ts
 [
-  { type: "text", value: "Hello ", id: "rt-0" },
-  {
-    type: "bold",
-    value: [{ type: "text", value: "world", id: "rt-1" }],
-    id: "rt-2",
-  },
-  { type: "text", value: "!", id: "rt-3" },
+    {type: "text", value: "Hello ", id: "rt-0"},
+    {
+        type: "bold",
+        value: [{type: "text", value: "world", id: "rt-1"}],
+        id: "rt-2",
+    },
+    {type: "text", value: "!", id: "rt-3"},
 ]
 ```
 
@@ -297,26 +299,26 @@ This is the **recommended way** to use the parser — define your tag handlers o
 
 ```ts
 import {
-  createParser,
-  createSimpleInlineHandlers,
-  parsePipeArgs,
+    createParser,
+    createSimpleInlineHandlers,
+    parsePipeArgs,
 } from "yume-dsl-rich-text";
 
 const dsl = createParser({
-  handlers: {
-    ...createSimpleInlineHandlers(["bold", "italic", "underline"]),
+    handlers: {
+        ...createSimpleInlineHandlers(["bold", "italic", "underline"]),
 
-    link: {
-      inline: (tokens) => {
-        const args = parsePipeArgs(tokens);
-        return {
-          type: "link",
-          url: args.text(0),
-          value: args.materializedTailTokens(1),
-        };
-      },
+        link: {
+            inline: (tokens) => {
+                const args = parsePipeArgs(tokens);
+                return {
+                    type: "link",
+                    url: args.text(0),
+                    value: args.materializedTailTokens(1),
+                };
+            },
+        },
     },
-  },
 });
 
 // Use everywhere — handlers are already bound
@@ -324,7 +326,7 @@ dsl.parse("Hello $$bold(world)$$!");
 dsl.strip("Hello $$bold(world)$$!");
 
 // Per-call overrides are shallow-merged onto defaults
-dsl.parse(text, { onError: (e) => console.warn(e) });
+dsl.parse(text, {onError: (e) => console.warn(e)});
 ```
 
 **What `createParser` binds:**
@@ -345,20 +347,27 @@ dsl.parse(text, { onError: (e) => console.warn(e) });
 parseRichText(text1, { handlers });
 parseRichText(text2, { handlers });
 stripRichText(text3, { handlers });
+parseStructural(text4, { handlers });
 
 // With createParser — bind once, use everywhere
 const dsl = createParser({ handlers });
 dsl.parse(text1);
 dsl.parse(text2);
 dsl.strip(text3);
+dsl.structural(text4);
 ```
 
 ```ts
 interface Parser {
-  parse: (text: string, overrides?: ParseOptions) => TextToken[];
-  strip: (text: string, overrides?: ParseOptions) => string;
+    parse: (text: string, overrides?: ParseOptions) => TextToken[];
+    strip: (text: string, overrides?: ParseOptions) => string;
+    structural: (text: string, overrides?: StructuralParseOptions) => StructuralNode[];
 }
 ```
+
+`structural` shares the same `handlers`, `allowForms`, `syntax`, `tagName`, and `depthLimit`
+from `defaults` — semantic-only options (`mode`, `blockTags`, `onError`, `createId`) are
+naturally excluded because `StructuralParseOptions` does not extend them.
 
 ### `parseRichText` / `stripRichText`
 
@@ -371,6 +380,94 @@ function stripRichText(text: string, options?: ParseOptions): string;
 ```
 
 For most applications, prefer [`createParser`](#createparser--recommended-entry-point) instead.
+
+### `parseStructural` — structural parse
+
+`parseStructural` is a complementary API designed for **syntax highlighting, linting, and structural analysis**.
+It preserves the tag form (inline / raw / block) in the output tree.
+
+```ts
+import { parseStructural } from "yume-dsl-rich-text";
+
+const tree = parseStructural("$$bold(hello)$$ and $$code(ts)%\nconst x = 1;\n%end$$");
+// [
+//   { type: "inline", tag: "bold", children: [{ type: "text", value: "hello" }] },
+//   { type: "text", value: " and " },
+//   { type: "raw", tag: "code",
+//     args: [{ type: "text", value: "ts" }],
+//     content: "\nconst x = 1;\n" },
+// ]
+```
+
+```ts
+function parseStructural(text: string, options?: StructuralParseOptions): StructuralNode[]
+```
+
+`StructuralParseOptions` extends `ParserBaseOptions` — the same base shared by `ParseOptions`:
+
+```ts
+interface ParserBaseOptions {
+  handlers?: Record<string, TagHandler>;
+  allowForms?: readonly TagForm[];
+  depthLimit?: number;
+  syntax?: Partial<SyntaxInput>;
+  tagName?: Partial<TagNameConfig>;
+}
+
+interface ParseOptions extends ParserBaseOptions {
+  createId?, blockTags?, mode?, onError?   // semantic-only
+}
+
+interface StructuralParseOptions extends ParserBaseOptions {}
+```
+
+| Param                 | Type                     | Description                                                             |
+|-----------------------|--------------------------|-------------------------------------------------------------------------|
+| `text`                | `string`                 | DSL source                                                              |
+| `options.handlers`    | `Record<string, TagHandler>` | Tag recognition & form gating (same rules as `parseRichText`). Omit for accept-all. |
+| `options.allowForms`  | `readonly TagForm[]`     | Restrict accepted forms (requires `handlers`)                           |
+| `options.depthLimit`  | `number`                 | Max nesting depth (default `50`)                                        |
+| `options.syntax`      | `Partial<SyntaxInput>`   | Override syntax tokens                                                  |
+| `options.tagName`     | `Partial<TagNameConfig>` | Override tag-name character rules                                       |
+
+When `handlers` is provided, tag recognition and form gating are **identical** to `parseRichText` — the same
+`supportsInlineForm` decision table and `filterHandlersByForms` logic are used (shared code, not mirrored).
+Handler functions themselves are never called; only the presence of `inline` / `raw` / `block` methods matters.
+
+When `handlers` is omitted, all syntactically valid tags in all forms are accepted (highlight mode).
+
+**Context inheritance:** when called without `syntax` / `tagName` overrides, `parseStructural` inherits
+the active `withSyntax` / `withTagNameConfig` context. This makes it composable inside custom parse pipelines:
+
+```ts
+withSyntax(customSyntax, () => {
+    parseStructural(text);  // uses customSyntax
+    parseStructural(text2); // also uses customSyntax
+});
+```
+
+**`StructuralNode` variants:**
+
+| Type        | Fields                           | Description                 |
+|-------------|----------------------------------|-----------------------------|
+| `text`      | `value: string`                  | Plain text                  |
+| `escape`    | `raw: string`                    | Escape sequence (e.g. `\)`) |
+| `separator` | —                                | Pipe `\|` divider (args only) |
+| `inline`    | `tag`, `children`                | `$$tag(…)$$`                |
+| `raw`       | `tag`, `args`, `content: string` | `$$tag(…)% … %end$$`        |
+| `block`     | `tag`, `args`, `children`        | `$$tag(…)* … *end$$`        |
+
+Differences from `parseRichText` (features, not bugs):
+
+|                          | `parseRichText`           | `parseStructural`                     |
+|--------------------------|---------------------------|---------------------------------------|
+| Tag recognition          | Same (shared `ParserBaseOptions`) | Same (shared `ParserBaseOptions`) |
+| Form gating              | Same                      | Same                                  |
+| Line-break normalization | `mode: "render"` strips   | Always preserves                      |
+| Pipe `\|`                | Part of text              | `separator` node in args; text elsewhere |
+| Error reporting          | `onError` callback        | Silent degradation                    |
+| Escape handling          | Unescaped at root level   | Structural `escape` nodes             |
+| Output type              | `TextToken[]`             | `StructuralNode[]`                    |
 
 ---
 
@@ -388,19 +485,19 @@ Each handler materializes child tokens and wraps them in `{ type: tagName, value
 This is the **recommended way** to register simple tags.
 
 ```ts
-import { createParser, createSimpleInlineHandlers } from "yume-dsl-rich-text";
+import {createParser, createSimpleInlineHandlers} from "yume-dsl-rich-text";
 
 const dsl = createParser({
-  handlers: {
-    // Register 5 tags in one line instead of 5 handler objects
-    ...createSimpleInlineHandlers(["bold", "italic", "underline", "strike", "code"]),
+    handlers: {
+        // Register 5 tags in one line instead of 5 handler objects
+        ...createSimpleInlineHandlers(["bold", "italic", "underline", "strike", "code"]),
 
-    // Mix with custom handlers that need more logic
-    link: {
-      inline: (tokens) => { /* ... */
-      }
+        // Mix with custom handlers that need more logic
+        link: {
+            inline: (tokens) => { /* ... */
+            }
+        },
     },
-  },
 });
 ```
 
@@ -409,15 +506,15 @@ const dsl = createParser({
 ```ts
 // Before — repetitive
 bold:      {
-  inline: (tokens) => ({ type: "bold", value: materializeTextTokens(tokens) })
+    inline: (tokens) => ({type: "bold", value: materializeTextTokens(tokens)})
 }
 ,
 italic:    {
-  inline: (tokens) => ({ type: "italic", value: materializeTextTokens(tokens) })
+    inline: (tokens) => ({type: "italic", value: materializeTextTokens(tokens)})
 }
 ,
 underline: {
-  inline: (tokens) => ({ type: "underline", value: materializeTextTokens(tokens) })
+    inline: (tokens) => ({type: "underline", value: materializeTextTokens(tokens)})
 }
 ,
 
@@ -443,26 +540,26 @@ object
 with a `forms` array to restrict normalization to specific multiline forms.
 
 ```ts
-import { createParser, createSimpleInlineHandlers, declareMultilineTags } from "yume-dsl-rich-text";
+import {createParser, createSimpleInlineHandlers, declareMultilineTags} from "yume-dsl-rich-text";
 
 // Basic usage — all multiline forms normalized (backward compatible)
 const dsl = createParser({
-  handlers: {
-    ...createSimpleInlineHandlers(["bold", "italic"]),
-    info: { /* custom handler registered separately */ },
-    warning: { /* custom handler registered separately */ },
-  },
-  blockTags: declareMultilineTags(["info", "warning"]),
+    handlers: {
+        ...createSimpleInlineHandlers(["bold", "italic"]),
+        info: { /* custom handler registered separately */},
+        warning: { /* custom handler registered separately */},
+    },
+    blockTags: declareMultilineTags(["info", "warning"]),
 });
 
 // Granular — restrict normalization to specific forms
 const dsl2 = createParser({
-  handlers: { /* ... */ },
-  blockTags: declareMultilineTags([
-    "info",                              // both raw & block normalized
-    { tag: "code", forms: ["raw"] },     // only raw form normalized
-    { tag: "note", forms: ["block"] },   // only block form normalized
-  ]),
+    handlers: { /* ... */},
+    blockTags: declareMultilineTags([
+        "info",                              // both raw & block normalized
+        {tag: "code", forms: ["raw"]},     // only raw form normalized
+        {tag: "note", forms: ["block"]},   // only block form normalized
+    ]),
 });
 ```
 
@@ -485,13 +582,13 @@ Each handler passes through the `arg` and recursively-parsed content:
 `{ type: tagName, arg, value: content }`.
 
 ```ts
-import { createParser, createSimpleInlineHandlers, createSimpleBlockHandlers } from "yume-dsl-rich-text";
+import {createParser, createSimpleInlineHandlers, createSimpleBlockHandlers} from "yume-dsl-rich-text";
 
 const dsl = createParser({
-  handlers: {
-    ...createSimpleInlineHandlers(["bold", "italic"]),
-    ...createSimpleBlockHandlers(["info", "warning"]),
-  },
+    handlers: {
+        ...createSimpleInlineHandlers(["bold", "italic"]),
+        ...createSimpleBlockHandlers(["info", "warning"]),
+    },
 });
 
 dsl.parse("$$info(Notice)*\nThis is a $$bold(block)$$ example.\n*end$$");
@@ -512,9 +609,9 @@ The parsed token shape is:
 
 ```ts
 {
-  type: string;
-  arg ? : string;
-  value: string;
+    type: string;
+    arg ? : string;
+    value: string;
 }
 ```
 
@@ -522,12 +619,12 @@ Use this for raw tags that preserve content as-is — `$$tagName(arg)%...%end$$`
 As with block tags, `%end$$` must be on its own line, so this form should be written as a multiline block.
 
 ```ts
-import { createParser, createSimpleRawHandlers } from "yume-dsl-rich-text";
+import {createParser, createSimpleRawHandlers} from "yume-dsl-rich-text";
 
 const dsl = createParser({
-  handlers: {
-    ...createSimpleRawHandlers(["code", "math"]),
-  },
+    handlers: {
+        ...createSimpleRawHandlers(["code", "math"]),
+    },
 });
 
 dsl.parse(`$$code(ts)%
@@ -548,12 +645,12 @@ Creates block handlers that keep the original `arg`, split it by pipe into `args
 This is a structural helper only. It does not assign business-specific fields such as `title` or `label`.
 
 ```ts
-import { createParser, createPipeBlockHandlers } from "yume-dsl-rich-text";
+import {createParser, createPipeBlockHandlers} from "yume-dsl-rich-text";
 
 const dsl = createParser({
-  handlers: {
-    ...createPipeBlockHandlers(["panel"]),
-  },
+    handlers: {
+        ...createPipeBlockHandlers(["panel"]),
+    },
 });
 ```
 
@@ -569,12 +666,12 @@ Creates raw handlers that keep the original `arg`, split it by pipe into `args`,
 This is useful when you want reusable pipe parsing without hard-coding domain fields such as `lang` or `title`.
 
 ```ts
-import { createParser, createPipeRawHandlers } from "yume-dsl-rich-text";
+import {createParser, createPipeRawHandlers} from "yume-dsl-rich-text";
 
 const dsl = createParser({
-  handlers: {
-    ...createPipeRawHandlers(["code"]),
-  },
+    handlers: {
+        ...createPipeRawHandlers(["code"]),
+    },
 });
 ```
 
@@ -595,12 +692,12 @@ The difference is **explicit vs implicit**: `createSimpleInlineHandlers` explici
 tokens. This also means `handler.inline` is `undefined`, which matters if external code inspects handlers directly.
 
 ```ts
-import { createParser, createPassthroughTags } from "yume-dsl-rich-text";
+import {createParser, createPassthroughTags} from "yume-dsl-rich-text";
 
 const dsl = createParser({
-  handlers: {
-    ...createPassthroughTags(["bold", "italic"]),
-  },
+    handlers: {
+        ...createPassthroughTags(["bold", "italic"]),
+    },
 });
 ```
 
@@ -612,32 +709,44 @@ function createPassthroughTags(names: readonly string[]): Record<string, TagHand
 
 ## ParseOptions
 
+Both `ParseOptions` and `StructuralParseOptions` extend `ParserBaseOptions`:
+
 ```ts
-interface ParseOptions {
-  handlers?: Record<string, TagHandler>;
-  createId?: (token: TokenDraft) => string;
-  allowForms?: readonly ("inline" | "raw" | "block")[];
-  blockTags?: readonly BlockTagInput[];
-  depthLimit?: number;
-  mode?: "render" | "highlight";
-  onError?: (error: ParseError) => void;
-  syntax?: Partial<SyntaxInput>;
+interface ParserBaseOptions {
+    handlers?: Record<string, TagHandler>;
+    allowForms?: readonly ("inline" | "raw" | "block")[];
+    depthLimit?: number;
+    syntax?: Partial<SyntaxInput>;
+    tagName?: Partial<TagNameConfig>;
 }
+
+interface ParseOptions extends ParserBaseOptions {
+    createId?: (token: TokenDraft) => string;
+    blockTags?: readonly BlockTagInput[];
+    mode?: "render" | "highlight";
+    onError?: (error: ParseError) => void;
+}
+
+interface StructuralParseOptions extends ParserBaseOptions {}
 ```
 
-### Fields
+### Fields — shared (`ParserBaseOptions`)
 
 - `handlers`: tag name → handler definition
-- `createId`: override token id generation for this parse
 - `allowForms`: restrict which tag forms are parsed (default: all forms enabled)
+- `depthLimit`: maximum nesting depth, default `50`
+- `syntax`: override default syntax tokens
+- `tagName`: override tag-name character rules
+
+### Fields — `ParseOptions` only
+
+- `createId`: override token id generation for this parse
 - `blockTags`: tags treated as block-level for line-break normalization — accepts plain strings or `{ tag, forms }`
   objects for per-form control
-- `depthLimit`: maximum nesting depth, default `50`
 - `mode`:
-  - `"render"` normalizes block line breaks
-  - `"highlight"` preserves them
+    - `"render"` normalizes block line breaks
+    - `"highlight"` preserves them
 - `onError`: callback for parse errors
-- `syntax`: override default syntax tokens
 
 ### allowForms
 
@@ -650,14 +759,14 @@ is disabled, `$$unknown(...)$$` is preserved literally instead of being unwrappe
 ```ts
 // Only allow inline tags — block and raw syntax is ignored
 const dsl = createParser({
-  handlers,
-  allowForms: ["inline"],
+    handlers,
+    allowForms: ["inline"],
 });
 
 // Allow inline and block, but not raw
 const dsl2 = createParser({
-  handlers,
-  allowForms: ["inline", "block"],
+    handlers,
+    allowForms: ["inline", "block"],
 });
 ```
 
@@ -672,11 +781,11 @@ When omitted, all forms are enabled.
 
 ```ts
 interface TextToken {
-  type: string;
-  value: string | TextToken[];
-  id: string;
+    type: string;
+    value: string | TextToken[];
+    id: string;
 
-  [key: string]: unknown;
+    [key: string]: unknown;
 }
 ```
 
@@ -689,7 +798,7 @@ accessible as `unknown`. You can read them directly without a cast — just narr
 ```ts
 const token = tokens[0];
 if (token.type === "link" && typeof token.href === "string") {
-  console.log(token.href); // works, no cast needed
+    console.log(token.href); // works, no cast needed
 }
 ```
 
@@ -697,10 +806,10 @@ Handlers return `TokenDraft`, which shares the same open structure:
 
 ```ts
 interface TokenDraft {
-  type: string;
-  value: string | TextToken[];
+    type: string;
+    value: string | TextToken[];
 
-  [key: string]: unknown;
+    [key: string]: unknown;
 }
 ```
 
@@ -712,29 +821,29 @@ For full type safety across your entire token schema, define typed interfaces th
 the call site:
 
 ```ts
-import { parseRichText, type TextToken } from "yume-dsl-rich-text";
+import {parseRichText, type TextToken} from "yume-dsl-rich-text";
 
 // 1. Define your token types — extend TextToken for compatibility
 interface PlainText extends TextToken {
-  type: "text";
-  value: string;
+    type: "text";
+    value: string;
 }
 
 interface BoldToken extends TextToken {
-  type: "bold";
-  value: MyToken[];
+    type: "bold";
+    value: MyToken[];
 }
 
 interface LinkToken extends TextToken {
-  type: "link";
-  url: string;
-  value: MyToken[];
+    type: "link";
+    url: string;
+    value: MyToken[];
 }
 
 interface CodeBlockToken extends TextToken {
-  type: "code-block";
-  lang: string;
-  value: string;
+    type: "code-block";
+    lang: string;
+    value: string;
 }
 
 type MyToken = PlainText | BoldToken | LinkToken | CodeBlockToken;
@@ -744,16 +853,16 @@ const tokens = parseRichText(input, options) as MyToken[];
 
 // 3. Narrow with discriminated unions
 function render(token: MyToken): string {
-  switch (token.type) {
-    case "text":
-      return token.value; // string
-    case "bold":
-      return `<b>${token.value.map(render).join("")}</b>`;
-    case "link":
-      return `<a href="${token.url}">${token.value.map(render).join("")}</a>`;
-    case "code-block":
-      return `<pre data-lang="${token.lang}">${token.value}</pre>`;
-  }
+    switch (token.type) {
+        case "text":
+            return token.value; // string
+        case "bold":
+            return `<b>${token.value.map(render).join("")}</b>`;
+        case "link":
+            return `<a href="${token.url}">${token.value.map(render).join("")}</a>`;
+        case "code-block":
+            return `<pre data-lang="${token.lang}">${token.value}</pre>`;
+    }
 }
 ```
 
@@ -779,9 +888,9 @@ Use [handler helpers](#handler-helpers) for simple wrapper tags. Write custom ha
 
 ```ts
 interface TagHandler {
-  inline?: (tokens: TextToken[]) => TokenDraft;
-  raw?: (arg: string | undefined, content: string) => TokenDraft;
-  block?: (arg: string | undefined, content: TextToken[]) => TokenDraft;
+    inline?: (tokens: TextToken[]) => TokenDraft;
+    raw?: (arg: string | undefined, content: string) => TokenDraft;
+    block?: (arg: string | undefined, content: TextToken[]) => TokenDraft;
 }
 ```
 
@@ -792,58 +901,58 @@ Unsupported forms fall back gracefully instead of breaking the parse.
 
 ```ts
 import {
-  createParser,
-  createSimpleInlineHandlers,
-  extractText,
-  parsePipeArgs,
+    createParser,
+    createSimpleInlineHandlers,
+    extractText,
+    parsePipeArgs,
 } from "yume-dsl-rich-text";
 
 const dsl = createParser({
-  handlers: {
-    // Simple tags — use helpers
-    ...createSimpleInlineHandlers(["bold", "italic", "underline"]),
+    handlers: {
+        // Simple tags — use helpers
+        ...createSimpleInlineHandlers(["bold", "italic", "underline"]),
 
-    // Custom: pipe parameters → extra fields
-    link: {
-      inline: (tokens) => {
-        const args = parsePipeArgs(tokens);
-        return {
-          type: "link",
-          url: args.text(0),
-          value:
-                  args.parts.length > 1
-                          ? args.materializedTailTokens(1)
-                          : args.materializedTokens(0),
-        };
-      },
-    },
+        // Custom: pipe parameters → extra fields
+        link: {
+            inline: (tokens) => {
+                const args = parsePipeArgs(tokens);
+                return {
+                    type: "link",
+                    url: args.text(0),
+                    value:
+                        args.parts.length > 1
+                            ? args.materializedTailTokens(1)
+                            : args.materializedTokens(0),
+                };
+            },
+        },
 
-    // Custom: raw form → preserves content as-is
-    code: {
-      raw: (arg, content) => ({
-        type: "code-block",
-        lang: arg ?? "text",
-        value: content,
-      }),
-    },
+        // Custom: raw form → preserves content as-is
+        code: {
+            raw: (arg, content) => ({
+                type: "code-block",
+                lang: arg ?? "text",
+                value: content,
+            }),
+        },
 
-    // Custom: supports both inline and block forms
-    info: {
-      inline: (tokens) => {
-        const args = parsePipeArgs(tokens);
-        return {
-          type: "info",
-          title: extractText(args.materializedTokens(0)),
-          value: args.materializedTailTokens(1),
-        };
-      },
-      block: (arg, content) => ({
-        type: "info",
-        title: arg || "Info",
-        value: content,
-      }),
+        // Custom: supports both inline and block forms
+        info: {
+            inline: (tokens) => {
+                const args = parsePipeArgs(tokens);
+                return {
+                    type: "info",
+                    title: extractText(args.materializedTokens(0)),
+                    value: args.materializedTailTokens(1),
+                };
+            },
+            block: (arg, content) => ({
+                type: "info",
+                title: arg || "Info",
+                value: content,
+            }),
+        },
     },
-  },
 });
 ```
 
@@ -921,10 +1030,10 @@ You will not need these if you only use the handler helpers above.
 
 ```ts
 interface PipeArgs {
-  parts: TextToken[][];
-  text: (index: number) => string;
-  materializedTokens: (index: number) => TextToken[];
-  materializedTailTokens: (startIndex: number) => TextToken[];
+    parts: TextToken[][];
+    text: (index: number) => string;
+    materializedTokens: (index: number) => TextToken[];
+    materializedTailTokens: (startIndex: number) => TextToken[];
 }
 ```
 
@@ -940,7 +1049,7 @@ interface PipeArgs {
 If you only need the text values as `string[]` (no token trees), `parsePipeTextList` is a shorthand:
 
 ```ts
-import { parsePipeTextList } from "yume-dsl-rich-text";
+import {parsePipeTextList} from "yume-dsl-rich-text";
 
 parsePipeTextList("ts | Demo | Label");
 // → ["ts", "Demo", "Label"]
@@ -955,25 +1064,25 @@ This is what `createPipeBlockHandlers` and `createPipeRawHandlers` use internall
 You can override syntax tokens through `options.syntax`.
 
 ```ts
-import { parseRichText } from "yume-dsl-rich-text";
+import {parseRichText} from "yume-dsl-rich-text";
 
 const tokens = parseRichText("@@bold(hello)@@", {
-  syntax: {
-    tagPrefix: "@@",
-    endTag: ")@@",
-  },
-  handlers: {
-    bold: {
-      inline: (tokens) => ({ type: "bold", value: tokens }),
+    syntax: {
+        tagPrefix: "@@",
+        endTag: ")@@",
     },
-  },
+    handlers: {
+        bold: {
+            inline: (tokens) => ({type: "bold", value: tokens}),
+        },
+    },
 });
 ```
 
 ### Default Syntax
 
 ```ts
-import { DEFAULT_SYNTAX } from "yume-dsl-rich-text";
+import {DEFAULT_SYNTAX} from "yume-dsl-rich-text";
 
 // {
 //   tagPrefix: "$$",
@@ -999,9 +1108,9 @@ import { DEFAULT_SYNTAX } from "yume-dsl-rich-text";
 resolved syntax outside of parsing.
 
 ```ts
-import { createSyntax } from "yume-dsl-rich-text";
+import {createSyntax} from "yume-dsl-rich-text";
 
-const syntax = createSyntax({ tagPrefix: "@@", endTag: ")@@" });
+const syntax = createSyntax({tagPrefix: "@@", endTag: ")@@"});
 
 // SyntaxConfig extends SyntaxInput with a precomputed field:
 // syntax.escapableTokens — tokens that can be escaped, sorted by length (descending)
@@ -1009,7 +1118,7 @@ const syntax = createSyntax({ tagPrefix: "@@", endTag: ")@@" });
 
 ```ts
 interface SyntaxConfig extends SyntaxInput {
-  escapableTokens: string[];
+    escapableTokens: string[];
 }
 ```
 
@@ -1044,17 +1153,17 @@ directly.
 **Via `createParser`** (pre-bound, recommended):
 
 ```ts
-import { createParser, createTagNameConfig } from "yume-dsl-rich-text";
+import {createParser, createTagNameConfig} from "yume-dsl-rich-text";
 
 const dsl = createParser({
-  handlers: {
-    "ui:button": {
-      inline: (value) => ({ type: "ui:button", value }),
+    handlers: {
+        "ui:button": {
+            inline: (value) => ({type: "ui:button", value}),
+        },
     },
-  },
-  tagName: createTagNameConfig({
-    isTagChar: (char) => /[A-Za-z0-9_:-]/.test(char),
-  }),
+    tagName: createTagNameConfig({
+        isTagChar: (char) => /[A-Za-z0-9_:-]/.test(char),
+    }),
 });
 
 dsl.parse("$$ui:button(hello)$$");
@@ -1063,18 +1172,18 @@ dsl.parse("$$ui:button(hello)$$");
 **Via `parseRichText`** (per-call):
 
 ```ts
-import { parseRichText } from "yume-dsl-rich-text";
+import {parseRichText} from "yume-dsl-rich-text";
 
 const tokens = parseRichText("$$1ui:button(hello)$$", {
-  handlers: {
-    "1ui:button": {
-      inline: (value) => ({ type: "1ui:button", value }),
+    handlers: {
+        "1ui:button": {
+            inline: (value) => ({type: "1ui:button", value}),
+        },
     },
-  },
-  tagName: {
-    isTagStartChar: (char) => /[A-Za-z0-9_]/.test(char),
-    isTagChar: (char) => /[A-Za-z0-9_:-]/.test(char),
-  },
+    tagName: {
+        isTagStartChar: (char) => /[A-Za-z0-9_]/.test(char),
+        isTagChar: (char) => /[A-Za-z0-9_:-]/.test(char),
+    },
 });
 ```
 
@@ -1085,12 +1194,12 @@ const tokens = parseRichText("$$1ui:button(hello)$$", {
 Use `onError` to collect parse errors.
 
 ```ts
-import type { ParseError } from "yume-dsl-rich-text";
+import type {ParseError} from "yume-dsl-rich-text";
 
 const errors: ParseError[] = [];
 
 parseRichText("$$bold(unclosed", {
-  onError: (error) => errors.push(error),
+    onError: (error) => errors.push(error),
 });
 
 // errors[0]
@@ -1111,13 +1220,13 @@ If `onError` is omitted, malformed markup degrades gracefully and errors are sil
 
 ```ts
 type ErrorCode =
-  | "DEPTH_LIMIT"
-  | "UNEXPECTED_CLOSE"
-  | "INLINE_NOT_CLOSED"
-  | "BLOCK_NOT_CLOSED"
-  | "BLOCK_CLOSE_MALFORMED"
-  | "RAW_NOT_CLOSED"
-  | "RAW_CLOSE_MALFORMED";
+    | "DEPTH_LIMIT"
+    | "UNEXPECTED_CLOSE"
+    | "INLINE_NOT_CLOSED"
+    | "BLOCK_NOT_CLOSED"
+    | "BLOCK_CLOSE_MALFORMED"
+    | "RAW_NOT_CLOSED"
+    | "RAW_CLOSE_MALFORMED";
 ```
 
 | Code                    | Meaning                                    |
@@ -1143,10 +1252,10 @@ Tags not present in `handlers` are not recognized. Their content is unwrapped as
 
 ```ts
 const dsl = createParser({
-  handlers: {
-    ...createSimpleInlineHandlers(["bold"]),
-    // "italic" is NOT registered
-  },
+    handlers: {
+        ...createSimpleInlineHandlers(["bold"]),
+        // "italic" is NOT registered
+    },
 });
 
 dsl.parse("Hello $$bold(world)$$ and $$italic(goodbye)$$");
@@ -1154,10 +1263,10 @@ dsl.parse("Hello $$bold(world)$$ and $$italic(goodbye)$$");
 
 ```ts
 [
-  { type: "text", value: "Hello ", id: "rt-0" },
-  { type: "bold", value: [{ type: "text", value: "world", id: "rt-1" }], id: "rt-2" },
-  { type: "text", value: " and goodbye", id: "rt-3" },
-  //                      ↑ "italic" is unregistered — content becomes plain text
+    {type: "text", value: "Hello ", id: "rt-0"},
+    {type: "bold", value: [{type: "text", value: "world", id: "rt-1"}], id: "rt-2"},
+    {type: "text", value: " and goodbye", id: "rt-3"},
+    //                      ↑ "italic" is unregistered — content becomes plain text
 ]
 ```
 
@@ -1168,10 +1277,10 @@ entire markup degrades to plain text.
 
 ```ts
 const dsl = createParser({
-  handlers: {
-    // "note" only supports inline, not raw
-    note: { inline: (tokens) => ({ type: "note", value: tokens }) },
-  },
+    handlers: {
+        // "note" only supports inline, not raw
+        note: {inline: (tokens) => ({type: "note", value: tokens})},
+    },
 });
 
 dsl.parse("$$note(ok)%\nraw content\n%end$$");
@@ -1180,7 +1289,7 @@ dsl.parse("$$note(ok)%\nraw content\n%end$$");
 ```ts
 // The raw form is not supported → entire tag degrades to fallback text
 [
-  { type: "text", value: "$$note(ok)%\nraw content\n%end$$", id: "rt-0" },
+    {type: "text", value: "$$note(ok)%\nraw content\n%end$$", id: "rt-0"},
 ]
 ```
 
@@ -1190,11 +1299,11 @@ When `allowForms` excludes a form, the parser acts as if handlers don't support 
 
 ```ts
 const dsl = createParser({
-  handlers: {
-    bold: { inline: (tokens) => ({ type: "bold", value: tokens }) },
-    code: { raw: (arg, content) => ({ type: "code", lang: arg ?? "text", value: content }) },
-  },
-  allowForms: ["inline"],   // ← raw and block disabled
+    handlers: {
+        bold: {inline: (tokens) => ({type: "bold", value: tokens})},
+        code: {raw: (arg, content) => ({type: "code", lang: arg ?? "text", value: content})},
+    },
+    allowForms: ["inline"],   // ← raw and block disabled
 });
 
 dsl.parse("$$bold(hello)$$");
@@ -1212,7 +1321,7 @@ When a tag is opened but never closed, the parser reports an error and recovers 
 ```ts
 const errors: ParseError[] = [];
 
-dsl.parse("Hello $$bold(world", { onError: (e) => errors.push(e) });
+dsl.parse("Hello $$bold(world", {onError: (e) => errors.push(e)});
 // → [{ type: "text", value: "Hello $$bold(world", id: "rt-0" }]
 //
 // errors[0].code === "INLINE_NOT_CLOSED"
@@ -1231,97 +1340,97 @@ The parser produces a `TextToken[]` tree — here is a drop-in recursive Vue 3 c
 ```ts
 // dsl.ts
 import {
-  createParser,
-  createSimpleInlineHandlers,
-  parsePipeArgs,
-  parsePipeTextArgs,
-  createToken,
-  materializeTextTokens,
-  type TagHandler,
-  type TokenDraft,
+    createParser,
+    createSimpleInlineHandlers,
+    parsePipeArgs,
+    parsePipeTextArgs,
+    createToken,
+    materializeTextTokens,
+    type TagHandler,
+    type TokenDraft,
 } from "yume-dsl-rich-text";
 
 const titledHandler = (type: string, defaultTitle: string): TagHandler => ({
-  inline: (tokens): TokenDraft => {
-    const args = parsePipeArgs(tokens);
-    if (args.parts.length <= 1) {
-      return { type, title: defaultTitle, value: args.materializedTokens(0) };
-    }
-    return { type, title: args.text(0), value: args.materializedTailTokens(1) };
-  },
-  block: (arg, tokens): TokenDraft => ({
-    type,
-    title: arg || defaultTitle,
-    value: tokens,
-  }),
-  raw: (arg, content): TokenDraft => ({
-    type,
-    title: arg || defaultTitle,
-    value: [createToken({ type: "text", value: content })],
-  }),
+    inline: (tokens): TokenDraft => {
+        const args = parsePipeArgs(tokens);
+        if (args.parts.length <= 1) {
+            return {type, title: defaultTitle, value: args.materializedTokens(0)};
+        }
+        return {type, title: args.text(0), value: args.materializedTailTokens(1)};
+    },
+    block: (arg, tokens): TokenDraft => ({
+        type,
+        title: arg || defaultTitle,
+        value: tokens,
+    }),
+    raw: (arg, content): TokenDraft => ({
+        type,
+        title: arg || defaultTitle,
+        value: [createToken({type: "text", value: content})],
+    }),
 });
 
 const collapseBase = titledHandler("collapse", "Click to expand");
 
 export const dsl = createParser({
-  handlers: {
-    ...createSimpleInlineHandlers([
-      "bold", "thin", "underline", "strike", "code", "center",
-    ]),
+    handlers: {
+        ...createSimpleInlineHandlers([
+            "bold", "thin", "underline", "strike", "code", "center",
+        ]),
 
-    link: {
-      inline: (tokens): TokenDraft => {
-        const args = parsePipeArgs(tokens);
-        const url = args.text(0);
-        const display =
-          args.parts.length > 1
-            ? args.materializedTailTokens(1)
-            : args.materializedTokens(0);
-        return { type: "link", url, value: display };
-      },
+        link: {
+            inline: (tokens): TokenDraft => {
+                const args = parsePipeArgs(tokens);
+                const url = args.text(0);
+                const display =
+                    args.parts.length > 1
+                        ? args.materializedTailTokens(1)
+                        : args.materializedTokens(0);
+                return {type: "link", url, value: display};
+            },
+        },
+
+        info: titledHandler("info", "Info"),
+        warning: titledHandler("warning", "Warning"),
+
+        collapse: {block: collapseBase.block, raw: collapseBase.raw},
+
+        "raw-code": {
+            raw: (arg, content): TokenDraft => {
+                const args = parsePipeTextArgs(arg ?? "");
+                return {
+                    type: "raw-code",
+                    codeLang: args.text(0),
+                    title: args.text(1) || "Code:",
+                    label: args.text(2) ?? "",
+                    value: content,
+                };
+            },
+        },
+
+        date: {
+            inline: (tokens): TokenDraft => {
+                const args = parsePipeArgs(tokens);
+                return {
+                    type: "date",
+                    date: args.text(0),
+                    format: args.text(1) || undefined,
+                    value: "",
+                };
+            },
+        },
+
+        fromNow: {
+            inline: (tokens): TokenDraft => {
+                const args = parsePipeArgs(tokens);
+                return {
+                    type: "fromNow",
+                    date: args.text(0),
+                    value: "",
+                };
+            },
+        },
     },
-
-    info:    titledHandler("info", "Info"),
-    warning: titledHandler("warning", "Warning"),
-
-    collapse: { block: collapseBase.block, raw: collapseBase.raw },
-
-    "raw-code": {
-      raw: (arg, content): TokenDraft => {
-        const args = parsePipeTextArgs(arg ?? "");
-        return {
-          type: "raw-code",
-          codeLang: args.text(0),
-          title: args.text(1) || "Code:",
-          label: args.text(2) ?? "",
-          value: content,
-        };
-      },
-    },
-
-    date: {
-      inline: (tokens): TokenDraft => {
-        const args = parsePipeArgs(tokens);
-        return {
-          type: "date",
-          date: args.text(0),
-          format: args.text(1) || undefined,
-          value: "",
-        };
-      },
-    },
-
-    fromNow: {
-      inline: (tokens): TokenDraft => {
-        const args = parsePipeArgs(tokens);
-        return {
-          type: "fromNow",
-          date: args.text(0),
-          value: "",
-        };
-      },
-    },
-  },
 });
 ```
 
@@ -1330,105 +1439,106 @@ export const dsl = createParser({
 ```vue
 <!-- RichTextRenderer.vue -->
 <script lang="ts" setup>
-import type { TextToken } from "yume-dsl-rich-text";
-import { type Component, h } from "vue";
+  import type {TextToken} from "yume-dsl-rich-text";
+  import {type Component, h} from "vue";
 
-defineOptions({ name: "RichTextRenderer" });
+  defineOptions({name: "RichTextRenderer"});
 
-const props = defineProps<{
-  tokens: TextToken[];
-}>();
+  const props = defineProps<{
+    tokens: TextToken[];
+  }>();
 
-/* ── tag → element / component map ── */
-type RenderTarget = string | Component;
+  /* ── tag → element / component map ── */
+  type RenderTarget = string | Component;
 
-const tagMap: Record<string, RenderTarget> = {
-  bold:      "strong",
-  thin:      "span",
-  underline: "span",
-  strike:    "s",
-  center:    "span",
-  code:      "code",
-  link:      "a",
-  // Add your own component mappings here, e.g.:
-  // info:     NAlert,
-  // collapse: CollapseWrapper,
-};
+  const tagMap: Record<string, RenderTarget> = {
+    bold: "strong",
+    thin: "span",
+    underline: "span",
+    strike: "s",
+    center: "span",
+    code: "code",
+    link: "a",
+    // Add your own component mappings here, e.g.:
+    // info:     NAlert,
+    // collapse: CollapseWrapper,
+  };
 
-/* ── per-type props ── */
-const getComponentProps = (token: TextToken) => {
-  switch (token.type) {
-    case "link":
-      return {
-        href: normalizeUrl(token.url as string),
-        rel: "noopener noreferrer",
-        target: "_blank",
-      };
-    case "info":
-    case "warning":
-      return { title: token.title };
-    case "collapse":
-      return { title: token.title ?? "" };
-    case "raw-code":
-      return {
-        code: token.value as string,
-        codeLang: token.codeLang,
-        title: token.title,
-        label: token.label,
-      };
-    default:
-      return {};
-  }
-};
+  /* ── per-type props ── */
+  const getComponentProps = (token: TextToken) => {
+    switch (token.type) {
+      case "link":
+        return {
+          href: normalizeUrl(token.url as string),
+          rel: "noopener noreferrer",
+          target: "_blank",
+        };
+      case "info":
+      case "warning":
+        return {title: token.title};
+      case "collapse":
+        return {title: token.title ?? ""};
+      case "raw-code":
+        return {
+          code: token.value as string,
+          codeLang: token.codeLang,
+          title: token.title,
+          label: token.label,
+        };
+      default:
+        return {};
+    }
+  };
 
-/* ── per-type CSS classes ── */
-const getComponentClass = (token: TextToken) => [
-  `rich-${token.type}`,
-  {
-    "rich-underline": token.type === "underline",
-    "rich-strike":    token.type === "strike",
-    "rich-center":    token.type === "center",
-    "rich-code":      token.type === "code",
-  },
-];
+  /* ── per-type CSS classes ── */
+  const getComponentClass = (token: TextToken) => [
+    `rich-${token.type}`,
+    {
+      "rich-underline": token.type === "underline",
+      "rich-strike": token.type === "strike",
+      "rich-center": token.type === "center",
+      "rich-code": token.type === "code",
+    },
+  ];
 
-/* ── URL sanitiser ── */
-const normalizeUrl = (raw: string): string | undefined => {
-  if (!raw) return undefined;
-  try {
-    const url = raw.match(/^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//)
-      ? new URL(raw)
-      : new URL("https://" + raw);
-    return ["http:", "https:"].includes(url.protocol) ? url.href : undefined;
-  } catch {
-    return undefined;
-  }
-};
+  /* ── URL sanitiser ── */
+  const normalizeUrl = (raw: string): string | undefined => {
+    if (!raw) return undefined;
+    try {
+      const url = raw.match(/^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//)
+          ? new URL(raw)
+          : new URL("https://" + raw);
+      return ["http:", "https:"].includes(url.protocol) ? url.href : undefined;
+    } catch {
+      return undefined;
+    }
+  };
 </script>
 
 <template>
   <template v-for="token in tokens" :key="token.id">
     <!-- plain text -->
-    <span v-if="token.type === 'text'" v-text="token.value" />
+    <span v-if="token.type === 'text'" v-text="token.value"/>
 
     <!-- raw-code: value is a string, no recursion -->
     <component
-      v-else-if="token.type === 'raw-code'"
-      :is="tagMap[token.type] ?? 'pre'"
-      :class="getComponentClass(token)"
-      v-bind="getComponentProps(token)"
-    >{{ token.value }}</component>
+        v-else-if="token.type === 'raw-code'"
+        :is="tagMap[token.type] ?? 'pre'"
+        :class="getComponentClass(token)"
+        v-bind="getComponentProps(token)"
+    >{{ token.value }}
+    </component>
 
     <!-- everything else: recurse into children -->
     <component
-      v-else
-      :is="tagMap[token.type] ?? 'span'"
-      :class="getComponentClass(token)"
-      v-bind="getComponentProps(token)"
+        v-else
+        :is="tagMap[token.type] ?? 'span'"
+        :class="getComponentClass(token)"
+        v-bind="getComponentProps(token)"
     >
       <RichTextRenderer
-        v-if="Array.isArray(token.value) && token.value.length"
-        :tokens="token.value"
+          v-if="Array.isArray(token.value) && token.value.length"
+          :tokens="token.value"
       />
       <template v-else-if="typeof token.value === 'string'">
         {{ token.value }}
@@ -1441,17 +1551,18 @@ const normalizeUrl = (raw: string): string | undefined => {
 ### 3. Use it
 
 ```vue
-<script setup>
-import { dsl } from "./dsl";
-import RichTextRenderer from "./RichTextRenderer.vue";
 
-const tokens = dsl.parse(
-  "Hello $$bold(world)$$! Visit $$link(https://example.com|my site)$$."
-);
+<script setup>
+  import {dsl} from "./dsl";
+  import RichTextRenderer from "./RichTextRenderer.vue";
+
+  const tokens = dsl.parse(
+      "Hello $$bold(world)$$! Visit $$link(https://example.com|my site)$$."
+  );
 </script>
 
 <template>
-  <RichTextRenderer :tokens="tokens" />
+  <RichTextRenderer :tokens="tokens"/>
 </template>
 ```
 
@@ -1460,26 +1571,26 @@ const tokens = dsl.parse(
 The `tagMap` object is the integration point. Map any tag type to a Vue component:
 
 ```ts
-import { NAlert, NCollapse, NCollapseItem } from "naive-ui";
+import {NAlert, NCollapse, NCollapseItem} from "naive-ui";
 import CodeBlock from "./CodeBlock.vue";
 
 const tagMap: Record<string, RenderTarget> = {
-  bold:       "strong",
-  link:       "a",
-  info:       NAlert,        // renders $$info(title)* ... *end$$ as <n-alert>
-  warning:    NAlert,
-  "raw-code": CodeBlock,     // renders $$raw-code(ts)% ... %end$$ as your code block
-  collapse:   CollapseWrapper,
+    bold: "strong",
+    link: "a",
+    info: NAlert,        // renders $$info(title)* ... *end$$ as <n-alert>
+    warning: NAlert,
+    "raw-code": CodeBlock,     // renders $$raw-code(ts)% ... %end$$ as your code block
+    collapse: CollapseWrapper,
 };
 ```
 
 For tags that need runtime logic (e.g. date formatting), use a functional component:
 
 ```ts
-import { type FunctionalComponent, h } from "vue";
+import {type FunctionalComponent, h} from "vue";
 
 const DateText: FunctionalComponent<{ date?: string }> = (props) =>
-  h("span", formatDate(props.date));
+    h("span", formatDate(props.date));
 
 tagMap.date = DateText;
 ```
@@ -1488,9 +1599,25 @@ tagMap.date = DateText;
 
 ## Changelog
 
+### 0.1.18
+
+- Add `parseStructural(text, options?)` — structural parser that preserves tag form
+  (inline / raw / block) in the output tree as `StructuralNode[]`
+  - Shares `ParserBaseOptions` with `parseRichText` — identical tag recognition and form gating when `handlers` is provided
+  - Omit `handlers` to accept all tags and forms (highlight mode)
+  - Inherits active `withSyntax` / `withTagNameConfig` context when called without explicit overrides
+- Extract `ParserBaseOptions` — shared base for `ParseOptions` and `StructuralParseOptions`
+  (`handlers`, `allowForms`, `depthLimit`, `syntax`, `tagName`)
+- Add `parser.structural()` to `createParser` return type — shares base config with `parse()` / `strip()`
+- Export `supportsInlineForm`, `filterHandlersByForms` from internal modules (used by structural parser, single source)
+- Export `readEscapedSequence`, `withSyntax`, `getSyntax`, `withTagNameConfig`
+- Export `ParserBaseOptions`, `StructuralNode`, `StructuralParseOptions` types
+- Add `yume-dsl-shiki-highlight` to ecosystem
+
 ### 0.1.15 – 0.1.17
 
-- Add [Live Demo](https://qwwq.org/blog/dsl-fallback-museum) — showcasing Shiki code-highlighting plugin, legitimate plugins, malformed markup, and error reporting
+- Add [Live Demo](https://qwwq.org/blog/dsl-fallback-museum) — showcasing Shiki code-highlighting plugin, legitimate
+  plugins, malformed markup, and error reporting
 - Optimize npm package size by excluding non-essential docs (~30% smaller)
 - Add Vue 3 rendering guide with drop-in recursive component example
 - Add community docs: `CONTRIBUTING.md`, `SECURITY.md`, issue templates, PR template

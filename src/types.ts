@@ -92,21 +92,32 @@ export interface BlockTagLookup {
   has(tag: string, form: MultilineForm): boolean;
 }
 
-export interface ParseOptions {
+/**
+ * Shared base options for both `parseRichText` and `parseStructural`.
+ *
+ * Contains everything related to tag recognition, form gating,
+ * syntax configuration, and depth limiting.
+ */
+export interface ParserBaseOptions {
   /** Tag handler map – keys are tag names, values define how each tag is parsed. */
   handlers?: Record<string, TagHandler>;
-  /** Override token id generation for this parse. Defaults to a parse-local `rt-0`, `rt-1`, ... counter. */
-  createId?: CreateId;
   /**
    * Restrict which tag forms the parser will accept.
    * Forms not listed are treated as if the handler does not support them (graceful degradation).
    * Default: all forms enabled (`["inline", "raw", "block"]`).
-   *
-   * @example
-   * // Only allow inline tags — raw and block syntax is ignored
-   * parseRichText(text, { handlers, allowForms: ["inline"] });
    */
   allowForms?: readonly TagForm[];
+  /** Maximum nesting depth (default 50). */
+  depthLimit?: number;
+  /** Override DSL syntax tokens (default: `$$tag(…)$$` family). */
+  syntax?: Partial<SyntaxInput>;
+  /** Override how tag-name characters are recognized. */
+  tagName?: Partial<TagNameConfig>;
+}
+
+export interface ParseOptions extends ParserBaseOptions {
+  /** Override token id generation for this parse. Defaults to a parse-local `rt-0`, `rt-1`, ... counter. */
+  createId?: CreateId;
   /**
    * Tags that receive block-level line-break normalization.
    * Defaults to every tag whose handler has a `raw` or `block` parser.
@@ -116,17 +127,38 @@ export interface ParseOptions {
    * multiline forms.
    */
   blockTags?: readonly BlockTagInput[];
-  /** Maximum nesting depth (default 50). */
-  depthLimit?: number;
   /** `"render"` (default) strips leading/trailing line breaks inside blocks; `"highlight"` preserves them. */
   mode?: "render" | "highlight";
   /** Called for every parse error. If omitted, errors are silently discarded. */
   onError?: (error: ParseError) => void;
-  /** Override DSL syntax tokens (default: `$$tag(…)$$` family). */
-  syntax?: Partial<SyntaxInput>;
-  /** Override how tag-name characters are recognized. */
-  tagName?: Partial<TagNameConfig>;
 }
+
+// ── Structural parse types ──
+
+/**
+ * A node in the structural parse tree.
+ *
+ * Unlike {@link TextToken}, this preserves the tag form (inline / raw / block)
+ * and accepts any syntactically valid tag without handler registration.
+ */
+export type StructuralNode =
+  | { type: "text"; value: string }
+  | { type: "escape"; raw: string }
+  | { type: "separator" }
+  | { type: "inline"; tag: string; children: StructuralNode[] }
+  | { type: "raw"; tag: string; args: StructuralNode[]; content: string }
+  | { type: "block"; tag: string; args: StructuralNode[]; children: StructuralNode[] };
+
+/**
+ * Options for {@link parseStructural}.
+ *
+ * Extends {@link ParserBaseOptions} — shares tag recognition, form gating,
+ * syntax, and depth-limit config with {@link ParseOptions}.
+ *
+ * When `handlers` is provided, gating rules are identical to `parseRichText`.
+ * When omitted, all tags and forms are accepted (highlight mode).
+ */
+export interface StructuralParseOptions extends ParserBaseOptions {}
 
 // ── Internal types (not re-exported from index) ──
 

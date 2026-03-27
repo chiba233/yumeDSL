@@ -7,14 +7,17 @@ import {
   createSimpleBlockHandlers,
   createSimpleInlineHandlers,
   createSimpleRawHandlers,
+  createSyntax,
   createTagNameConfig,
   declareMultilineTags,
   parsePipeTextList,
+  parseStructural,
   parseRichText,
   resetTokenIdSeed,
   stripRichText,
+  withSyntax,
 } from "../src/index.ts";
-import type { ParseError, TextToken } from "../src/types.ts";
+import type { ParseError, StructuralNode, TextToken } from "../src/types.ts";
 import { runGoldenCases } from "./testHarness.ts";
 import { loadTestJsonFixture } from "./testFixtures.ts";
 import { testHandlers } from "./handlers.ts";
@@ -43,6 +46,38 @@ const normalizeTokens = (tokens: TextToken[]): unknown[] =>
       ...rest,
       value: typeof value === "string" ? value : normalizeTokens(value),
     };
+  });
+
+const normalizeStructuralNodes = (nodes: StructuralNode[]): unknown[] =>
+  nodes.map((node) => {
+    switch (node.type) {
+      case "text":
+        return { type: "text", value: node.value };
+      case "escape":
+        return { type: "escape", raw: node.raw };
+      case "separator":
+        return { type: "separator" };
+      case "inline":
+        return {
+          type: "inline",
+          tag: node.tag,
+          children: normalizeStructuralNodes(node.children),
+        };
+      case "raw":
+        return {
+          type: "raw",
+          tag: node.tag,
+          args: normalizeStructuralNodes(node.args),
+          content: node.content,
+        };
+      case "block":
+        return {
+          type: "block",
+          tag: node.tag,
+          args: normalizeStructuralNodes(node.args),
+          children: normalizeStructuralNodes(node.children),
+        };
+    }
   });
 
 const createDeterministicDirtyText = (
@@ -619,6 +654,175 @@ const cases: Array<{ name: string; run: () => void }> = [
           value: [{ type: "text", value: "click me" }],
         },
       ]);
+    },
+  },
+  {
+    name: "[Structural/Pipe] 普通文本与 block 正文中的管道符 -> 不应误产生 separator 节点",
+    run: () => {
+      assert.deepEqual(normalizeStructuralNodes(parseStructural("a|b")), [
+        { type: "text", value: "a|b" },
+      ]);
+      assert.deepEqual(
+        normalizeStructuralNodes(parseStructural("$$panel(x)*\na|b\n*end$$")),
+        [
+          {
+            type: "block",
+            tag: "panel",
+            args: [{ type: "text", value: "x" }],
+            children: [{ type: "text", value: "\na|b\n" }],
+          },
+        ],
+      );
+    },
+  },
+  {
+    name: "[Structural/Syntax] 自定义多字符分隔符 -> 应仅在参数区产出 separator 节点",
+    run: () => {
+      const nodes = parseStructural("@@link<<https://a.com || click me>>@@", {
+        syntax: {
+          tagPrefix: "@@",
+          tagOpen: "<<",
+          tagClose: ">>",
+          tagDivider: "||",
+          endTag: ">>@@",
+          rawOpen: ">>%",
+          blockOpen: ">>*",
+          rawClose: "%end@@",
+          blockClose: "*end@@",
+          escapeChar: "~",
+        },
+      });
+      assert.deepEqual(normalizeStructuralNodes(nodes), [
+        {
+          type: "inline",
+          tag: "link",
+          children: [
+            { type: "text", value: "https://a.com " },
+            { type: "separator" },
+            { type: "text", value: " click me" },
+          ],
+        },
+      ]);
+    },
+  },
+  {
+    name: "[Structural/Closure] createParser.structural -> 应继承闭包默认 handlers 与 allowForms 门控",
+    run: () => {
+      const parser = createParser({
+        handlers: {
+          note: {
+            inline: (tokens) => ({ type: "note", value: tokens }),
+          },
+          code: {
+            raw: (arg, content) => ({ type: "code", arg, value: content }),
+          },
+        },
+        allowForms: ["raw", "block"],
+      });
+
+      assert.deepEqual(normalizeTokens(parser.parse("$$note(ok)$$")), [
+        { type: "text", value: "$$note(ok)$$" },
+      ]);
+      assert.deepEqual(normalizeStructuralNodes(parser.structural("$$note(ok)$$")), [
+        { type: "text", value: "$$note(ok)$$" },
+      ]);
+
+      assert.deepEqual(normalizeTokens(parser.parse("$$code(ts)%\nraw\n%end$$")), [
+        { type: "code", arg: "ts", value: "raw\n" },
+      ]);
+      assert.deepEqual(normalizeStructuralNodes(parser.structural("$$code(ts)%\nraw\n%end$$")), [
+        {
+          type: "raw",
+          tag: "code",
+          args: [{ type: "text", value: "ts" }],
+          content: "\nraw\n",
+        },
+      ]);
+    },
+  },
+  {
+    name: "[Structural/Closure] createParser 覆盖门控 -> parse / structural 在 override 后应同步退化",
+    run: () => {
+      const parser = createParser({
+        handlers: {
+          note: {
+            inline: (tokens) => ({ type: "note", value: tokens }),
+          },
+          panel: {
+            block: (arg, tokens) => ({ type: "panel", arg, value: tokens }),
+          },
+        },
+      });
+
+      assert.deepEqual(
+        normalizeTokens(parser.parse("$$panel(x)*\nhello\n*end$$", { allowForms: ["inline"] })),
+        [{ type: "text", value: "$$panel(x)*\nhello\n*end$$" }],
+      );
+      assert.deepEqual(
+        normalizeStructuralNodes(
+          parser.structural("$$panel(x)*\nhello\n*end$$", { allowForms: ["inline"] }),
+        ),
+        [{ type: "text", value: "$$panel(x)*\nhello\n*end$$" }],
+      );
+
+      assert.deepEqual(
+        normalizeTokens(parser.parse("$$unknown(ok)$$", { allowForms: ["inline"] })),
+        [{ type: "text", value: "ok" }],
+      );
+      assert.deepEqual(
+        normalizeStructuralNodes(parser.structural("$$unknown(ok)$$", { allowForms: ["inline"] })),
+        [{ type: "inline", tag: "unknown", children: [{ type: "text", value: "ok" }] }],
+      );
+    },
+  },
+  {
+    name: "[Structural/Closure] withSyntax 闭包上下文 -> parseStructural 与 parser.structural 应继承自定义 divider",
+    run: () => {
+      const parser = createParser({
+        handlers: {
+          link: {
+            inline: (tokens) => ({ type: "link", value: tokens }),
+          },
+        },
+      });
+
+      const syntax = {
+        tagPrefix: "@@",
+        tagOpen: "<<",
+        tagClose: ">>",
+        tagDivider: "||",
+        endTag: ">>@@",
+        rawOpen: ">>%",
+        blockOpen: ">>*",
+        rawClose: "%end@@",
+        blockClose: "*end@@",
+        escapeChar: "~",
+      } as const;
+
+      withSyntax(createSyntax(syntax), () => {
+        assert.deepEqual(normalizeStructuralNodes(parseStructural("@@link<<a || b>>@@")), [
+          {
+            type: "inline",
+            tag: "link",
+            children: [
+              { type: "text", value: "a " },
+              { type: "separator" },
+              { type: "text", value: " b" },
+            ],
+          },
+        ]);
+        assert.deepEqual(normalizeStructuralNodes(parser.structural("@@link<<a || b>>@@")), [
+          {
+            type: "inline",
+            tag: "link",
+            children: [
+              { type: "text", value: "a " },
+              { type: "separator" },
+              { type: "text", value: " b" },
+            ],
+          },
+        ]);
+      });
     },
   },
 

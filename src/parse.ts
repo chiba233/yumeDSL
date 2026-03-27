@@ -4,6 +4,8 @@ import type {
   MultilineForm,
   ParseContext,
   ParseOptions,
+  StructuralNode,
+  StructuralParseOptions,
   TagForm,
   TagHandler,
   TextToken,
@@ -13,6 +15,7 @@ import { createTagNameConfig, withTagNameConfig } from "./chars.js";
 import { tryConsumeEscape, tryConsumeTagClose, tryConsumeTagStart } from "./consumers.js";
 import { finalizeUnclosedTags, flushBuffer } from "./context.js";
 import { withCreateId } from "./createToken.js";
+import { parseStructural } from "./structural.js";
 import { createSyntax, withSyntax } from "./syntax.js";
 
 const buildBlockTagLookup = (inputs: readonly BlockTagInput[]): BlockTagLookup => {
@@ -57,7 +60,7 @@ const deriveBlockTags = (handlers: Record<string, unknown>): BlockTagLookup => {
  *
  * Passthrough handlers (empty `{}`) are treated as inline-form tags.
  */
-const filterHandlersByForms = (
+export const filterHandlersByForms = (
   handlers: Record<string, TagHandler>,
   forms: ReadonlySet<TagForm>,
 ): Record<string, TagHandler> => {
@@ -192,6 +195,7 @@ export const stripRichText = (text: string, options: ParseOptions = {}): string 
 export interface Parser {
   parse: (text: string, overrides?: ParseOptions) => TextToken[];
   strip: (text: string, overrides?: ParseOptions) => string;
+  structural: (text: string, overrides?: StructuralParseOptions) => StructuralNode[];
 }
 
 export const createParser = (defaults: ParseOptions): Parser => ({
@@ -199,4 +203,6 @@ export const createParser = (defaults: ParseOptions): Parser => ({
     parseRichText(text, overrides ? { ...defaults, ...overrides } : defaults),
   strip: (text, overrides) =>
     stripRichText(text, overrides ? { ...defaults, ...overrides } : defaults),
+  structural: (text, overrides) =>
+    parseStructural(text, overrides ? { ...defaults, ...overrides } : defaults),
 });

@@ -2,6 +2,9 @@
 export { parseRichText, stripRichText, createParser } from "./parse.js";
 export type { Parser } from "./parse.js";
 
+// ── Structural parse ──
+export { parseStructural } from "./structural.js";
+
 // ── Configuration ──
 export { DEFAULT_SYNTAX, createSyntax } from "./syntax.js";
 export { DEFAULT_TAG_NAME, createTagNameConfig } from "./chars.js";
@@ -26,11 +29,16 @@ export {
   parsePipeTextArgs,
   parsePipeTextList,
 } from "./builders.js";
-export { unescapeInline } from "./escape.js";
+export { unescapeInline, readEscapedSequence } from "./escape.js";
 export { createToken, resetTokenIdSeed } from "./createToken.js";
+
+// ── Context ──
+export { withSyntax, getSyntax } from "./syntax.js";
+export { withTagNameConfig } from "./chars.js";
 
 // ── Types: core ──
 export type {
+  ParserBaseOptions,
   ParseOptions,
   TagHandler,
   TagForm,
@@ -58,5 +66,8 @@ export type {
   ParseError,
   CreateId,
 } from "./types.js";
+
+// ── Types: structural ──
+export type { StructuralNode, StructuralParseOptions } from "./types.js";
 
 export type { PipeArgs } from "./builders.js";
