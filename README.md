@@ -1594,7 +1594,7 @@ tagMap.date = DateText;
 
 ## Changelog
 
-### 0.1.18
+### 0.1.20
 
 - Fix documentation broken by AI-generated changes
 
