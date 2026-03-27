@@ -29,7 +29,7 @@ You define your own semantics and rendering layer.
 | Package                                                                            | Role                                             |
 |------------------------------------------------------------------------------------|--------------------------------------------------|
 | **`yume-dsl-rich-text`**                                                           | Parser core — text to token tree (this package)  |
-| [`yume-dsl-token-walker`](https://github.com/chiba233/yumeDSL)       | Interpreter — token tree to output nodes         |
+| [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker)       | Interpreter — token tree to output nodes         |
 | [`yume-dsl-shiki-highlight`](https://github.com/chiba233/yume-dsl-shiki-highlight) | Syntax highlighting — tokens or TextMate grammar |
 
 ---
@@ -1593,6 +1593,10 @@ tagMap.date = DateText;
 ---
 
 ## Changelog
+
+### 0.1.18
+
+- Fix documentation broken by AI-generated changes
 
 ### 0.1.18 - 0.1.19
 
