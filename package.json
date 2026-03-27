@@ -1,6 +1,6 @@
 {
   "name": "yume-dsl-rich-text",
-  "version": "0.1.18",
+  "version": "0.1.19",
   "description": "Single-pass recursive rich-text DSL parser without regex, with pluggable tag handlers",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
