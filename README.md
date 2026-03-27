@@ -4,7 +4,7 @@
 
 ### [▶ Live Demo — DSL Fallback Museum](https://qwwq.org/blog/dsl-fallback-museum)
 
-Shiki code-highlighting plugin (unpublished) · legitimate plugins · intentional malformed markup · error reporting
+Shiki code-highlighting plugin · legitimate plugins · intentional malformed markup · error reporting
 
 ---
 
@@ -26,11 +26,11 @@ You define your own semantics and rendering layer.
 
 ## Ecosystem
 
-| Package                                                           | Role                                             |
-|-------------------------------------------------------------------|--------------------------------------------------|
-| **`yume-dsl-rich-text`**                                          | Parser core — text to token tree (this package)  |
-| [`yume-dsl-token-walker`](https://github.com/chiba233/yumeDSL)    | Interpreter — token tree to output nodes         |
-| [`yume-dsl-shiki-highlight`](https://github.com/chiba233/yumeDSL) | Syntax highlighting — tokens or TextMate grammar |
+| Package                                                                            | Role                                             |
+|------------------------------------------------------------------------------------|--------------------------------------------------|
+| **`yume-dsl-rich-text`**                                                           | Parser core — text to token tree (this package)  |
+| [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker)       | Interpreter — token tree to output nodes         |
+| [`yume-dsl-shiki-highlight`](https://github.com/chiba233/yume-dsl-shiki-highlight) | Syntax highlighting — tokens or TextMate grammar |
 
 ---
 
@@ -344,13 +344,13 @@ dsl.parse(text, {onError: (e) => console.warn(e)});
 
 ```ts
 // Repetitive — must pass handlers everywhere
-parseRichText(text1, { handlers });
-parseRichText(text2, { handlers });
-stripRichText(text3, { handlers });
-parseStructural(text4, { handlers });
+parseRichText(text1, {handlers});
+parseRichText(text2, {handlers});
+stripRichText(text3, {handlers});
+parseStructural(text4, {handlers});
 
 // With createParser — bind once, use everywhere
-const dsl = createParser({ handlers });
+const dsl = createParser({handlers});
 dsl.parse(text1);
 dsl.parse(text2);
 dsl.strip(text3);
@@ -387,7 +387,7 @@ For most applications, prefer [`createParser`](#createparser--recommended-entry-
 It preserves the tag form (inline / raw / block) in the output tree.
 
 ```ts
-import { parseStructural } from "yume-dsl-rich-text";
+import {parseStructural} from "yume-dsl-rich-text";
 
 const tree = parseStructural("$$bold(hello)$$ and $$code(ts)%\nconst x = 1;\n%end$$");
 // [
@@ -407,28 +407,32 @@ function parseStructural(text: string, options?: StructuralParseOptions): Struct
 
 ```ts
 interface ParserBaseOptions {
-  handlers?: Record<string, TagHandler>;
-  allowForms?: readonly TagForm[];
-  depthLimit?: number;
-  syntax?: Partial<SyntaxInput>;
-  tagName?: Partial<TagNameConfig>;
+    handlers?: Record<string, TagHandler>;
+    allowForms?: readonly TagForm[];
+    depthLimit?: number;
+    syntax?: Partial<SyntaxInput>;
+    tagName?: Partial<TagNameConfig>;
 }
 
 interface ParseOptions extends ParserBaseOptions {
-  createId?, blockTags?, mode?, onError?   // semantic-only
+    createId?,
+    blockTags?,
+    mode?,
+    onError?   // semantic-only
 }
 
-interface StructuralParseOptions extends ParserBaseOptions {}
+interface StructuralParseOptions extends ParserBaseOptions {
+}
 ```
 
-| Param                 | Type                     | Description                                                             |
-|-----------------------|--------------------------|-------------------------------------------------------------------------|
-| `text`                | `string`                 | DSL source                                                              |
-| `options.handlers`    | `Record<string, TagHandler>` | Tag recognition & form gating (same rules as `parseRichText`). Omit for accept-all. |
-| `options.allowForms`  | `readonly TagForm[]`     | Restrict accepted forms (requires `handlers`)                           |
-| `options.depthLimit`  | `number`                 | Max nesting depth (default `50`)                                        |
-| `options.syntax`      | `Partial<SyntaxInput>`   | Override syntax tokens                                                  |
-| `options.tagName`     | `Partial<TagNameConfig>` | Override tag-name character rules                                       |
+| Param                | Type                         | Description                                                                         |
+|----------------------|------------------------------|-------------------------------------------------------------------------------------|
+| `text`               | `string`                     | DSL source                                                                          |
+| `options.handlers`   | `Record<string, TagHandler>` | Tag recognition & form gating (same rules as `parseRichText`). Omit for accept-all. |
+| `options.allowForms` | `readonly TagForm[]`         | Restrict accepted forms (requires `handlers`)                                       |
+| `options.depthLimit` | `number`                     | Max nesting depth (default `50`)                                                    |
+| `options.syntax`     | `Partial<SyntaxInput>`       | Override syntax tokens                                                              |
+| `options.tagName`    | `Partial<TagNameConfig>`     | Override tag-name character rules                                                   |
 
 When `handlers` is provided, tag recognition and form gating are **identical** to `parseRichText` — the same
 `supportsInlineForm` decision table and `filterHandlersByForms` logic are used (shared code, not mirrored).
@@ -448,26 +452,26 @@ withSyntax(customSyntax, () => {
 
 **`StructuralNode` variants:**
 
-| Type        | Fields                           | Description                 |
-|-------------|----------------------------------|-----------------------------|
-| `text`      | `value: string`                  | Plain text                  |
-| `escape`    | `raw: string`                    | Escape sequence (e.g. `\)`) |
+| Type        | Fields                           | Description                   |
+|-------------|----------------------------------|-------------------------------|
+| `text`      | `value: string`                  | Plain text                    |
+| `escape`    | `raw: string`                    | Escape sequence (e.g. `\)`)   |
 | `separator` | —                                | Pipe `\|` divider (args only) |
-| `inline`    | `tag`, `children`                | `$$tag(…)$$`                |
-| `raw`       | `tag`, `args`, `content: string` | `$$tag(…)% … %end$$`        |
-| `block`     | `tag`, `args`, `children`        | `$$tag(…)* … *end$$`        |
+| `inline`    | `tag`, `children`                | `$$tag(…)$$`                  |
+| `raw`       | `tag`, `args`, `content: string` | `$$tag(…)% … %end$$`          |
+| `block`     | `tag`, `args`, `children`        | `$$tag(…)* … *end$$`          |
 
 Differences from `parseRichText` (features, not bugs):
 
-|                          | `parseRichText`           | `parseStructural`                     |
-|--------------------------|---------------------------|---------------------------------------|
-| Tag recognition          | Same (shared `ParserBaseOptions`) | Same (shared `ParserBaseOptions`) |
-| Form gating              | Same                      | Same                                  |
-| Line-break normalization | `mode: "render"` strips   | Always preserves                      |
-| Pipe `\|`                | Part of text              | `separator` node in args; text elsewhere |
-| Error reporting          | `onError` callback        | Silent degradation                    |
-| Escape handling          | Unescaped at root level   | Structural `escape` nodes             |
-| Output type              | `TextToken[]`             | `StructuralNode[]`                    |
+|                          | `parseRichText`                   | `parseStructural`                        |
+|--------------------------|-----------------------------------|------------------------------------------|
+| Tag recognition          | Same (shared `ParserBaseOptions`) | Same (shared `ParserBaseOptions`)        |
+| Form gating              | Same                              | Same                                     |
+| Line-break normalization | `mode: "render"` strips           | Always preserves                         |
+| Pipe `\|`                | Part of text                      | `separator` node in args; text elsewhere |
+| Error reporting          | `onError` callback                | Silent degradation                       |
+| Escape handling          | Unescaped at root level           | Structural `escape` nodes                |
+| Output type              | `TextToken[]`                     | `StructuralNode[]`                       |
 
 ---
 
@@ -727,7 +731,8 @@ interface ParseOptions extends ParserBaseOptions {
     onError?: (error: ParseError) => void;
 }
 
-interface StructuralParseOptions extends ParserBaseOptions {}
+interface StructuralParseOptions extends ParserBaseOptions {
+}
 ```
 
 ### Fields — shared (`ParserBaseOptions`)
@@ -1603,9 +1608,10 @@ tagMap.date = DateText;
 
 - Add `parseStructural(text, options?)` — structural parser that preserves tag form
   (inline / raw / block) in the output tree as `StructuralNode[]`
-  - Shares `ParserBaseOptions` with `parseRichText` — identical tag recognition and form gating when `handlers` is provided
-  - Omit `handlers` to accept all tags and forms (highlight mode)
-  - Inherits active `withSyntax` / `withTagNameConfig` context when called without explicit overrides
+    - Shares `ParserBaseOptions` with `parseRichText` — identical tag recognition and form gating when `handlers` is
+      provided
+    - Omit `handlers` to accept all tags and forms (highlight mode)
+    - Inherits active `withSyntax` / `withTagNameConfig` context when called without explicit overrides
 - Extract `ParserBaseOptions` — shared base for `ParseOptions` and `StructuralParseOptions`
   (`handlers`, `allowForms`, `depthLimit`, `syntax`, `tagName`)
 - Add `parser.structural()` to `createParser` return type — shares base config with `parse()` / `strip()`
