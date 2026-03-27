@@ -1594,7 +1594,7 @@ tagMap.date = DateText;
 
 ## Changelog
 
-### 0.1.18
+### 0.1.18 - 0.1.19
 
 - Add `parseStructural(text, options?)` — structural parser that preserves tag form
   (inline / raw / block) in the output tree as `StructuralNode[]`
