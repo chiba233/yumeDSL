@@ -40,7 +40,6 @@ You define your own semantics and rendering layer.
 - [When to Use](#when-to-use)
 - [Boundaries](#boundaries)
 - [Features](#features)
-- [Ecosystem](#ecosystem)
 - [Install](#install)
 - [Quick Start](#quick-start)
 - [DSL Syntax](#dsl-syntax)
@@ -140,15 +139,6 @@ What this package **does not do**:
 - Single-pass forward scanner (no backtracking)
 - No RegExp-based parsing
 - Deterministic linear scan
-
----
-
-## Ecosystem
-
-| Package                                                                       | Role                                            |
-|-------------------------------------------------------------------------------|-------------------------------------------------|
-| **`yume-dsl-rich-text`**                                                      | Parser core — text to token tree (this package) |
-| [`@yume-dsl/token-walker`](https://github.com/chiba233/yume-dsl-token-walker) | Interpreter — token tree to output nodes        |
 
 ---
 
