@@ -292,7 +292,7 @@ dsl.parse(text, {onError: (e) => console.warn(e)});
 | `depthLimit`     | 嵌套深度限制 — 很少需要逐次修改              |
 | `createId`       | 自定义 token id 生成器（仍可按次覆盖）       |
 | `blockTags`      | 需要 block 换行归一化的标签              |
-| `mode`           | 已弃用 — 保留向后兼容，行为始终等同 `"render"` |
+| `mode`           | 仅支持 `"render"`                    |
 | `onError`        | 默认错误处理器（仍可按次覆盖）                |
 | `trackPositions` | 为所有输出节点附加源码位置（仍可按次覆盖）          |
 
@@ -907,7 +907,7 @@ interface StructuralParseOptions extends ParserBaseOptions {
 
 - `createId`：覆盖本次解析的 token id 生成策略
 - `blockTags`：需要 block 换行规范化的标签 — 接受纯字符串或 `{ tag, forms }` 对象以按形式控制
-- `mode`：**已弃用** — `"highlight"` 保留向后兼容但行为与 `"render"` 完全一致。语法高亮场景请使用 `parseStructural`
+- `mode`：仅支持 `"render"`。语法高亮场景请使用 `parseStructural`
 - `onError`：解析错误回调
 - `trackPositions`：为每个 `TextToken` 附加源码位置信息 `position`（默认 `false`）。详见[源码位置追踪](#源码位置追踪)
 

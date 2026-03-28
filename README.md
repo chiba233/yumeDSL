@@ -299,7 +299,7 @@ dsl.parse(text, {onError: (e) => console.warn(e)});
 | `depthLimit`     | Nesting limit — rarely changes per call                                    |
 | `createId`       | Custom token id generator (can be overridden per call)                     |
 | `blockTags`      | Tags that receive block-level line-break normalization                     |
-| `mode`           | Deprecated — kept for backward compatibility, always behaves as `"render"` |
+| `mode`           | Only `"render"` is supported                                                |
 | `onError`        | Default error handler (can still be overridden per call)                   |
 | `trackPositions` | Attach source positions to all output nodes (can be overridden per call)   |
 
