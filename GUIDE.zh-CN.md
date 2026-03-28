@@ -1877,7 +1877,7 @@ tagMap.date = DateText;
 
 版本历史已拆分到独立文件：
 
--  [CHANGELOG.zh-CN.md](./CHANGELOG.zh-CN.md)
+-  [更新日志](./CHANGELOG.zh-CN.md)
 
 ---
 

@@ -1925,7 +1925,7 @@ tagMap.date = DateText;
 
 Release history now lives in a standalone file:
 
-- [CHANGELOG.md](./CHANGELOG.md)
+- [CHANGELOG](./CHANGELOG.md)
 
 ---
 
