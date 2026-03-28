@@ -1288,7 +1288,7 @@ const nodes = parseStructural("$$bold(hi)$$", { trackPositions: true });
 
 ```ts
 interface SourcePosition {
-    offset: number;   // 0-indexed byte offset
+    offset: number;   // 0-indexed string offset (UTF-16 code unit)
     line: number;      // 1-indexed
     column: number;    // 1-indexed
 }
