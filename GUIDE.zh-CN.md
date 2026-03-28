@@ -1757,17 +1757,21 @@ tagMap.date = DateText;
 
 以下导出将在未来 major 版本中移除。当前仍可正常使用，保留用于向后兼容。
 
-| 导出                               | 替代方案                          | 原因                               |
-|----------------------------------|-------------------------------|----------------------------------|
-| `createPipeBlockHandlers(names)` | `createPipeHandlers`          | 严格子集；`createPipeHandlers` 覆盖全部场景 |
-| `createPipeRawHandlers(names)`   | `createPipeHandlers`          | 同上                               |
-| `createPassthroughTags(names)`   | `createSimpleInlineHandlers`  | 隐式行为；显式 handler 更清晰              |
-| `withSyntax(syntax, fn)`         | `DslContext`                  | 模块级隐式状态；应显式传 `DslContext`        |
-| `getSyntax()`                    | `DslContext`                  | 同上                               |
-| `withTagNameConfig(config, fn)`  | 通过 `ParseOptions` 传 `tagName` | 同上                               |
-| `withCreateId(createId, fn)`     | `DslContext`                  | 同上                               |
-| `resetTokenIdSeed()`             | `DslContext.createId`         | 仅在依赖模块级 id 计数器时需要                |
-| `ParseOptions.mode`              | *（移除）*                        | 只有一个值（`"render"`），不再有意义          |
+Ambient-state API（`withSyntax`、`getSyntax`、`withTagNameConfig`、`withCreateId`、`resetTokenIdSeed`）被用户代码
+调用时会发出一次性 `console.warn`。`parseRichText` 内部调用自动屏蔽，不产生告警噪音。`parseStructural` 仅在检测到
+ambient 状态被 `withSyntax` / `withTagNameConfig` 改变时告警；没有 ambient 包裹的正常调用不会告警。
+
+| 导出                               | 替代方案                          | 告警 | 原因                                    |
+|----------------------------------|-------------------------------|----|---------------------------------------|
+| `withSyntax(syntax, fn)`         | `DslContext`                  | 是  | 模块级隐式状态；应显式传 `DslContext`             |
+| `getSyntax()`                    | `DslContext`                  | 是  | 同上                                    |
+| `withTagNameConfig(config, fn)`  | 通过 `ParseOptions` 传 `tagName` | 是  | 同上                                    |
+| `withCreateId(createId, fn)`     | `DslContext`                  | 是  | 同上                                    |
+| `resetTokenIdSeed()`             | `DslContext.createId`         | 是  | 仅在依赖模块级 id 计数器时需要                     |
+| `createPipeBlockHandlers(names)` | `createPipeHandlers`          | 否  | 冗余 helper；`createPipeHandlers` 覆盖全部场景 |
+| `createPipeRawHandlers(names)`   | `createPipeHandlers`          | 否  | 同上                                    |
+| `createPassthroughTags(names)`   | `createSimpleInlineHandlers`  | 否  | 隐式行为；显式 handler 更清晰                   |
+| `ParseOptions.mode`              | *（移除）*                        | 否  | 只有一个值（`"render"`），不再有意义               |
 
 ---
 

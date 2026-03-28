@@ -1797,17 +1797,22 @@ tagMap.date = DateText;
 
 The following exports will be removed in a future major version. They remain functional for backward compatibility.
 
-| Export                           | Use instead                       | Reason                                                    |
-|----------------------------------|-----------------------------------|-----------------------------------------------------------|
-| `createPipeBlockHandlers(names)` | `createPipeHandlers`              | Strict subset; `createPipeHandlers` covers all use cases  |
-| `createPipeRawHandlers(names)`   | `createPipeHandlers`              | Same as above                                             |
-| `createPassthroughTags(names)`   | `createSimpleInlineHandlers`      | Implicit behavior; explicit handlers are clearer          |
-| `withSyntax(syntax, fn)`         | `DslContext`                      | Module-level implicit state; pass `DslContext` explicitly |
-| `getSyntax()`                    | `DslContext`                      | Same as above                                             |
-| `withTagNameConfig(config, fn)`  | Pass `tagName` via `ParseOptions` | Same as above                                             |
-| `withCreateId(createId, fn)`     | `DslContext`                      | Same as above                                             |
-| `resetTokenIdSeed()`             | `DslContext.createId`             | Only needed when relying on module-level id counter       |
-| `mode` in `ParseOptions`         | *(remove)*                        | Only one value (`"render"`); no longer meaningful         |
+Ambient-state APIs (`withSyntax`, `getSyntax`, `withTagNameConfig`, `withCreateId`, `resetTokenIdSeed`) emit a
+one-time `console.warn` when called by user code. Internal calls from `parseRichText` are suppressed automatically.
+`parseStructural` warns only when it detects that ambient state has been changed via `withSyntax` /
+`withTagNameConfig`; normal calls without ambient wrapping do not warn.
+
+| Export                           | Use instead                       | Warns | Reason                                                    |
+|----------------------------------|-----------------------------------|-------|-----------------------------------------------------------|
+| `withSyntax(syntax, fn)`         | `DslContext`                      | Yes   | Module-level implicit state; pass `DslContext` explicitly |
+| `getSyntax()`                    | `DslContext`                      | Yes   | Same as above                                             |
+| `withTagNameConfig(config, fn)`  | Pass `tagName` via `ParseOptions` | Yes   | Same as above                                             |
+| `withCreateId(createId, fn)`     | `DslContext`                      | Yes   | Same as above                                             |
+| `resetTokenIdSeed()`             | `DslContext.createId`             | Yes   | Only needed when relying on module-level id counter       |
+| `createPipeBlockHandlers(names)` | `createPipeHandlers`              | No    | Redundant helper; `createPipeHandlers` covers all cases   |
+| `createPipeRawHandlers(names)`   | `createPipeHandlers`              | No    | Same as above                                             |
+| `createPassthroughTags(names)`   | `createSimpleInlineHandlers`      | No    | Implicit behavior; explicit handlers are clearer          |
+| `mode` in `ParseOptions`         | *(remove)*                        | No    | Only one value (`"render"`); no longer meaningful         |
 
 ---
 

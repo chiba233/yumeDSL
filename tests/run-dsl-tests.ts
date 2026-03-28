@@ -12,5 +12,8 @@ await import("./dist.test.ts");
 console.log("=== Context Compat ===");
 await import("./contextCompat.test.ts");
 
+console.log("=== Deprecations ===");
+await import("./deprecations.test.ts");
+
 console.log("=== Type Check ===");
 await import("./typecheck.test.ts");

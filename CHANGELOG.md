@@ -14,10 +14,20 @@
   - `materializedTokens(index, fallback?)`
   - `materializedTailTokens(startIndex, fallback?)`
 - `createPipeBlockHandlers` and `createPipeRawHandlers` are now thin shorthands over `createPipeHandlers`
+- Deprecation warnings for legacy ambient-state APIs (each warning fires once per runtime)
+  - `withSyntax()`, `getSyntax()`, `withTagNameConfig()`, `withCreateId()`, `resetTokenIdSeed()` now emit a
+    one-time `console.warn` when called by user code
+  - Internal calls from `parseRichText` are suppressed via `withInternalCaller` — no warning noise during normal parsing
+  - `parseStructural()` warns specifically when it detects ambient `withSyntax()` / `withTagNameConfig()` state that
+    differs from defaults; normal calls without ambient wrapping do not warn
+- Deprecated exports formally documented in a new **Deprecated API** section:
+  `createPipeBlockHandlers`, `createPipeRawHandlers`, `createPassthroughTags`, `withSyntax`, `getSyntax`,
+  `withTagNameConfig`, `withCreateId`, `resetTokenIdSeed`, `ParseOptions.mode`
 - Documentation refresh
   - Promoted `createPipeHandlers` as the main pipe-aware helper
   - Reorganized handler helper docs into recommended / shorthand / advanced sections
   - Updated utility examples to use `createTextToken(...)` where appropriate
+  - Consolidated same-family helpers into shared sections for better information density
 
 ### 1.0.4
 

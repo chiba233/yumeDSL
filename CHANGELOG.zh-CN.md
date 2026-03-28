@@ -14,10 +14,20 @@
   - `materializedTokens(index, fallback?)`
   - `materializedTailTokens(startIndex, fallback?)`
 - `createPipeBlockHandlers` 和 `createPipeRawHandlers` 现在是 `createPipeHandlers` 的薄封装简写
+- 旧版 ambient-state API 弃用告警（每条告警在运行时内只触发一次）
+  - `withSyntax()`、`getSyntax()`、`withTagNameConfig()`、`withCreateId()`、`resetTokenIdSeed()` 被用户代码调用时
+    发出一次性 `console.warn`
+  - `parseRichText` 内部调用通过 `withInternalCaller` 屏蔽——正常解析不产生告警噪音
+  - `parseStructural()` 在检测到 ambient `withSyntax()` / `withTagNameConfig()` 状态偏离默认值时专门告警；
+    没有 ambient 包裹的正常调用不会告警
+- 待弃用导出正式写入新增的 **待弃用 API** 文档段落：
+  `createPipeBlockHandlers`、`createPipeRawHandlers`、`createPassthroughTags`、`withSyntax`、`getSyntax`、
+  `withTagNameConfig`、`withCreateId`、`resetTokenIdSeed`、`ParseOptions.mode`
 - 文档整理
   - 将 `createPipeHandlers` 提升为主推荐的 pipe-aware helper
   - 将处理器辅助函数文档重组为 推荐 / 简写 / 进阶 三组
   - 在合适的工具示例里改用 `createTextToken(...)`
+  - 同类辅助函数合并为共享小节，提升信息密度
 
 ### 1.0.4
 
