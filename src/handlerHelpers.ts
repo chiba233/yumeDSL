@@ -1,4 +1,4 @@
-import type { BlockTagInput, TagHandler, TextToken, TokenDraft } from "./types.js";
+import type { BlockTagInput, DslContext, TagHandler, TextToken, TokenDraft } from "./types.js";
 import { materializeTextTokens, parsePipeTextList } from "./builders.js";
 
 /**
@@ -38,9 +38,9 @@ export const createSimpleInlineHandlers = <const T extends readonly string[]>(
   const result = {} as Record<T[number], TagHandler>;
   for (const name of names) {
     result[name as T[number]] = {
-      inline: (tokens: TextToken[]): TokenDraft => ({
+      inline: (tokens: TextToken[], ctx?: DslContext): TokenDraft => ({
         type: name,
-        value: materializeTextTokens(tokens),
+        value: materializeTextTokens(tokens, ctx),
       }),
     };
   }
@@ -147,10 +147,10 @@ export const createPipeBlockHandlers = <const T extends readonly string[]>(
   const result = {} as Record<T[number], TagHandler>;
   for (const name of names) {
     result[name as T[number]] = {
-      block: (arg: string | undefined, content: TextToken[]): TokenDraft => ({
+      block: (arg: string | undefined, content: TextToken[], ctx?: DslContext): TokenDraft => ({
         type: name,
         arg,
-        args: arg === undefined ? [] : parsePipeTextList(arg),
+        args: arg === undefined ? [] : parsePipeTextList(arg, ctx),
         value: content,
       }),
     };
@@ -169,10 +169,10 @@ export const createPipeRawHandlers = <const T extends readonly string[]>(
   const result = {} as Record<T[number], TagHandler>;
   for (const name of names) {
     result[name as T[number]] = {
-      raw: (arg: string | undefined, content: string): TokenDraft => ({
+      raw: (arg: string | undefined, content: string, ctx?: DslContext): TokenDraft => ({
         type: name,
         arg,
-        args: arg === undefined ? [] : parsePipeTextList(arg),
+        args: arg === undefined ? [] : parsePipeTextList(arg, ctx),
         value: content,
       }),
     };

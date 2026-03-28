@@ -1202,9 +1202,12 @@ Convenience functions for creating handlers in bulk — most projects only need 
 Lower-level tools for writing custom `TagHandler` implementations.
 You will not need these if you only use the handler helpers above.
 
-Most utilities accept an optional `ctx?: DslContext` parameter. When omitted, they fall back to module-level defaults
-set by `withSyntax` / `withCreateId` during parsing — so existing handler code continues to work unchanged. In a future
-major version, `ctx` will become **required**. See [DslContext](#dslcontext) below.
+Most utilities accept an optional `ctx?: DslContext | SyntaxConfig` parameter. Passing `DslContext` is the recommended
+new form; passing `SyntaxConfig` is still supported as a shorthand when only syntax is needed. `createToken()` also
+continues to accept a bare `CreateId` function for backward compatibility. When omitted, utilities fall back to
+module-level defaults set by `withSyntax` / `withCreateId` during parsing — so existing handler code continues to work
+unchanged. In a future major version, the utility context will be tightened toward explicit `DslContext`. See
+[DslContext](#dslcontext) below.
 
 | Export                                | Who uses it                                | Description                                              |
 |---------------------------------------|--------------------------------------------|----------------------------------------------------------|
@@ -1219,6 +1222,9 @@ major version, `ctx` will become **required**. See [DslContext](#dslcontext) bel
 | `createToken(draft, position?, ctx?)` | Handlers building tokens manually          | Add an `id` (and optional `position`) to a `TokenDraft`  |
 | `resetTokenIdSeed()`                  | Test code                                  | Reset the token id counter for deterministic test output |
 
+For every `ctx?` entry above, the accepted value is currently `DslContext | SyntaxConfig`, except
+`createToken(draft, position?, ctx?)`, which also accepts a bare `CreateId` function for backward compatibility.
+
 > During parsing, token ids default to a parse-local sequence (`rt-0`, `rt-1`, ...).
 > `createToken()` only uses the module-level counter when called outside an active parse, and `resetTokenIdSeed()` is
 > mainly intended for tests around that standalone usage.
@@ -1227,7 +1233,7 @@ major version, `ctx` will become **required**. See [DslContext](#dslcontext) bel
 
 ### DslContext
 
-`DslContext` is the lightweight context that public utility functions accept:
+`DslContext` is the recommended lightweight context for public utility functions:
 
 ```ts
 interface DslContext {
@@ -1241,12 +1247,18 @@ interface DslContext {
 | `syntax`   | The active `SyntaxConfig` — controls escape characters, delimiters, etc. |
 | `createId` | Optional token id generator — used by `createToken` when building tokens |
 
-**Current behavior:** `ctx` is optional on all utilities. When omitted, they read from module-level state set by
-`withSyntax` / `withCreateId`. This works correctly inside handler callbacks during parsing, because `parseRichText`
-wraps the entire parse in these context closures.
+**Current behavior:** most utility functions currently accept `ctx?: DslContext | SyntaxConfig`.
 
-**Future major version:** `ctx` will become **required**. Adopt it now by passing `DslContext` to utilities when calling
-them outside of handler callbacks (e.g. in standalone scripts or tests). Inside handlers called during parsing, the
+- Pass `DslContext` when you want both `syntax` and `createId`.
+- Pass `SyntaxConfig` as a shorthand when only syntax matters.
+- Omit `ctx` to read from module-level state set by `withSyntax` / `withCreateId`.
+- `createToken(draft, position?, ctx?)` also accepts a bare `CreateId` function as a backward-compatible shorthand.
+
+This works correctly inside handler callbacks during parsing, because `parseRichText` wraps the entire parse in these
+context closures.
+
+**Future major version:** the utility context will move toward explicit `DslContext`. Adopt it now when calling
+utilities outside of handler callbacks (e.g. in standalone scripts or tests). Inside handlers called during parsing, the
 implicit fallback will continue to work until the major version change.
 
 ### PipeArgs
@@ -1824,10 +1836,12 @@ tagMap.date = DateText;
 - New type: `DslContext { syntax, createId? }` — lightweight context for public utility functions
     - All public utilities (`readEscapedSequence`, `readEscaped`, `unescapeInline`, `splitTokensByPipe`,
       `parsePipeArgs`, `parsePipeTextArgs`, `parsePipeTextList`, `materializeTextTokens`, `createToken`) now accept an
-      optional `ctx?: DslContext` parameter
+      optional `ctx?: DslContext | SyntaxConfig` parameter
+    - Pass `DslContext` for full explicit context, or `SyntaxConfig` as a shorthand when only syntax is needed
+    - `createToken(..., ctx?)` also keeps accepting a bare `CreateId` function for backward compatibility
     - When omitted, fall back to module-level defaults (`getSyntax()` / `activeCreateId`) — existing code continues to
       work unchanged
-    - **Will become required in a future major version** — adopt `DslContext` now to prepare for the migration
+    - A future major version will tighten this toward explicit `DslContext`
 - `parseStructural` reuses `emptyBuffer()` from `context.ts` for buffer initialization and reset
 - All existing exports and signatures remain backward compatible; `DslContext` and optional `ctx` parameters are
   additive (non-breaking)

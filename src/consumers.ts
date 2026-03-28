@@ -243,10 +243,11 @@ export const finalizeClosedNode = (ctx: ParseContext, node: ParseContext["stack"
 
   const handler = ctx.handlers[node.richType];
   const position = makePosition(ctx.tracker, node.openPos, ctx.i + endTag.length);
+  const dslCtx: import("./types.js").DslContext = { syntax: ctx.syntax, createId: ctx.createId };
 
   getCurrentTokens(ctx).push(
     handler?.inline
-      ? createToken(handler.inline(node.tokens), position, ctx.createId)
+      ? createToken(handler.inline(node.tokens, dslCtx), position, ctx.createId)
       : createToken({
           type: node.richType,
           value: materializedTokens,

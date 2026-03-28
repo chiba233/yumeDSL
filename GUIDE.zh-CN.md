@@ -1169,8 +1169,10 @@ const tokens = dsl.parse(input);
 编写自定义 `TagHandler` 时使用的底层工具。
 如果你只使用上面的辅助函数，则不需要这些。
 
-大部分工具函数接受可选的 `ctx?: DslContext` 参数。省略时回退到 `withSyntax` / `withCreateId` 在解析期间设置的模块级默认值——现有
-handler 代码无需修改。未来 major 版本中 `ctx` 将变为**必填**。详见下方 [DslContext](#dslcontext)。
+大部分工具函数接受可选的 `ctx?: DslContext | SyntaxConfig` 参数。推荐的新写法是传 `DslContext`；如果只需要 syntax，也兼容直接传
+`SyntaxConfig` 作为简写。`createToken()` 还继续兼容直接传裸 `CreateId` 函数，以保持向后兼容。省略时回退到 `withSyntax` /
+`withCreateId` 在解析期间设置的模块级默认值——现有 handler 代码无需修改。未来 major 版本中，工具函数会逐步收紧到显式
+`DslContext`。详见下方 [DslContext](#dslcontext)。
 
 | 导出                                    | 使用者                   | 说明                                      |
 |---------------------------------------|-----------------------|-----------------------------------------|
@@ -1185,13 +1187,16 @@ handler 代码无需修改。未来 major 版本中 `ctx` 将变为**必填**。
 | `createToken(draft, position?, ctx?)` | 手动构建 token 的处理器       | 为 `TokenDraft` 添加 `id`（和可选的 `position`） |
 | `resetTokenIdSeed()`                  | 测试代码                  | 重置 token id 计数器，用于确定性测试输出               |
 
+上表中所有带 `ctx?` 的条目，当前都接受 `DslContext | SyntaxConfig`；其中 `createToken(draft, position?, ctx?)`
+还额外兼容直接传裸 `CreateId` 函数。
+
 > 解析期间，token id 默认按单次 parse 局部递增（`rt-0`、`rt-1` ...）。
 > `createToken()` 只有在解析器外单独调用时才会使用模块级计数器，`resetTokenIdSeed()` 也主要用于这种测试场景。
 > 如果你在 SSR 或并发异步请求里要求严格隔离，建议按运行时边界隔离 parser 的使用。
 
 ### DslContext
 
-`DslContext` 是公开工具函数接受的轻量上下文：
+`DslContext` 是公开工具函数推荐使用的轻量上下文：
 
 ```ts
 interface DslContext {
@@ -1205,10 +1210,16 @@ interface DslContext {
 | `syntax`   | 当前 `SyntaxConfig` — 控制转义字符、分隔符等               |
 | `createId` | 可选的 token id 生成器 — `createToken` 构建 token 时使用 |
 
-**当前行为：** 所有工具函数上的 `ctx` 为可选。省略时从 `withSyntax` / `withCreateId` 设置的模块级状态读取。在解析期间的
-handler 回调中这是正确的，因为 `parseRichText` 用这些闭包包裹了整个解析过程。
+**当前行为：** 大部分工具函数当前接受 `ctx?: DslContext | SyntaxConfig`。
 
-**未来 major 版本：** `ctx` 将变为**必填**。建议现在开始在 handler 回调之外（如独立脚本或测试中）调用工具函数时传入
+- 传 `DslContext`：同时显式提供 `syntax` 和 `createId`
+- 传 `SyntaxConfig`：只显式提供 syntax 的简写
+- 省略 `ctx`：从 `withSyntax` / `withCreateId` 设置的模块级状态读取
+- `createToken(draft, position?, ctx?)` 还兼容直接传裸 `CreateId` 函数，作为向后兼容简写
+
+在解析期间的 handler 回调中，这种省略写法是正确的，因为 `parseRichText` 用这些闭包包裹了整个解析过程。
+
+**未来 major 版本：** 工具函数会逐步收紧到显式 `DslContext`。建议现在开始在 handler 回调之外（如独立脚本或测试中）调用工具函数时传入
 `DslContext`。handler 内部的隐式回退在 major 版本变更前将继续工作。
 
 ### PipeArgs
@@ -1775,9 +1786,12 @@ tagMap.date = DateText;
       中调用公开工具函数（`parsePipeArgs`、`createToken`、`unescapeInline` 等）无需任何修改
 - 新增类型：`DslContext { syntax, createId? }` — 公开工具函数的轻量上下文
     - 所有公开工具函数（`readEscapedSequence`、`readEscaped`、`unescapeInline`、`splitTokensByPipe`、`parsePipeArgs`、
-      `parsePipeTextArgs`、`parsePipeTextList`、`materializeTextTokens`、`createToken`）现在接受可选 `ctx?: DslContext` 参数
+      `parsePipeTextArgs`、`parsePipeTextList`、`materializeTextTokens`、`createToken`）现在接受可选
+      `ctx?: DslContext | SyntaxConfig` 参数
+    - 传 `DslContext` 可显式提供完整上下文；只需要 syntax 时也兼容直接传 `SyntaxConfig`
+    - `createToken(..., ctx?)` 还继续兼容直接传裸 `CreateId` 函数，以保持向后兼容
     - 省略时回退到模块级默认值（`getSyntax()` / `activeCreateId`）——现有代码无需修改
-    - **未来 major 版本将变为必填** — 建议现在开始采用 `DslContext` 以提前准备迁移
+    - **未来 major 版本会逐步收紧到显式 `DslContext`** — 建议现在开始采用 `DslContext` 以提前准备迁移
 - `parseStructural` 复用 `context.ts` 的 `emptyBuffer()` 进行 buffer 初始化和重置
 - 所有现有导出和签名保持向后兼容；`DslContext` 及可选 `ctx` 参数为新增（非破坏性）
 

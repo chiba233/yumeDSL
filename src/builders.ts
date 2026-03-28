@@ -114,7 +114,7 @@ export const parsePipeArgs = (
 export const parsePipeTextArgs = (
   text: string,
   ctx?: DslContext | SyntaxConfig,
-): PipeArgs => parsePipeArgs([createTextToken(text)], ctx);
+): PipeArgs => parsePipeArgs([createTextToken(text, ctx)], ctx);
 
 /**
  * Split a plain-text pipe-delimited arg string into trimmed string segments.

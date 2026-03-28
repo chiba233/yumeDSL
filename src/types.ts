@@ -45,9 +45,9 @@ export interface ParseError {
 }
 
 export interface TagHandler {
-  inline?: (tokens: TextToken[]) => TokenDraft;
-  raw?: (arg: string | undefined, content: string) => TokenDraft;
-  block?: (arg: string | undefined, content: TextToken[]) => TokenDraft;
+  inline?: (tokens: TextToken[], ctx?: DslContext) => TokenDraft;
+  raw?: (arg: string | undefined, content: string, ctx?: DslContext) => TokenDraft;
+  block?: (arg: string | undefined, content: TextToken[], ctx?: DslContext) => TokenDraft;
 }
 
 export interface SyntaxInput {

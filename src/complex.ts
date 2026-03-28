@@ -123,6 +123,7 @@ export const tryParseComplexTag = (
       "block",
     );
     const position = makePosition(tracker, tagOpenPos, nextIndex);
+    const dslCtx: import("./types.js").DslContext = { syntax, createId };
 
     return {
       handled: true,
@@ -131,6 +132,7 @@ export const tryParseComplexTag = (
         handler.block(
           arg,
           parseInlineContent(prepared.content, Math.max(depthLimit - 1, 0), { mode }, innerTracker),
+          dslCtx,
         ),
         position,
         createId,
@@ -197,10 +199,11 @@ export const tryParseComplexTag = (
     "raw",
   );
   const position = makePosition(tracker, tagOpenPos, nextIndex);
+  const dslCtx: import("./types.js").DslContext = { syntax, createId };
 
   return {
     handled: true,
     nextIndex,
-    token: createToken(handler.raw(arg, content), position, createId),
+    token: createToken(handler.raw(arg, content, dslCtx), position, createId),
   };
 };
