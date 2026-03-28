@@ -38,6 +38,7 @@ export { withTagNameConfig } from "./chars.js";
 
 // ── Types: core ──
 export type {
+  DslContext,
   ParserBaseOptions,
   ParseOptions,
   TagHandler,

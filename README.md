@@ -74,6 +74,7 @@ major versions with explicit migration notes.
     - [Strong Typing](#strong-typing)
 - [Writing Tag Handlers](#writing-tag-handlers)
 - [Utility Exports](#utility-exports)
+    - [DslContext](#dslcontext)
     - [PipeArgs](#pipeargs)
 - [Source Position Tracking](#source-position-tracking)
 - [Error Handling](#error-handling)
@@ -1201,23 +1202,52 @@ Convenience functions for creating handlers in bulk — most projects only need 
 Lower-level tools for writing custom `TagHandler` implementations.
 You will not need these if you only use the handler helpers above.
 
-| Export                          | Who uses it                                | Description                                              |
-|---------------------------------|--------------------------------------------|----------------------------------------------------------|
-| `parsePipeArgs(tokens)`         | Custom handlers with `\|`-separated params | Split tokens by pipe and access parsed parts             |
-| `parsePipeTextArgs(text)`       | Custom handlers parsing raw args           | Same as above, but from a plain text string              |
-| `parsePipeTextList(text)`       | Custom handlers needing `string[]` args    | Split a pipe-delimited string into trimmed `string[]`    |
-| `splitTokensByPipe(tokens)`     | Low-level handler code                     | Raw token splitter without helper methods                |
-| `extractText(tokens)`           | Handlers that need plain-text values       | Flatten a token tree into a single string                |
-| `materializeTextTokens(tokens)` | Handlers returning processed child tokens  | Recursively unescape text tokens in a tree               |
-| `unescapeInline(str)`           | Handlers processing raw strings            | Unescape DSL escape sequences in a single string         |
-| `createToken(draft)`            | Handlers building tokens manually          | Add an `id` to a `TokenDraft`                            |
-| `resetTokenIdSeed()`            | Test code                                  | Reset the token id counter for deterministic test output |
+Most utilities accept an optional `ctx?: DslContext` parameter. When omitted, they fall back to module-level defaults
+set by `withSyntax` / `withCreateId` during parsing — so existing handler code continues to work unchanged. In a future
+major version, `ctx` will become **required**. See [DslContext](#dslcontext) below.
+
+| Export                                | Who uses it                                | Description                                              |
+|---------------------------------------|--------------------------------------------|----------------------------------------------------------|
+| `parsePipeArgs(tokens, ctx?)`         | Custom handlers with `\|`-separated params | Split tokens by pipe and access parsed parts             |
+| `parsePipeTextArgs(text, ctx?)`       | Custom handlers parsing raw args           | Same as above, but from a plain text string              |
+| `parsePipeTextList(text, ctx?)`       | Custom handlers needing `string[]` args    | Split a pipe-delimited string into trimmed `string[]`    |
+| `splitTokensByPipe(tokens, ctx?)`     | Low-level handler code                     | Raw token splitter without helper methods                |
+| `extractText(tokens)`                 | Handlers that need plain-text values       | Flatten a token tree into a single string                |
+| `materializeTextTokens(tokens, ctx?)` | Handlers returning processed child tokens  | Recursively unescape text tokens in a tree               |
+| `unescapeInline(str, ctx?)`           | Handlers processing raw strings            | Unescape DSL escape sequences in a single string         |
+| `readEscapedSequence(text, i, ctx?)`  | Handlers inspecting escape sequences       | Read one escape sequence at position `i`                 |
+| `createToken(draft, position?, ctx?)` | Handlers building tokens manually          | Add an `id` (and optional `position`) to a `TokenDraft`  |
+| `resetTokenIdSeed()`                  | Test code                                  | Reset the token id counter for deterministic test output |
 
 > During parsing, token ids default to a parse-local sequence (`rt-0`, `rt-1`, ...).
 > `createToken()` only uses the module-level counter when called outside an active parse, and `resetTokenIdSeed()` is
 > mainly intended for tests around that standalone usage.
 > If you need strict request isolation for SSR or concurrent async parsing, prefer isolating parser usage per runtime
 > boundary.
+
+### DslContext
+
+`DslContext` is the lightweight context that public utility functions accept:
+
+```ts
+interface DslContext {
+    syntax: SyntaxConfig;
+    createId?: CreateId;
+}
+```
+
+| Field      | Description                                                              |
+|------------|--------------------------------------------------------------------------|
+| `syntax`   | The active `SyntaxConfig` — controls escape characters, delimiters, etc. |
+| `createId` | Optional token id generator — used by `createToken` when building tokens |
+
+**Current behavior:** `ctx` is optional on all utilities. When omitted, they read from module-level state set by
+`withSyntax` / `withCreateId`. This works correctly inside handler callbacks during parsing, because `parseRichText`
+wraps the entire parse in these context closures.
+
+**Future major version:** `ctx` will become **required**. Adopt it now by passing `DslContext` to utilities when calling
+them outside of handler callbacks (e.g. in standalone scripts or tests). Inside handlers called during parsing, the
+implicit fallback will continue to work until the major version change.
 
 ### PipeArgs
 
@@ -1781,17 +1811,26 @@ tagMap.date = DateText;
 ### 1.0.4
 
 - **Refactor:** Eliminate all remaining module-level implicit state reads from internal parse code
-    - `ParseContext` now carries `syntax`, `tagName`, and `createId` directly — internal functions read these instead of calling `getSyntax()` / `getTagNameConfig()` / relying on `activeCreateId`
-    - All scanner functions (`findTagArgClose`, `readTagStartInfo`, `findInlineClose`, `findBlockClose`, `findRawClose`, `getTagCloserType`, `skipTagBoundary`, `skipDegradedInline`) receive explicit `syntax` / `tagName` parameters
-    - Escape functions (`readEscapedSequence`, `readEscaped`, `unescapeInline`) accept an optional `syntax` parameter — when omitted, fall back to `getSyntax()` for backward compatibility
-    - Builder utilities (`splitTokensByPipe`, `parsePipeArgs`, `parsePipeTextArgs`, `parsePipeTextList`, `materializeTextTokens`) accept an optional `syntax` parameter
-    - `createToken` accepts an optional `createId` parameter for explicit threading
-    - `parseStructural` threads `syntax` / `tagName` / `tracker` explicitly through `parseNodes` — no `withSyntax` / `withTagNameConfig` wrappers needed internally. Ambient `getSyntax()` / `getTagNameConfig()` are captured once at entry when no explicit overrides are provided
-    - `parseRichText` still wraps with `withSyntax` / `withTagNameConfig` / `withCreateId` at entry for backward compatibility — user handlers calling public utilities (`parsePipeArgs`, `createToken`, `unescapeInline`, etc.) continue to work without changes
-- Public utilities with optional `syntax` parameter (`readEscapedSequence`, `readEscaped`, `unescapeInline`, `splitTokensByPipe`, `parsePipeArgs`, `parsePipeTextArgs`, `parsePipeTextList`, `materializeTextTokens`) now resolve syntax once at the top and pass the resolved value through the call chain, avoiding repeated `getSyntax()` fallback on each internal call
+    - `ParseContext` now carries `syntax`, `tagName`, and `createId` directly — internal functions read these instead of
+      calling `getSyntax()` / `getTagNameConfig()` / relying on `activeCreateId`
+    - All scanner functions (`findTagArgClose`, `readTagStartInfo`, `findInlineClose`, `findBlockClose`, `findRawClose`,
+      `getTagCloserType`, `skipTagBoundary`, `skipDegradedInline`) receive explicit `syntax` / `tagName` parameters
+    - `parseStructural` threads `syntax` / `tagName` / `tracker` explicitly through `parseNodes` — no `withSyntax` /
+      `withTagNameConfig` wrappers needed internally. Ambient `getSyntax()` / `getTagNameConfig()` are captured once at
+      entry when no explicit overrides are provided
+    - `parseRichText` still wraps with `withSyntax` / `withTagNameConfig` / `withCreateId` at entry for backward
+      compatibility — user handlers calling public utilities (`parsePipeArgs`, `createToken`, `unescapeInline`, etc.)
+      continue to work without changes
+- New type: `DslContext { syntax, createId? }` — lightweight context for public utility functions
+    - All public utilities (`readEscapedSequence`, `readEscaped`, `unescapeInline`, `splitTokensByPipe`,
+      `parsePipeArgs`, `parsePipeTextArgs`, `parsePipeTextList`, `materializeTextTokens`, `createToken`) now accept an
+      optional `ctx?: DslContext` parameter
+    - When omitted, fall back to module-level defaults (`getSyntax()` / `activeCreateId`) — existing code continues to
+      work unchanged
+    - **Will become required in a future major version** — adopt `DslContext` now to prepare for the migration
 - `parseStructural` reuses `emptyBuffer()` from `context.ts` for buffer initialization and reset
-- No public API changes; all existing exports and signatures remain backward compatible
-- Optional `syntax` / `createId` parameters on public utilities are additive (non-breaking)
+- All existing exports and signatures remain backward compatible; `DslContext` and optional `ctx` parameters are
+  additive (non-breaking)
 
 ### 1.0.3
 
@@ -1799,12 +1838,14 @@ tagMap.date = DateText;
     - `ParseContext` now carries `tracker: PositionTracker | null` directly
     - `parseStructural` passes tracker explicitly through `parseNodes` — no hidden globals
     - `emitError` / `getErrorContext` receive tracker as a parameter instead of reading module state
-    - `complex.ts` receives tracker explicitly; inner-parse offset adjustment uses `offsetTracker` (replaces `withBaseOffset` + `withPositionTracker`)
+    - `complex.ts` receives tracker explicitly; inner-parse offset adjustment uses `offsetTracker` (replaces
+      `withBaseOffset` + `withPositionTracker`)
 - **Refactor:** Buffer accumulation state consolidated into `BufferState` object
     - `ParseContext.buffer` / `bufferStart` / `bufferSourceEnd` merged into `ParseContext.buf: BufferState`
     - `emptyBuffer()` factory for initialization and reset
 - **Refactor:** Block content normalization + offset mapping encapsulated as `prepareBlockContent`
-    - Returns `{ content, baseOffset }` — callers no longer manually combine `normalizeBlockTagContent` + `leadingTrim` + `contentStart`
+    - Returns `{ content, baseOffset }` — callers no longer manually combine `normalizeBlockTagContent` +
+      `leadingTrim` + `contentStart`
 - No public API changes; all changes are internal
 
 ### 1.0.2
@@ -1814,7 +1855,8 @@ tagMap.date = DateText;
     - `TextToken.position?` and `StructuralNode.position?` — present only when enabled
     - Pre-computed line-offset table with O(log n) binary search for line/column resolution
     - Negligible overhead when disabled (default) — no table allocation, no position objects produced
-    - `parseRichText` block/raw token spans include trailing line-break normalization; `parseStructural` keeps raw syntax spans
+    - `parseRichText` block/raw token spans include trailing line-break normalization; `parseStructural` keeps raw
+      syntax spans
     - Nested block content positions map back to the original source via base-offset adjustment
     - Error reporting reuses the line-offset table when position tracking is active
 - `normalizeBlockTagContent` now returns `{ content, leadingTrim }` instead of a plain string (internal change,

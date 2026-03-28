@@ -75,6 +75,18 @@ export interface TagNameConfig {
   isTagChar: (char: string) => boolean;
 }
 
+/**
+ * Lightweight context for public utility functions.
+ *
+ * Currently optional — when omitted, utilities fall back to module-level
+ * defaults set by `withSyntax` / `withCreateId`. Will become **required**
+ * in a future major version.
+ */
+export interface DslContext {
+  syntax: SyntaxConfig;
+  createId?: CreateId;
+}
+
 export type TagForm = "inline" | "raw" | "block";
 
 /**

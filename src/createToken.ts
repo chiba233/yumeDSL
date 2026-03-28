@@ -1,4 +1,4 @@
-import type { CreateId, SourceSpan, TextToken, TokenDraft } from "./types.js";
+import type { CreateId, DslContext, SourceSpan, SyntaxConfig, TextToken, TokenDraft } from "./types.js";
 
 let tokenIdSeed = 0;
 let activeCreateId: CreateId | null = null;
@@ -6,9 +6,16 @@ let activeCreateId: CreateId | null = null;
 export const createToken = (
   token: TokenDraft,
   position?: SourceSpan,
-  explicitCreateId?: CreateId,
+  ctx?: DslContext | SyntaxConfig | CreateId,
 ): TextToken => {
-  const idFn = explicitCreateId ?? activeCreateId;
+  const explicitId = ctx
+    ? typeof ctx === "function"
+      ? ctx
+      : "createId" in ctx
+        ? ctx.createId
+        : undefined
+    : undefined;
+  const idFn = explicitId ?? activeCreateId;
   const id = idFn ? idFn(token) : `rt-${tokenIdSeed++}`;
   const result: TextToken = { ...token, id };
   if (position) result.position = position;
