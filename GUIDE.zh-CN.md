@@ -171,7 +171,8 @@ const plain = dsl.strip("Hello $$bold(world)$$!");
 
 ## DSL 语法
 
-默认使用 `$$` 作为标签前缀。所有语法符号（前缀、分隔符、转义字符、block/raw 标记）均可完全自定义——参见[自定义语法](#自定义语法)。
+默认使用 `$$` 作为标签前缀。所有语法符号（前缀、分隔符、转义字符、block/raw
+标记）均可完全自定义——参见[自定义语法](#自定义语法)。
 标签名允许 `a-z`、`A-Z`、`0-9`、`_`、`-`（首字符不能是数字或 `-`）。
 如需自定义，参见[自定义标签名字符规则](#自定义标签名字符规则)。
 
@@ -505,22 +506,42 @@ import {DEFAULT_SYNTAX} from "yume-dsl-rich-text";
 **符号联动关系** — `createSyntax` 只做纯 shallow merge，无自动推导。
 解析器内部存在硬耦合——破坏它们标签就会失效：
 
-| 符号          | 约束                                                  | 原因                                                                              |
-|---------------|------------------------------------------------------|-----------------------------------------------------------------------------------|
-| `tagClose`    | **`endTag`、`rawOpen`、`blockOpen` 必须以它开头**        | `getTagCloserType` 从 `findTagArgClose` 停止的位置匹配这三个符号——该位置指向 `tagClose` |
-| `tagOpen`     | 必须与 `tagClose` 配对                                 | `findTagArgClose` 用 `tagOpen`/`tagClose` 做嵌套深度配对                              |
-| `endTag`      | 必须以 `tagClose` 开头                                 | 见 `tagClose`                                                                     |
-| `rawOpen`     | 必须以 `tagClose` 开头                                 | 见 `tagClose`                                                                     |
-| `blockOpen`   | 必须以 `tagClose` 开头                                 | 见 `tagClose`                                                                     |
-| `tagPrefix`   | —                                                    | 独立                                                                              |
-| `rawClose`    | —                                                    | 独立（整行匹配）                                                                    |
-| `blockClose`  | —                                                    | 独立（整行匹配）                                                                    |
-| `tagDivider`  | —                                                    | 独立                                                                              |
-| `escapeChar`  | —                                                    | 独立                                                                              |
+| 符号           | 约束                                        | 原因                                                                    |
+|--------------|-------------------------------------------|-----------------------------------------------------------------------|
+| `tagClose`   | **`endTag`、`rawOpen`、`blockOpen` 必须以它开头** | `getTagCloserType` 从 `findTagArgClose` 停止的位置匹配这三个符号——该位置指向 `tagClose` |
+| `tagOpen`    | 必须与 `tagClose` 配对                         | `findTagArgClose` 用 `tagOpen`/`tagClose` 做嵌套深度配对                      |
+| `endTag`     | 必须以 `tagClose` 开头                         | 见 `tagClose`                                                          |
+| `rawOpen`    | 必须以 `tagClose` 开头                         | 见 `tagClose`                                                          |
+| `blockOpen`  | 必须以 `tagClose` 开头                         | 见 `tagClose`                                                          |
+| `tagPrefix`  | —                                         | 独立                                                                    |
+| `rawClose`   | —                                         | 独立（整行匹配）                                                              |
+| `blockClose` | —                                         | 独立（整行匹配）                                                              |
+| `tagDivider` | —                                         | 独立                                                                    |
+| `escapeChar` | —                                         | 独立                                                                    |
 
 ### createEasySyntax（推荐）
 
-只需提供**基础 token**，复合符号通过规则表自动推导：
+`createEasySyntax` 是自定义语法的便捷构造器。
+
+适合这种场景：你想调整 DSL 的外观，但不想手动维护一整组彼此有关联的 token。
+
+你只需要提供**基础 token**：
+
+- `tagPrefix`
+- `tagOpen`
+- `tagClose`
+- `tagDivider`
+- `escapeChar`
+
+它会自动补齐这些**复合 token**：
+
+- `endTag`
+- `rawOpen`
+- `blockOpen`
+- `rawClose`
+- `blockClose`
+
+推导协议如下：
 
 ```text
 endTag     = tagClose + tagPrefix          ")" + "$$"  → ")$$"
@@ -530,24 +551,81 @@ rawClose   = RAW_MARKER + "end" + tagPrefix   "%end" + "$$" → "%end$$"
 blockClose = BLOCK_MARKER + "end" + tagPrefix "*end" + "$$" → "*end$$"
 ```
 
-基础 token：`tagPrefix`、`tagOpen`、`tagClose`、`tagDivider`、`escapeChar`。
-复合 token：`endTag`、`rawOpen`、`blockOpen`、`rawClose`、`blockClose`。
 显式传入的复合符号优先于推导。
 
 ```ts
 import {createEasySyntax} from "yume-dsl-rich-text";
 
-// 只改前缀——所有复合符号跟随变化
-createEasySyntax({tagPrefix: "@@"});
-// endTag → ")@@"   rawClose → "%end@@"   blockClose → "*end@@"
+const syntax1 = createEasySyntax({tagPrefix: "@@"});
+// 你只改了前缀，其它关联符号会自动保持一致：
+// endTag     = ")@@"
+// rawOpen    = ")%"
+// blockOpen  = ")*"
+// rawClose   = "%end@@"
+// blockClose = "*end@@"
 
-// 同时改前缀和闭合符——复合符号同时适配
-createEasySyntax({tagPrefix: "@@", tagClose: "]"});
-// endTag → "]@@"   rawOpen → "]%"   blockOpen → "]*"
+const syntax2 = createEasySyntax({tagPrefix: "@@", tagClose: "]"});
+// 同时改前缀和闭合符时，相关复合符号也会一起适配：
+// endTag     = "]@@"
+// rawOpen    = "]%"
+// blockOpen  = "]*"
+// rawClose   = "%end@@"
+// blockClose = "*end@@"
 
-// 显式复合覆盖优先于推导
-createEasySyntax({tagPrefix: "@@", rawClose: "%%end@@"});
-// rawClose → "%%end@@"（显式），其余仍自动推导
+const syntax3 = createEasySyntax({tagPrefix: "@@", rawClose: "%%end@@"});
+// 显式传入的复合 token 优先：
+// rawClose 会严格等于 "%%end@@"
+// 其它复合 token 仍按规则自动推导
+```
+
+默认优先使用 `createEasySyntax`。
+只有在你明确要手动控制每一个 token 时，才使用 `createSyntax`。
+
+如果你的语法**不符合这套推导协议**，就不要用 `createEasySyntax`。常见情况包括：
+
+- `rawOpen`、`blockOpen`、`endTag` 不是 `tagClose + ...` 这种结构
+- `rawClose` / `blockClose` 不是 `marker + closeMiddle + tagPrefix` 这种结构
+- raw form 和 block form 使用完全不同的 closing keyword
+- 某个复合 token 的变化已经不能描述成“同一套协议下，只替换基础 token”
+
+一句话说：
+`createEasySyntax` 适合“同一家族、只换表面符号”的 DSL。
+如果你的 DSL 本身就是不规则的、非对称的、故意长得很怪，那就应该用 `createSyntax` 手动写全量 token。
+
+下面这些情况就应该直接用 `createSyntax`：
+
+```ts
+import {createSyntax} from "yume-dsl-rich-text";
+
+// 例 1：
+// raw/block 的开头根本不是 tagClose + ... 的结构，不属于 easy syntax 这套家族。
+createSyntax({
+    tagPrefix: "@@",
+    tagOpen: "(",
+    tagClose: ")",
+    tagDivider: "|",
+    endTag: ")@@",
+    rawOpen: "<raw>",
+    blockOpen: "<block>",
+    rawClose: "</raw>",
+    blockClose: "</block>",
+    escapeChar: "\\",
+});
+
+// 例 2：
+// raw 和 block 使用完全不同的 closing word，没法共用同一个 closeMiddle 来推导。
+createSyntax({
+    tagPrefix: "@@",
+    tagOpen: "(",
+    tagClose: ")",
+    tagDivider: "|",
+    endTag: ")@@",
+    rawOpen: ")%",
+    blockOpen: ")*",
+    rawClose: "%finish@@",
+    blockClose: "*stop@@",
+    escapeChar: "\\",
+});
 ```
 
 ### createSyntax（底层）
@@ -1124,13 +1202,13 @@ const tokens = dsl.parse(input);
 
 详见[自定义语法](#自定义语法)和[自定义标签名字符规则](#自定义标签名字符规则)。
 
-| 导出                               | 说明                              |
-|----------------------------------|---------------------------------|
-| `DEFAULT_SYNTAX`                 | 内置语法符号（`$$`、`(`、`)$$` 等）        |
-| `createEasySyntax(overrides)`    | 自动推导构建 `SyntaxConfig`（推荐）       |
-| `createSyntax(overrides)`        | 纯 merge 构建 `SyntaxConfig`（底层）     |
-| `DEFAULT_TAG_NAME`               | 内置标签名字符规则                       |
-| `createTagNameConfig(overrides)` | 从部分覆盖构建完整 `TagNameConfig`       |
+| 导出                               | 说明                            |
+|----------------------------------|-------------------------------|
+| `DEFAULT_SYNTAX`                 | 内置语法符号（`$$`、`(`、`)$$` 等）      |
+| `createEasySyntax(overrides)`    | 自动推导构建 `SyntaxConfig`（推荐）     |
+| `createSyntax(overrides)`        | 纯 merge 构建 `SyntaxConfig`（底层） |
+| `DEFAULT_TAG_NAME`               | 内置标签名字符规则                     |
+| `createTagNameConfig(overrides)` | 从部分覆盖构建完整 `TagNameConfig`     |
 
 ### 处理器辅助函数
 

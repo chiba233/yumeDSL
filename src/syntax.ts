@@ -13,14 +13,16 @@ export const DEFAULT_SYNTAX: SyntaxInput = {
   escapeChar: "\\",
 };
 
-// Markers extracted from DEFAULT_SYNTAX for derivation in createEasySyntax.
-// rawMarker/blockMarker appear after tagClose to switch form; "end" keyword closes multiline forms.
-const RAW_MARKER = DEFAULT_SYNTAX.rawOpen.slice(DEFAULT_SYNTAX.tagClose.length);      // "%"
-const BLOCK_MARKER = DEFAULT_SYNTAX.blockOpen.slice(DEFAULT_SYNTAX.tagClose.length);   // "*"
-const MULTILINE_CLOSE_MIDDLE = DEFAULT_SYNTAX.rawClose.slice(
-  RAW_MARKER.length,
-  DEFAULT_SYNTAX.rawClose.length - DEFAULT_SYNTAX.tagPrefix.length,
-);
+// Default protocol fragments used by easy syntax derivation.
+// raw/block markers follow tagClose; closeMiddle sits between the form marker and tagPrefix.
+const DEFAULT_DERIVATION_PARTS = {
+  rawMarker: DEFAULT_SYNTAX.rawOpen.slice(DEFAULT_SYNTAX.tagClose.length),
+  blockMarker: DEFAULT_SYNTAX.blockOpen.slice(DEFAULT_SYNTAX.tagClose.length),
+  closeMiddle: DEFAULT_SYNTAX.rawClose.slice(
+    DEFAULT_SYNTAX.rawOpen.slice(DEFAULT_SYNTAX.tagClose.length).length,
+    DEFAULT_SYNTAX.rawClose.length - DEFAULT_SYNTAX.tagPrefix.length,
+  ),
+} as const;
 
 type EasySyntaxOverrides = Partial<SyntaxInput>;
 
@@ -40,20 +42,46 @@ interface EasySyntaxCompoundRule {
   derive: EasySyntaxCompoundDerive;
 }
 
-const resolveEasySyntaxBase = (overrides?: EasySyntaxOverrides): EasySyntaxBase => ({
-  tagPrefix: overrides?.tagPrefix ?? DEFAULT_SYNTAX.tagPrefix,
-  tagOpen: overrides?.tagOpen ?? DEFAULT_SYNTAX.tagOpen,
-  tagClose: overrides?.tagClose ?? DEFAULT_SYNTAX.tagClose,
-  tagDivider: overrides?.tagDivider ?? DEFAULT_SYNTAX.tagDivider,
-  escapeChar: overrides?.escapeChar ?? DEFAULT_SYNTAX.escapeChar,
-});
+const EASY_SYNTAX_BASE_KEYS = [
+  "tagPrefix",
+  "tagOpen",
+  "tagClose",
+  "tagDivider",
+  "escapeChar",
+] as const satisfies readonly (keyof EasySyntaxBase)[];
 
-const EASY_SYNTAX_COMPOUND_RULES: readonly EasySyntaxCompoundRule[] = [
+const resolveSyntaxFields = <K extends keyof SyntaxInput>(
+  keys: readonly K[],
+  overrides?: EasySyntaxOverrides,
+): Pick<SyntaxInput, K> => {
+  const resolved = {} as Pick<SyntaxInput, K>;
+
+  for (const key of keys) {
+    resolved[key] = overrides?.[key] ?? DEFAULT_SYNTAX[key];
+  }
+
+  return resolved;
+};
+
+const resolveEasySyntaxBase = (overrides?: EasySyntaxOverrides): EasySyntaxBase =>
+  resolveSyntaxFields(EASY_SYNTAX_BASE_KEYS, overrides);
+
+// Derivation contract for the convenience syntax builder:
+// given the base tokens, these rules define the implied compound tokens.
+const EASY_SYNTAX_DERIVATION_RULES: readonly EasySyntaxCompoundRule[] = [
   { key: "endTag", derive: (base) => base.tagClose + base.tagPrefix },
-  { key: "rawOpen", derive: (base) => base.tagClose + RAW_MARKER },
-  { key: "blockOpen", derive: (base) => base.tagClose + BLOCK_MARKER },
-  { key: "rawClose", derive: (base) => RAW_MARKER + MULTILINE_CLOSE_MIDDLE + base.tagPrefix },
-  { key: "blockClose", derive: (base) => BLOCK_MARKER + MULTILINE_CLOSE_MIDDLE + base.tagPrefix },
+  { key: "rawOpen", derive: (base) => base.tagClose + DEFAULT_DERIVATION_PARTS.rawMarker },
+  { key: "blockOpen", derive: (base) => base.tagClose + DEFAULT_DERIVATION_PARTS.blockMarker },
+  {
+    key: "rawClose",
+    derive: (base) =>
+      DEFAULT_DERIVATION_PARTS.rawMarker + DEFAULT_DERIVATION_PARTS.closeMiddle + base.tagPrefix,
+  },
+  {
+    key: "blockClose",
+    derive: (base) =>
+      DEFAULT_DERIVATION_PARTS.blockMarker + DEFAULT_DERIVATION_PARTS.closeMiddle + base.tagPrefix,
+  },
 ];
 
 const deriveEasySyntaxCompounds = (
@@ -62,7 +90,7 @@ const deriveEasySyntaxCompounds = (
 ): Omit<SyntaxInput, keyof EasySyntaxBase> => {
   const compounds = {} as Omit<SyntaxInput, keyof EasySyntaxBase>;
 
-  for (const rule of EASY_SYNTAX_COMPOUND_RULES) {
+  for (const rule of EASY_SYNTAX_DERIVATION_RULES) {
     compounds[rule.key] = overrides?.[rule.key] ?? rule.derive(base);
   }
 
@@ -78,10 +106,10 @@ const deriveEasySyntaxCompounds = (
  *
  * ```
  * endTag     = tagClose + tagPrefix
- * rawOpen    = tagClose + RAW_MARKER
- * blockOpen  = tagClose + BLOCK_MARKER
- * rawClose   = RAW_MARKER + closeMiddle + tagPrefix
- * blockClose = BLOCK_MARKER + closeMiddle + tagPrefix
+ * rawOpen    = tagClose + rawMarker
+ * blockOpen  = tagClose + blockMarker
+ * rawClose   = rawMarker + closeMiddle + tagPrefix
+ * blockClose = blockMarker + closeMiddle + tagPrefix
  * ```
  *
  * Explicit compound overrides still take precedence over derivation.

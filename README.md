@@ -532,7 +532,28 @@ The parser has hard couplings between certain tokens — break them and tags sto
 
 ### createEasySyntax (recommended)
 
-Provide only the **base tokens** — compound tokens are derived automatically via rule table:
+`createEasySyntax` is the convenience builder for custom syntax.
+
+Use it when you want to change the visible DSL shape, but you do **not** want to manually keep every related token in
+sync.
+
+You provide only the **base tokens**:
+
+- `tagPrefix`
+- `tagOpen`
+- `tagClose`
+- `tagDivider`
+- `escapeChar`
+
+It then fills in the **compound tokens** for you:
+
+- `endTag`
+- `rawOpen`
+- `blockOpen`
+- `rawClose`
+- `blockClose`
+
+The derivation protocol is:
 
 ```text
 endTag     = tagClose + tagPrefix          ")" + "$$"  → ")$$"
@@ -542,24 +563,80 @@ rawClose   = RAW_MARKER + "end" + tagPrefix   "%end" + "$$" → "%end$$"
 blockClose = BLOCK_MARKER + "end" + tagPrefix "*end" + "$$" → "*end$$"
 ```
 
-Base tokens: `tagPrefix`, `tagOpen`, `tagClose`, `tagDivider`, `escapeChar`.
-Compound tokens: `endTag`, `rawOpen`, `blockOpen`, `rawClose`, `blockClose`.
 Explicit compound overrides still take precedence over derivation.
 
 ```ts
 import {createEasySyntax} from "yume-dsl-rich-text";
 
-// Change prefix only — all compounds follow
-createEasySyntax({tagPrefix: "@@"});
-// endTag → ")@@"   rawClose → "%end@@"   blockClose → "*end@@"
+const syntax1 = createEasySyntax({tagPrefix: "@@"});
+// You changed only the prefix.
+// The rest stays aligned automatically:
+// endTag     = ")@@"
+// rawOpen    = ")%"
+// blockOpen  = ")*"
+// rawClose   = "%end@@"
+// blockClose = "*end@@"
 
-// Change prefix + closer — compounds adapt to both
-createEasySyntax({tagPrefix: "@@", tagClose: "]"});
-// endTag → "]@@"   rawOpen → "]%"   blockOpen → "]*"
+const syntax2 = createEasySyntax({tagPrefix: "@@", tagClose: "]"});
+// Change the prefix and the close token together:
+// endTag     = "]@@"
+// rawOpen    = "]%"
+// blockOpen  = "]*"
+// rawClose   = "%end@@"
+// blockClose = "*end@@"
 
-// Explicit compound override wins over derivation
-createEasySyntax({tagPrefix: "@@", rawClose: "%%end@@"});
-// rawClose → "%%end@@" (explicit), rest still derived
+const syntax3 = createEasySyntax({tagPrefix: "@@", rawClose: "%%end@@"});
+// Explicit compound overrides win.
+// rawClose is exactly "%%end@@", while the other compound tokens are still derived.
+```
+
+Choose `createEasySyntax` by default.
+Choose `createSyntax` only when you intentionally want full manual control over every token.
+
+Do not use `createEasySyntax` when your syntax does **not** follow this derivation model. Typical examples:
+
+- `rawOpen`, `blockOpen`, or `endTag` do not share the `tagClose + ...` shape
+- `rawClose` / `blockClose` are not `marker + closeMiddle + tagPrefix`
+- the raw form and block form use unrelated closing words
+- one compound token changes in a way that cannot be described as “same protocol, different base tokens”
+
+In short: `createEasySyntax` is for “same syntax family, different surface tokens”.
+If your DSL is irregular, asymmetric, or intentionally weird, use `createSyntax` and spell out every token yourself.
+
+Examples that should use `createSyntax` instead:
+
+```ts
+import {createSyntax} from "yume-dsl-rich-text";
+
+// Example 1:
+// raw/block openings do not start with tagClose, so they are outside the easy-syntax family.
+createSyntax({
+  tagPrefix: "@@",
+  tagOpen: "(",
+  tagClose: ")",
+  tagDivider: "|",
+  endTag: ")@@",
+  rawOpen: "<raw>",
+  blockOpen: "<block>",
+  rawClose: "</raw>",
+  blockClose: "</block>",
+  escapeChar: "\\",
+});
+
+// Example 2:
+// raw and block use different closing words, so there is no single shared closeMiddle to derive.
+createSyntax({
+  tagPrefix: "@@",
+  tagOpen: "(",
+  tagClose: ")",
+  tagDivider: "|",
+  endTag: ")@@",
+  rawOpen: ")%",
+  blockOpen: ")*",
+  rawClose: "%finish@@",
+  blockClose: "*stop@@",
+  escapeChar: "\\",
+});
 ```
 
 ### createSyntax (low-level)
