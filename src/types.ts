@@ -127,8 +127,11 @@ export interface ParseOptions extends ParserBaseOptions {
    * multiline forms.
    */
   blockTags?: readonly BlockTagInput[];
-  /** `"render"` (default) strips leading/trailing line breaks inside blocks; `"highlight"` preserves them. */
-  mode?: "render" | "highlight";
+  /**
+   * Parse mode. Currently only `"render"` is supported.
+   * Use `parseStructural` for syntax-highlighting use cases.
+   */
+  mode?: "render";
   /** Called for every parse error. If omitted, errors are silently discarded. */
   onError?: (error: ParseError) => void;
 }
@@ -156,13 +159,13 @@ export type StructuralNode =
  * syntax, and depth-limit config with {@link ParseOptions}.
  *
  * When `handlers` is provided, gating rules are identical to `parseRichText`.
- * When omitted, all tags and forms are accepted (highlight mode).
+ * When omitted, all tags and forms are accepted.
  */
 export interface StructuralParseOptions extends ParserBaseOptions {}
 
 // ── Internal types (not re-exported from index) ──
 
-export type ParseMode = "render" | "highlight";
+export type ParseMode = "render";
 
 export interface ParseContext {
   text: string;

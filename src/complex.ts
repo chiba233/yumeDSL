@@ -173,7 +173,7 @@ export const tryParseComplexTag = (
   const arg = text.slice(argStart, argClose).trim();
   const rawContent = text.slice(contentStart, end);
   const normalizedRawContent =
-    mode === "highlight" ? rawContent : rawContent.split(escapeChar + rawClose).join(rawClose);
+    rawContent.split(escapeChar + rawClose).join(rawClose);
   const content = normalizeBlockTagContent(tag, normalizedRawContent, mode, blockTagSet, "raw");
 
   return {

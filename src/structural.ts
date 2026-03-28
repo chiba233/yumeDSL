@@ -303,7 +303,7 @@ const parseNodes = (
  * - `allowForms` restricts which syntactic forms are accepted.
  * - Handler method presence (`inline` / `raw` / `block`) determines per-tag form support.
  *
- * When `handlers` is omitted, **all** tags in **all** forms are accepted (highlight mode).
+ * When `handlers` is omitted, **all** tags in **all** forms are accepted.
  *
  * Respects the active syntax set via {@link withSyntax}; defaults to
  * {@link DEFAULT_SYNTAX}.

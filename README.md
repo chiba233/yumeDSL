@@ -17,12 +17,14 @@ Shiki code-highlighting plugin · legitimate plugins · intentional malformed ma
 [![Contributing](https://img.shields.io/badge/Contributing-guide-blue.svg)](./CONTRIBUTING.md)
 [![Security](https://img.shields.io/badge/Security-policy-red.svg)](./SECURITY.md)
 
-A zero-dependency, recursive rich-text DSL parser with pluggable tag handlers and configurable syntax.
-Can be embedded inside Markdown or any other markup as a secondary syntax layer.
+A zero-dependency, recursive rich-text DSL parser with pluggable tag handlers, fully configurable syntax tokens,
+and customizable tag-name rules. Can be embedded inside Markdown or any other markup as a secondary syntax layer.
 
-**Parser core only.**  
-This package does not ship built-in tags, rendering, or UI integration.  
+**Parser core only.**
+This package does not ship built-in tags, rendering, or UI integration.
 You define your own semantics and rendering layer.
+
+**Stable API.** All public APIs are now stable. Future updates will maintain backward compatibility.
 
 ## Ecosystem
 
@@ -51,7 +53,11 @@ You define your own semantics and rendering layer.
 - [API](#api)
     - [createParser](#createparserdefaults--recommended-entry-point)
     - [parseRichText / stripRichText](#parserichtext--striprichtext)
-    - [parseStructural](#parsestructural--handler-free-structural-parse)
+    - [parseStructural](#parsestructural--structural-parse)
+- [Custom Syntax](#custom-syntax)
+    - [Default Syntax](#default-syntax)
+    - [createSyntax](#createsyntax)
+- [Custom Tag Name Characters](#custom-tag-name-characters)
 - [Handler Helpers](#handler-helpers)
     - [createSimpleInlineHandlers](#createsimpleinlinehandlersnames)
     - [declareMultilineTags](#declaremultilinetagsnames)
@@ -64,13 +70,9 @@ You define your own semantics and rendering layer.
 - [Writing Tag Handlers](#writing-tag-handlers)
 - [Utility Exports](#utility-exports)
     - [PipeArgs](#pipeargs)
-- [Custom Syntax](#custom-syntax)
-    - [createSyntax](#createsyntax)
-- [Custom Tag Name Characters](#custom-tag-name-characters)
 - [Error Handling](#error-handling)
 - [Graceful Degradation](#graceful-degradation)
 - [Vue 3 Rendering](#vue-3-rendering)
-- [Live Demo](#live-demo)
 - [Changelog](#changelog)
 - [License](#license)
 
@@ -88,6 +90,8 @@ This parser follows a **"parser core + user-defined semantics"** architecture:
   entirely up to you.
 - **Graceful degradation by default.** Unknown or unsupported tags never throw — they degrade silently so partial DSL
   support works without crashing.
+- **Every syntax token is configurable.** Prefix, delimiters, escape character, block/raw markers — override any or all
+  of them via `options.syntax`. Tag-name character rules are also pluggable via `options.tagName`.
 
 This separation means you can swap rendering frameworks, add new tags, or change tag semantics without touching the
 parser.
@@ -100,6 +104,7 @@ Use this package when you want:
 
 - a custom rich-text mini language instead of Markdown
 - high control over parsing semantics and rendering behavior
+- a fully customizable syntax — swap prefix, delimiters, escape character, and tag-name rules
 - graceful fallback when a tag form is unsupported
 - a small parser core without opinionated semantics
 - predictable parsing without regex-based backtracking
@@ -132,7 +137,8 @@ What this package **does not do**:
 - Pluggable tag handlers
 - Inline / Raw / Block tag forms
 - Handler helpers for bulk tag registration
-- Configurable syntax tokens
+- Fully configurable syntax (prefix, delimiters, escape, block/raw markers) and tag-name character rules
+- First-class structural parse API (`parseStructural`) sharing the same language configuration
 - Graceful degradation for unknown tags
 - Custom error reporting
 - Utility helpers for pipe arguments and token processing
@@ -210,7 +216,8 @@ Unregistered tags degrade gracefully instead of throwing or crashing.
 
 ## DSL Syntax
 
-By default, the DSL uses `$$` as the tag prefix.
+By default, the DSL uses `$$` as the tag prefix. All syntax tokens (prefix, delimiters, escape character, block/raw
+markers) are fully configurable — see [Custom Syntax](#custom-syntax) to adapt the DSL to your host markup.
 Tag names allow `a-z`, `A-Z`, `0-9`, `_`, `-` (first character must not be a digit or `-`).
 See [Custom Tag Name Characters](#custom-tag-name-characters) to override these rules.
 
@@ -321,14 +328,14 @@ dsl.parse(text, {onError: (e) => console.warn(e)});
 
 **What `createParser` binds:**
 
-| Option       | What it does when pre-bound                               |
-|--------------|-----------------------------------------------------------|
-| `handlers`   | Your tag definitions — no need to pass them on every call |
-| `syntax`     | Custom syntax tokens (if you override `$$` prefix, etc.)  |
-| `tagName`    | Custom tag-name character rules                           |
-| `mode`       | `"render"` or `"highlight"` — set once for your use case  |
-| `depthLimit` | Nesting limit — rarely changes per call                   |
-| `onError`    | Default error handler (can still be overridden per call)  |
+| Option       | What it does when pre-bound                                                |
+|--------------|----------------------------------------------------------------------------|
+| `handlers`   | Your tag definitions — no need to pass them on every call                  |
+| `syntax`     | Custom syntax tokens (if you override `$$` prefix, etc.)                   |
+| `tagName`    | Custom tag-name character rules                                            |
+| `mode`       | Deprecated — kept for backward compatibility, always behaves as `"render"` |
+| `depthLimit` | Nesting limit — rarely changes per call                                    |
+| `onError`    | Default error handler (can still be overridden per call)                   |
 
 **Without `createParser`** you must pass the full options object on every call:
 
@@ -373,8 +380,10 @@ For most applications, prefer [`createParser`](#createparser--recommended-entry-
 
 ### `parseStructural` — structural parse
 
-`parseStructural` is a complementary API designed for **syntax highlighting, linting, and structural analysis**.
-It preserves the tag form (inline / raw / block) in the output tree.
+`parseStructural` is a first-class structural parse API that shares the same language configuration
+(`handlers`, `allowForms`, `syntax`, `tagName`, `depthLimit`) as `parseRichText`.
+It preserves the tag form (inline / raw / block) in the output tree, making it suitable for
+**syntax highlighting, linting, and structural analysis**.
 
 ```ts
 import {parseStructural} from "yume-dsl-rich-text";
@@ -428,7 +437,7 @@ When `handlers` is provided, tag recognition and form gating are **identical** t
 `supportsInlineForm` decision table and `filterHandlersByForms` logic are used (shared code, not mirrored).
 Handler functions themselves are never called; only the presence of `inline` / `raw` / `block` methods matters.
 
-When `handlers` is omitted, all syntactically valid tags in all forms are accepted (highlight mode).
+When `handlers` is omitted, all syntactically valid tags in all forms are accepted.
 
 **Context inheritance:** when called without `syntax` / `tagName` overrides, `parseStructural` inherits
 the active `withSyntax` / `withTagNameConfig` context. This makes it composable inside custom parse pipelines:
@@ -457,11 +466,142 @@ Differences from `parseRichText` (features, not bugs):
 |--------------------------|-----------------------------------|------------------------------------------|
 | Tag recognition          | Same (shared `ParserBaseOptions`) | Same (shared `ParserBaseOptions`)        |
 | Form gating              | Same                              | Same                                     |
-| Line-break normalization | `mode: "render"` strips           | Always preserves                         |
+| Line-break normalization | Always strips (render mode)       | Always preserves                         |
 | Pipe `\|`                | Part of text                      | `separator` node in args; text elsewhere |
 | Error reporting          | `onError` callback                | Silent degradation                       |
 | Escape handling          | Unescaped at root level           | Structural `escape` nodes                |
 | Output type              | `TextToken[]`                     | `StructuralNode[]`                       |
+
+---
+
+## Custom Syntax
+
+Every syntax token — prefix, open/close delimiters, pipe divider, escape character, and block/raw markers — can be
+overridden through `options.syntax`. This lets you adapt the DSL to any host markup without conflicts.
+
+```ts
+import {parseRichText} from "yume-dsl-rich-text";
+
+const tokens = parseRichText("@@bold(hello)@@", {
+    syntax: {
+        tagPrefix: "@@",
+        endTag: ")@@",
+    },
+    handlers: {
+        bold: {
+            inline: (tokens) => ({type: "bold", value: tokens}),
+        },
+    },
+});
+```
+
+### Default Syntax
+
+```ts
+import {DEFAULT_SYNTAX} from "yume-dsl-rich-text";
+
+// {
+//   tagPrefix: "$$",
+//   tagOpen: "(",
+//   tagClose: ")",
+//   tagDivider: "|",
+//   endTag: ")$$",
+//   rawOpen: ")%",
+//   blockOpen: ")*",
+//   blockClose: "*end$$",
+//   rawClose: "%end$$",
+//   escapeChar: "\\",
+// }
+```
+
+> Warning:
+> Syntax tokens must remain distinguishable from one another.
+> If two tokens are configured to the same string, behavior is undefined.
+
+### createSyntax
+
+`createSyntax` builds a full `SyntaxConfig` from partial overrides. This is useful if you need to inspect or reuse the
+resolved syntax outside of parsing.
+
+```ts
+import {createSyntax} from "yume-dsl-rich-text";
+
+const syntax = createSyntax({tagPrefix: "@@", endTag: ")@@"});
+
+// SyntaxConfig extends SyntaxInput with a precomputed field:
+// syntax.escapableTokens — tokens that can be escaped, sorted by length (descending)
+```
+
+```ts
+interface SyntaxConfig extends SyntaxInput {
+    escapableTokens: string[];
+}
+```
+
+You do not need `createSyntax` for normal usage — `options.syntax` accepts a `Partial<SyntaxInput>` and the parser
+resolves it internally.
+
+> Note:
+> Syntax overrides are applied through module-local active state during parsing.
+> This is safe for normal synchronous calls, but if you share one module instance across concurrent async request flows,
+> isolate parser work carefully.
+
+---
+
+## Custom Tag Name Characters
+
+The parser decides which characters may appear in a tag name via two functions:
+
+| Function         | Default                       | Role                            |
+|------------------|-------------------------------|---------------------------------|
+| `isTagStartChar` | `a-z`, `A-Z`, `_`             | First character of the tag name |
+| `isTagChar`      | `a-z`, `A-Z`, `0-9`, `_`, `-` | Remaining characters            |
+
+These defaults are exported as `DEFAULT_TAG_NAME`.
+
+### Overriding
+
+Pass a `tagName` option to `createParser` or `parseRichText`.
+You only need to specify the functions you want to change — unspecified fields fall back to `DEFAULT_TAG_NAME`.
+`createTagNameConfig()` is a convenience helper that does this merge, but you can also pass a plain partial object
+directly.
+
+**Via `createParser`** (pre-bound, recommended):
+
+```ts
+import {createParser, createTagNameConfig} from "yume-dsl-rich-text";
+
+const dsl = createParser({
+    handlers: {
+        "ui:button": {
+            inline: (value) => ({type: "ui:button", value}),
+        },
+    },
+    tagName: createTagNameConfig({
+        isTagChar: (char) => /[A-Za-z0-9_:-]/.test(char),
+    }),
+});
+
+dsl.parse("$$ui:button(hello)$$");
+```
+
+**Via `parseRichText`** (per-call):
+
+```ts
+import {parseRichText} from "yume-dsl-rich-text";
+
+const tokens = parseRichText("$$1ui:button(hello)$$", {
+    handlers: {
+        "1ui:button": {
+            inline: (value) => ({type: "1ui:button", value}),
+        },
+    },
+    tagName: {
+        isTagStartChar: (char) => /[A-Za-z0-9_]/.test(char),
+        isTagChar: (char) => /[A-Za-z0-9_:-]/.test(char),
+    },
+});
+```
 
 ---
 
@@ -717,7 +857,7 @@ interface ParserBaseOptions {
 interface ParseOptions extends ParserBaseOptions {
     createId?: (token: TokenDraft) => string;
     blockTags?: readonly BlockTagInput[];
-    mode?: "render" | "highlight";
+    mode?: "render";
     onError?: (error: ParseError) => void;
 }
 
@@ -738,9 +878,7 @@ interface StructuralParseOptions extends ParserBaseOptions {
 - `createId`: override token id generation for this parse
 - `blockTags`: tags treated as block-level for line-break normalization — accepts plain strings or `{ tag, forms }`
   objects for per-form control
-- `mode`:
-    - `"render"` normalizes block line breaks
-    - `"highlight"` preserves them
+- `mode`: only `"render"` is supported. Use `parseStructural` for syntax-highlighting use cases
 - `onError`: callback for parse errors
 
 ### allowForms
@@ -975,12 +1113,14 @@ const tokens = dsl.parse(input);
 
 ### Configuration
 
+See [Custom Syntax](#custom-syntax) and [Custom Tag Name Characters](#custom-tag-name-characters) for full documentation.
+
 | Export                           | Description                                             |
 |----------------------------------|---------------------------------------------------------|
 | `DEFAULT_SYNTAX`                 | The built-in syntax tokens (`$$`, `(`, `)$$`, etc.)     |
-| `createSyntax(overrides)`        | Override syntax tokens with default fallback            |
+| `createSyntax(overrides)`        | Build a full `SyntaxConfig` from partial overrides      |
 | `DEFAULT_TAG_NAME`               | The built-in tag-name character rules                   |
-| `createTagNameConfig(overrides)` | Override tag-name character rules with default fallback |
+| `createTagNameConfig(overrides)` | Build a full `TagNameConfig` from partial overrides     |
 
 ### Handler Helpers
 
@@ -1051,136 +1191,6 @@ parsePipeTextList("ts | Demo | Label");
 ```
 
 This is what `createPipeBlockHandlers` and `createPipeRawHandlers` use internally.
-
----
-
-## Custom Syntax
-
-You can override syntax tokens through `options.syntax`.
-
-```ts
-import {parseRichText} from "yume-dsl-rich-text";
-
-const tokens = parseRichText("@@bold(hello)@@", {
-    syntax: {
-        tagPrefix: "@@",
-        endTag: ")@@",
-    },
-    handlers: {
-        bold: {
-            inline: (tokens) => ({type: "bold", value: tokens}),
-        },
-    },
-});
-```
-
-### Default Syntax
-
-```ts
-import {DEFAULT_SYNTAX} from "yume-dsl-rich-text";
-
-// {
-//   tagPrefix: "$$",
-//   tagOpen: "(",
-//   tagClose: ")",
-//   tagDivider: "|",
-//   endTag: ")$$",
-//   rawOpen: ")%",
-//   blockOpen: ")*",
-//   blockClose: "*end$$",
-//   rawClose: "%end$$",
-//   escapeChar: "\\",
-// }
-```
-
-> Warning:
-> Syntax tokens must remain distinguishable from one another.
-> If two tokens are configured to the same string, behavior is undefined.
-
-### createSyntax
-
-`createSyntax` builds a full `SyntaxConfig` from partial overrides. This is useful if you need to inspect or reuse the
-resolved syntax outside of parsing.
-
-```ts
-import {createSyntax} from "yume-dsl-rich-text";
-
-const syntax = createSyntax({tagPrefix: "@@", endTag: ")@@"});
-
-// SyntaxConfig extends SyntaxInput with a precomputed field:
-// syntax.escapableTokens — tokens that can be escaped, sorted by length (descending)
-```
-
-```ts
-interface SyntaxConfig extends SyntaxInput {
-    escapableTokens: string[];
-}
-```
-
-You do not need `createSyntax` for normal usage — `options.syntax` accepts a `Partial<SyntaxInput>` and the parser
-resolves it internally.
-
-> Note:
-> Syntax overrides are applied through module-local active state during parsing.
-> This is safe for normal synchronous calls, but if you share one module instance across concurrent async request flows,
-> isolate parser work carefully.
-
----
-
-## Custom Tag Name Characters
-
-The parser decides which characters may appear in a tag name via two functions:
-
-| Function         | Default                       | Role                            |
-|------------------|-------------------------------|---------------------------------|
-| `isTagStartChar` | `a-z`, `A-Z`, `_`             | First character of the tag name |
-| `isTagChar`      | `a-z`, `A-Z`, `0-9`, `_`, `-` | Remaining characters            |
-
-These defaults are exported as `DEFAULT_TAG_NAME`.
-
-### Overriding
-
-Pass a `tagName` option to `createParser` or `parseRichText`.
-You only need to specify the functions you want to change — unspecified fields fall back to `DEFAULT_TAG_NAME`.
-`createTagNameConfig()` is a convenience helper that does this merge, but you can also pass a plain partial object
-directly.
-
-**Via `createParser`** (pre-bound, recommended):
-
-```ts
-import {createParser, createTagNameConfig} from "yume-dsl-rich-text";
-
-const dsl = createParser({
-    handlers: {
-        "ui:button": {
-            inline: (value) => ({type: "ui:button", value}),
-        },
-    },
-    tagName: createTagNameConfig({
-        isTagChar: (char) => /[A-Za-z0-9_:-]/.test(char),
-    }),
-});
-
-dsl.parse("$$ui:button(hello)$$");
-```
-
-**Via `parseRichText`** (per-call):
-
-```ts
-import {parseRichText} from "yume-dsl-rich-text";
-
-const tokens = parseRichText("$$1ui:button(hello)$$", {
-    handlers: {
-        "1ui:button": {
-            inline: (value) => ({type: "1ui:button", value}),
-        },
-    },
-    tagName: {
-        isTagStartChar: (char) => /[A-Za-z0-9_]/.test(char),
-        isTagChar: (char) => /[A-Za-z0-9_:-]/.test(char),
-    },
-});
-```
 
 ---
 
@@ -1593,6 +1603,15 @@ tagMap.date = DateText;
 ---
 
 ## Changelog
+
+### 1.0.0
+
+- **Breaking (behavior):** Remove `"highlight"` from `ParseOptions.mode` — the value is no longer accepted.
+  The three internal highlight-mode branches (skip block content trimming, skip trailing line-break consumption,
+  skip raw-content unescaping) have been deleted. Use `parseStructural` for syntax-highlighting use cases
+- Reposition `parseStructural` as a first-class structural parse API sharing the same language configuration
+  as `parseRichText`, not a highlighting helper
+- Elevate Custom Syntax as a core feature — updated intro, design philosophy, features, and when-to-use sections
 
 ### 0.1.20
 

@@ -20,7 +20,6 @@ export const normalizeBlockTagContent = (
   form: MultilineForm,
 ): string => {
   if (!blockTagSet.has(tag, form)) return content;
-  if (mode === "highlight") return content;
   return stripSingleLeadingLineBreak(content);
 };
 
@@ -33,6 +32,5 @@ export const consumeBlockTagTrailingLineBreak = (
   form: MultilineForm,
 ): number => {
   if (!blockTagSet.has(tag, form)) return index;
-  if (mode === "highlight") return index;
   return consumeSingleTrailingLineBreak(text, index);
 };
