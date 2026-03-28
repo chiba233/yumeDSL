@@ -80,7 +80,7 @@ major versions with explicit migration notes.
 - [Error Handling](#error-handling)
 - [Graceful Degradation](#graceful-degradation)
 - [Vue 3 Rendering](#vue-3-rendering)
-- [Changelog](#changelog)
+- [Changelog](https://github.com/chiba233/yumeDSL/blob/main/yume-dsl-rich-text/CHANGELOG.md)
 - [License](#license)
 
 ---
@@ -1925,8 +1925,7 @@ tagMap.date = DateText;
 
 Release history now lives in a standalone file:
 
-- English: [CHANGELOG.md](https://github.com/chiba233/yumeDSL/blob/main/yume-dsl-rich-text/CHANGELOG.md)
-- Chinese: [CHANGELOG.zh-CN.md](https://github.com/chiba233/yumeDSL/blob/main/yume-dsl-rich-text/CHANGELOG.zh-CN.md)
+- [CHANGELOG.md](./CHANGELOG.md)
 
 ---
 
