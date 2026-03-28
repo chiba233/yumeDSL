@@ -227,6 +227,38 @@ export const skipDegradedInline = (text: string, start: number): number => {
   return scanInlineBoundary(text, start, false, true);
 };
 
+/**
+ * Skip over a syntactically recognized tag boundary without parsing its internals.
+ * Returns the position immediately after the tag's closing boundary, or the
+ * degraded fallback boundary when the tag is malformed.
+ */
+export const skipTagBoundary = (
+  text: string,
+  info: NonNullable<ReturnType<typeof readTagStartInfo>>,
+): number => {
+  const { tagOpen, endTag, rawOpen, rawClose, blockOpen, blockClose } = getSyntax();
+
+  const closerInfo = getTagCloserType(text, info.tagNameEnd + tagOpen.length);
+  if (!closerInfo) return info.inlineContentStart;
+
+  if (closerInfo.closer === endTag) {
+    const closeStart = findInlineClose(text, info.inlineContentStart);
+    return closeStart === -1
+      ? skipDegradedInline(text, info.inlineContentStart)
+      : closeStart + endTag.length;
+  }
+
+  if (closerInfo.closer === rawClose) {
+    const contentStart = closerInfo.argClose + rawOpen.length;
+    const closeStart = findRawClose(text, contentStart);
+    return closeStart === -1 ? contentStart : closeStart + rawClose.length;
+  }
+
+  const contentStart = closerInfo.argClose + blockOpen.length;
+  const closeStart = findBlockClose(text, contentStart);
+  return closeStart === -1 ? contentStart : closeStart + blockClose.length;
+};
+
 export const readTagStartInfo = (text: string, i: number): TagStartInfo | null => {
   const head = readTagHeadAt(text, i);
   if (!head) return null;

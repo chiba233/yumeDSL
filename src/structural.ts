@@ -10,6 +10,7 @@ import {
   findInlineClose,
   findBlockClose,
   findRawClose,
+  skipTagBoundary,
   skipDegradedInline,
 } from "./scanner.js";
 import { buildPositionTracker, getPositionTracker, withPositionTracker } from "./positions.js";
@@ -31,37 +32,6 @@ const makePosition = (start: number, end: number): SourceSpan | undefined => {
 };
 
 // ── Structural parser ──
-
-/**
- * Skip over a depth-limited tag without parsing its internals.
- * Returns the position immediately after the tag boundary.
- */
-const skipTagBoundary = (
-  text: string,
-  info: NonNullable<ReturnType<typeof readTagStartInfo>>,
-): number => {
-  const { tagOpen, endTag, rawOpen, rawClose, blockOpen, blockClose } = getSyntax();
-
-  const closerInfo = getTagCloserType(text, info.tagNameEnd + tagOpen.length);
-  if (!closerInfo) return info.inlineContentStart;
-
-  if (closerInfo.closer === endTag) {
-    const closeStart = findInlineClose(text, info.inlineContentStart);
-    return closeStart === -1
-      ? skipDegradedInline(text, info.inlineContentStart)
-      : closeStart + endTag.length;
-  }
-
-  if (closerInfo.closer === rawClose) {
-    const contentStart = closerInfo.argClose + rawOpen.length;
-    const closeStart = findRawClose(text, contentStart);
-    return closeStart === -1 ? contentStart : closeStart + rawClose.length;
-  }
-
-  const contentStart = closerInfo.argClose + blockOpen.length;
-  const closeStart = findBlockClose(text, contentStart);
-  return closeStart === -1 ? contentStart : closeStart + blockClose.length;
-};
 
 /**
  * Try to degrade a tag through the inline fallback path.

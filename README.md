@@ -1328,6 +1328,11 @@ When `trackPositions` is `false` (default):
 
 When enabled, a line-offset table is built once (O(n) scan), and each position resolution uses O(log n) binary search.
 
+Performance should be understood in tiers: `parseStructural` is a lightweight syntax/structure scanner suited for
+high-throughput scenarios; `parseRichText` is a semantic parser that, beyond the state-machine scan, includes handler
+execution, token-tree construction, and content normalization — the cost difference reflects capability overhead,
+not a scanner implementation deficiency.
+
 **Baseline throughput** (~48 KB DSL input, single-threaded microbenchmark):
 
 | API               | Time / call |
