@@ -375,7 +375,8 @@ interface ParseOptions extends ParserBaseOptions {
     createId?,
     blockTags?,
     mode?,
-    onError?   // 语义专属
+    onError?,          // 语义专属
+    trackPositions?    // 与 StructuralParseOptions 共享
 }
 
 interface StructuralParseOptions extends ParserBaseOptions {

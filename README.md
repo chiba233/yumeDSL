@@ -385,7 +385,8 @@ interface ParseOptions extends ParserBaseOptions {
     createId?,
     blockTags?,
     mode?,
-    onError?   // semantic-only
+    onError?,          // semantic-only
+    trackPositions?    // shared with StructuralParseOptions
 }
 
 interface StructuralParseOptions extends ParserBaseOptions {
