@@ -501,17 +501,21 @@ import {DEFAULT_SYNTAX} from "yume-dsl-rich-text";
 > 语法符号之间必须保持可区分。
 > 如果两个符号配置为相同的字符串，行为未定义。
 
-**符号的匹配方式** — `createSyntax` 只做纯 shallow merge，符号之间没有自动推导，需要你自己保持一致。
+**符号联动关系** — `createSyntax` 只做纯 shallow merge，无自动推导。
+解析器内部存在硬耦合——破坏它们标签就会失效：
 
-**解析器中的硬耦合：**
-
-1. **`tagOpen` ↔ `tagClose`** — `findTagArgClose` 通过计数 `tagOpen` 和 `tagClose` 来追踪嵌套深度。
-   改了其中一个必须同时改另一个。
-2. **`tagClose` 必须是 `endTag`、`rawOpen`、`blockOpen` 的前缀** — 解析器先用 `findTagArgClose`
-   找到 `tagClose` 所在位置，然后从该位置开始匹配 `endTag` / `rawOpen` / `blockOpen`。
-   如果它们不以 `tagClose` 开头，匹配永远不会成功，inline/raw/block 标签将全部失效。
-
-`rawClose`、`blockClose`、`tagDivider`、`escapeChar` 独立匹配，无耦合。
+| 修改…           | 必须同步更新…                           | 原因                                                                    |
+|-----------------|---------------------------------------|-------------------------------------------------------------------------|
+| `tagOpen`       | `tagClose`                            | `findTagArgClose` 用 `tagOpen`/`tagClose` 做深度配对                      |
+| `tagClose`      | `tagOpen`、`endTag`、`rawOpen`、`blockOpen` | `tagOpen` 与之配对；后三者必须以 `tagClose` 开头，因为 `getTagCloserType` 从 `tagClose` 位置开始匹配 |
+| `endTag`        | 必须以 `tagClose` 开头                  | 在 `findTagArgClose` 停止的位置匹配                                        |
+| `rawOpen`       | 必须以 `tagClose` 开头                  | 同上                                                                    |
+| `blockOpen`     | 必须以 `tagClose` 开头                  | 同上                                                                    |
+| `tagPrefix`     | —                                     | 独立                                                                    |
+| `rawClose`      | —                                     | 独立（整行匹配）                                                          |
+| `blockClose`    | —                                     | 独立（整行匹配）                                                          |
+| `tagDivider`    | —                                     | 独立                                                                    |
+| `escapeChar`    | —                                     | 独立                                                                    |
 
 ### createSyntax
 

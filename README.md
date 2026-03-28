@@ -513,19 +513,21 @@ import {DEFAULT_SYNTAX} from "yume-dsl-rich-text";
 > Syntax tokens must remain distinguishable from one another.
 > If two tokens are configured to the same string, behavior is undefined.
 
-**How tokens are matched** — `createSyntax` does a plain shallow merge onto defaults. There is no automatic
-derivation between tokens, so you must maintain consistency yourself.
+**Token dependency** — `createSyntax` does a plain shallow merge; no auto-derivation.
+The parser has hard couplings between certain tokens — break them and tags stop working:
 
-**Hard coupling in the parser:**
-
-1. **`tagOpen` ↔ `tagClose`** — `findTagArgClose` tracks nested depth by counting `tagOpen` vs `tagClose`.
-   Change one → must change the other.
-2. **`tagClose` must be a prefix of `endTag`, `rawOpen`, and `blockOpen`** — the parser first uses
-   `findTagArgClose` (which stops at the `tagClose` position), then immediately checks whether the text
-   at that position starts with `endTag` / `rawOpen` / `blockOpen`. If these don't begin with `tagClose`,
-   the match will never succeed and inline/raw/block tags will break.
-
-`rawClose`, `blockClose`, `tagDivider`, and `escapeChar` are matched independently — no coupling.
+| If you change… | Must also update…                  | Why                                                                  |
+|-----------------|------------------------------------|----------------------------------------------------------------------|
+| `tagOpen`       | `tagClose`                         | `findTagArgClose` counts `tagOpen`/`tagClose` for depth matching     |
+| `tagClose`      | `tagOpen`, `endTag`, `rawOpen`, `blockOpen` | `tagOpen` pairs with it; the other three must start with `tagClose` because `getTagCloserType` matches from the `tagClose` position |
+| `endTag`        | must start with `tagClose`         | Matched at the position where `findTagArgClose` stopped              |
+| `rawOpen`       | must start with `tagClose`         | Same reason                                                          |
+| `blockOpen`     | must start with `tagClose`         | Same reason                                                          |
+| `tagPrefix`     | —                                  | Independent                                                          |
+| `rawClose`      | —                                  | Independent (whole-line match)                                       |
+| `blockClose`    | —                                  | Independent (whole-line match)                                       |
+| `tagDivider`    | —                                  | Independent                                                          |
+| `escapeChar`    | —                                  | Independent                                                          |
 
 ### createSyntax
 
