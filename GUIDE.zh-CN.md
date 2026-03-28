@@ -501,16 +501,17 @@ import {DEFAULT_SYNTAX} from "yume-dsl-rich-text";
 > 语法符号之间必须保持可区分。
 > 如果两个符号配置为相同的字符串，行为未定义。
 
-**符号的匹配方式** — 解析器对每个符号独立匹配（`text.startsWith(token, pos)`），符号之间没有自动推导：
-`createSyntax` 只做纯 shallow merge。因此你可以自由覆盖任意子集，但需要自己确保符号之间可区分且视觉上一致。
+**符号的匹配方式** — `createSyntax` 只做纯 shallow merge，符号之间没有自动推导，需要你自己保持一致。
 
-**实际强耦合：`tagOpen` ↔ `tagClose`** — 这是解析器中唯一一对硬耦合的符号。
-`findTagArgClose` 通过计数 `tagOpen` 和 `tagClose` 的出现次数来追踪嵌套深度。改了其中一个必须同时改另一个，
-否则括号匹配会出错。
+**解析器中的硬耦合：**
 
-其余符号（`endTag`、`rawOpen`、`blockOpen`、`rawClose`、`blockClose`、`tagDivider`、`escapeChar`）
-均作为独立字面串匹配。它们的默认值碰巧共享字符（如 `endTag` = `)$$` 的 `)` 与 `tagClose` 相同），
-但解析器不会从一个推导出另一个——改 `tagPrefix` **不会**自动更新 `endTag`。需要语法看起来合理时，请一起覆盖。
+1. **`tagOpen` ↔ `tagClose`** — `findTagArgClose` 通过计数 `tagOpen` 和 `tagClose` 来追踪嵌套深度。
+   改了其中一个必须同时改另一个。
+2. **`tagClose` 必须是 `endTag`、`rawOpen`、`blockOpen` 的前缀** — 解析器先用 `findTagArgClose`
+   找到 `tagClose` 所在位置，然后从该位置开始匹配 `endTag` / `rawOpen` / `blockOpen`。
+   如果它们不以 `tagClose` 开头，匹配永远不会成功，inline/raw/block 标签将全部失效。
+
+`rawClose`、`blockClose`、`tagDivider`、`escapeChar` 独立匹配，无耦合。
 
 ### createSyntax
 

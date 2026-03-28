@@ -513,19 +513,19 @@ import {DEFAULT_SYNTAX} from "yume-dsl-rich-text";
 > Syntax tokens must remain distinguishable from one another.
 > If two tokens are configured to the same string, behavior is undefined.
 
-**How tokens are matched** — each token is matched independently by the parser (`text.startsWith(token, pos)`).
-There is no automatic derivation between tokens: `createSyntax` does a plain shallow merge onto defaults.
-This means you can override any subset freely, but you are responsible for keeping them distinguishable
-and visually coherent.
+**How tokens are matched** — `createSyntax` does a plain shallow merge onto defaults. There is no automatic
+derivation between tokens, so you must maintain consistency yourself.
 
-**Practical dependency: `tagOpen` ↔ `tagClose`** — these are the only pair with a hard coupling in the parser.
-`findTagArgClose` tracks nested depth by counting `tagOpen` vs `tagClose` occurrences. If you change one, you
-must change the other to keep paren-matching correct.
+**Hard coupling in the parser:**
 
-All other tokens (`endTag`, `rawOpen`, `blockOpen`, `rawClose`, `blockClose`, `tagDivider`, `escapeChar`) are
-matched as independent literal strings. Their default values happen to share characters (e.g. `endTag` = `)$$`
-starts with the same `)` as `tagClose`), but the parser does not derive one from another — so changing
-`tagPrefix` does **not** auto-update `endTag`. Override them together when you want the syntax to stay logical.
+1. **`tagOpen` ↔ `tagClose`** — `findTagArgClose` tracks nested depth by counting `tagOpen` vs `tagClose`.
+   Change one → must change the other.
+2. **`tagClose` must be a prefix of `endTag`, `rawOpen`, and `blockOpen`** — the parser first uses
+   `findTagArgClose` (which stops at the `tagClose` position), then immediately checks whether the text
+   at that position starts with `endTag` / `rawOpen` / `blockOpen`. If these don't begin with `tagClose`,
+   the match will never succeed and inline/raw/block tags will break.
+
+`rawClose`, `blockClose`, `tagDivider`, and `escapeChar` are matched independently — no coupling.
 
 ### createSyntax
 
