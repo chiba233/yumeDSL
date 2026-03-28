@@ -1303,11 +1303,13 @@ interface SourceSpan {
 
 ### What `position` covers
 
-Each token's `position` spans the **full source range consumed by the parser** for that token, including any trailing
-line break consumed by block-tag normalization.
+Each token's `position` spans the source range for that parser's own output model.
 
-For example, in `$$info()*\nhello\n*end$$\nnext`, the `info` token's `position.end` points past the `\n` after
-`*end$$`, because the parser consumes that trailing line break as part of the block tag.
+- In `parseRichText`, block/raw token spans include any trailing line break consumed by line-break normalization.
+- In `parseStructural`, spans follow the raw structural syntax and therefore stop at `*end$$` / `%end$$`.
+
+For example, in `$$info()*\nhello\n*end$$\nnext`, `parseRichText` reports the `info` token past the `\n` after
+`*end$$`, while `parseStructural` leaves that `\n` as the next text node.
 
 ### Semantic differences between `parseRichText` and `parseStructural`
 
@@ -1780,7 +1782,7 @@ tagMap.date = DateText;
     - `TextToken.position?` and `StructuralNode.position?` — present only when enabled
     - Pre-computed line-offset table with O(log n) binary search for line/column resolution
     - Negligible overhead when disabled (default) — no table allocation, no position objects produced
-    - Block/raw tag `position` covers the full consumed span including trailing line-break normalization
+    - `parseRichText` block/raw token spans include trailing line-break normalization; `parseStructural` keeps raw syntax spans
     - Nested block content positions map back to the original source via base-offset adjustment
     - Error reporting reuses the line-offset table when position tracking is active
 - `normalizeBlockTagContent` now returns `{ content, leadingTrim }` instead of a plain string (internal change,

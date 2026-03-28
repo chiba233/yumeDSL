@@ -1268,10 +1268,13 @@ interface SourceSpan {
 
 ### `position` 覆盖范围
 
-每个 token 的 `position` 覆盖**解析器为该 token 实际消费的完整源码范围**，包括 block 标签归一化消费掉的尾部换行。
+每个 token 的 `position` 都遵循对应解析器自己的输出语义。
 
-例如 `$$info()*\nhello\n*end$$\nnext` 中，`info` token 的 `position.end` 指向 `*end$$` 后面那个 `\n` 之后，
-因为解析器作为 block 标签的一部分消费了该尾部换行。
+- `parseRichText` 中，block/raw token 的 span 会包含因换行归一化而被消费的尾部换行。
+- `parseStructural` 中，span 保持原始结构语法范围，因此会停在 `*end$$` / `%end$$` 处。
+
+例如 `$$info()*\nhello\n*end$$\nnext` 中，`parseRichText` 的 `info.position.end` 会越过 `*end$$` 后的那个
+`\n`；而 `parseStructural` 会把这个 `\n` 留给后续文本节点。
 
 ### `parseRichText` 与 `parseStructural` 的语义差异
 
@@ -1736,7 +1739,7 @@ tagMap.date = DateText;
     - `TextToken.position?` 和 `StructuralNode.position?` — 仅在启用时出现
     - 预计算行偏移表 + O(log n) 二分查找行列号
     - 关闭时（默认）开销可忽略——不分配行表、不产生 position 对象
-    - block/raw 标签 `position` 覆盖完整消费范围（含尾部换行归一化）
+    - `parseRichText` 的 block/raw token span 包含尾部换行归一化；`parseStructural` 保持原始语法 span
     - 嵌套 block 子内容位置通过基准偏移调整映射回原始源码
     - 启用位置追踪时，错误报告复用行偏移表
 - `normalizeBlockTagContent` 现在返回 `{ content, leadingTrim }` 而非纯字符串（内部变更，非公开 API）
