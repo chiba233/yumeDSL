@@ -1,12 +1,13 @@
-import type { ParseContext, ParseStackNode, TextToken } from "./types.js";
+import type { ParseContext, ParseStackNode, SourceSpan, TextToken } from "./types.js";
 import { createToken } from "./createToken.js";
 import { emitError } from "./errors.js";
+import { makePosition } from "./positions.js";
 
 export const getCurrentTokens = (ctx: ParseContext): TextToken[] => {
   return ctx.stack.length ? ctx.stack[ctx.stack.length - 1].tokens : ctx.root;
 };
 
-export const pushTextToCurrent = (ctx: ParseContext, str: string) => {
+export const pushTextToCurrent = (ctx: ParseContext, str: string, position?: SourceSpan) => {
   if (!str) return;
 
   const tokens = getCurrentTokens(ctx);
@@ -14,15 +15,29 @@ export const pushTextToCurrent = (ctx: ParseContext, str: string) => {
 
   if (last?.type === "text" && typeof last.value === "string") {
     (last as { value: string }).value += str;
+    if (position && last.position) {
+      last.position = { start: last.position.start, end: position.end };
+    }
   } else {
-    tokens.push(createToken({ type: "text", value: str }));
+    tokens.push(createToken({ type: "text", value: str }, position));
   }
+};
+
+export const appendToBuffer = (ctx: ParseContext, text: string, startOffset: number, sourceEnd?: number) => {
+  if (ctx.bufferStart === -1) ctx.bufferStart = startOffset;
+  ctx.bufferSourceEnd = sourceEnd ?? startOffset + text.length;
+  ctx.buffer += text;
 };
 
 export const flushBuffer = (ctx: ParseContext) => {
   if (!ctx.buffer) return;
-  pushTextToCurrent(ctx, ctx.buffer);
+  const position = ctx.bufferStart >= 0
+    ? makePosition(ctx.bufferStart, ctx.bufferSourceEnd)
+    : undefined;
+  pushTextToCurrent(ctx, ctx.buffer, position);
   ctx.buffer = "";
+  ctx.bufferStart = -1;
+  ctx.bufferSourceEnd = -1;
 };
 
 export const finalizeUnclosedTags = (ctx: ParseContext) => {
@@ -30,11 +45,16 @@ export const finalizeUnclosedTags = (ctx: ParseContext) => {
     const node = ctx.stack.pop() as ParseStackNode;
     emitError(ctx.onError, "INLINE_NOT_CLOSED", ctx.text, node.openPos, node.openLen);
 
-    pushTextToCurrent(ctx, ctx.text.slice(node.openPos, node.openPos + node.openLen));
+    const openEnd = node.openPos + node.openLen;
+    pushTextToCurrent(
+      ctx,
+      ctx.text.slice(node.openPos, openEnd),
+      makePosition(node.openPos, openEnd),
+    );
 
     node.tokens.forEach((t) => {
       if (t.type === "text" && typeof t.value === "string") {
-        pushTextToCurrent(ctx, t.value);
+        pushTextToCurrent(ctx, t.value, t.position);
       } else {
         getCurrentTokens(ctx).push(t);
       }

@@ -67,6 +67,12 @@ export type {
   CreateId,
 } from "./types.js";
 
+// ── Types: source positions ──
+export type {
+  SourcePosition,
+  SourceSpan,
+} from "./types.js";
+
 // ── Types: structural ──
 export type { StructuralNode, StructuralParseOptions } from "./types.js";
 

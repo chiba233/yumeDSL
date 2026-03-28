@@ -1,11 +1,13 @@
-import type { CreateId, TextToken, TokenDraft } from "./types.js";
+import type { CreateId, SourceSpan, TextToken, TokenDraft } from "./types.js";
 
 let tokenIdSeed = 0;
 let activeCreateId: CreateId | null = null;
 
-export const createToken = (token: TokenDraft): TextToken => {
+export const createToken = (token: TokenDraft, position?: SourceSpan): TextToken => {
   const id = activeCreateId ? activeCreateId(token) : `rt-${tokenIdSeed++}`;
-  return { ...token, id };
+  const result: TextToken = { ...token, id };
+  if (position) result.position = position;
+  return result;
 };
 
 export const resetTokenIdSeed = () => {

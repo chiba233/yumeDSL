@@ -17,6 +17,7 @@ import {
   normalizeBlockTagContent,
 } from "./blockTagFormatting.js";
 import { createToken } from "./createToken.js";
+import { makePosition, withBaseOffset } from "./positions.js";
 
 export const tryParseComplexTag = (
   text: string,
@@ -102,26 +103,36 @@ export const tryParseComplexTag = (
     }
 
     const arg = text.slice(argStart, argClose).trim();
-    const blockContent = normalizeBlockTagContent(
+    const { content: blockContent, leadingTrim } = normalizeBlockTagContent(
       tag,
       text.slice(contentStart, end),
       mode,
       blockTagSet,
       "block",
     );
+    const innerBaseOffset = contentStart + leadingTrim;
+
+    const nextIndex = consumeBlockTagTrailingLineBreak(
+      tag,
+      text,
+      end + blockClose.length,
+      mode,
+      blockTagSet,
+      "block",
+    );
+    const position = makePosition(tagOpenPos, nextIndex);
 
     return {
       handled: true,
-      nextIndex: consumeBlockTagTrailingLineBreak(
-        tag,
-        text,
-        end + blockClose.length,
-        mode,
-        blockTagSet,
-        "block",
-      ),
+      nextIndex,
       token: createToken(
-        handler.block(arg, parseInlineContent(blockContent, Math.max(depthLimit - 1, 0), { mode })),
+        handler.block(
+          arg,
+          withBaseOffset(innerBaseOffset, () =>
+            parseInlineContent(blockContent, Math.max(depthLimit - 1, 0), { mode }),
+          ),
+        ),
+        position,
       ),
     };
   }
@@ -174,18 +185,21 @@ export const tryParseComplexTag = (
   const rawContent = text.slice(contentStart, end);
   const normalizedRawContent =
     rawContent.split(escapeChar + rawClose).join(rawClose);
-  const content = normalizeBlockTagContent(tag, normalizedRawContent, mode, blockTagSet, "raw");
+  const { content } = normalizeBlockTagContent(tag, normalizedRawContent, mode, blockTagSet, "raw");
+
+  const nextIndex = consumeBlockTagTrailingLineBreak(
+    tag,
+    text,
+    end + rawClose.length,
+    mode,
+    blockTagSet,
+    "raw",
+  );
+  const position = makePosition(tagOpenPos, nextIndex);
 
   return {
     handled: true,
-    nextIndex: consumeBlockTagTrailingLineBreak(
-      tag,
-      text,
-      end + rawClose.length,
-      mode,
-      blockTagSet,
-      "raw",
-    ),
-    token: createToken(handler.raw(arg, content)),
+    nextIndex,
+    token: createToken(handler.raw(arg, content), position),
   };
 };

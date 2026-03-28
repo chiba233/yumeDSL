@@ -1,9 +1,21 @@
 // ── Public types ──
 
+export interface SourcePosition {
+  offset: number;
+  line: number;
+  column: number;
+}
+
+export interface SourceSpan {
+  start: SourcePosition;
+  end: SourcePosition;
+}
+
 export interface TextToken {
   type: string;
   value: string | TextToken[];
   id: string;
+  position?: SourceSpan;
   [key: string]: unknown;
 }
 
@@ -134,6 +146,8 @@ export interface ParseOptions extends ParserBaseOptions {
   mode?: "render";
   /** Called for every parse error. If omitted, errors are silently discarded. */
   onError?: (error: ParseError) => void;
+  /** When true, attach source position info (`position`) to every TextToken. Default: false. */
+  trackPositions?: boolean;
 }
 
 // ── Structural parse types ──
@@ -145,12 +159,12 @@ export interface ParseOptions extends ParserBaseOptions {
  * and accepts any syntactically valid tag without handler registration.
  */
 export type StructuralNode =
-  | { type: "text"; value: string }
-  | { type: "escape"; raw: string }
-  | { type: "separator" }
-  | { type: "inline"; tag: string; children: StructuralNode[] }
-  | { type: "raw"; tag: string; args: StructuralNode[]; content: string }
-  | { type: "block"; tag: string; args: StructuralNode[]; children: StructuralNode[] };
+  | { type: "text"; value: string; position?: SourceSpan }
+  | { type: "escape"; raw: string; position?: SourceSpan }
+  | { type: "separator"; position?: SourceSpan }
+  | { type: "inline"; tag: string; children: StructuralNode[]; position?: SourceSpan }
+  | { type: "raw"; tag: string; args: StructuralNode[]; content: string; position?: SourceSpan }
+  | { type: "block"; tag: string; args: StructuralNode[]; children: StructuralNode[]; position?: SourceSpan };
 
 /**
  * Options for {@link parseStructural}.
@@ -161,7 +175,10 @@ export type StructuralNode =
  * When `handlers` is provided, gating rules are identical to `parseRichText`.
  * When omitted, all tags and forms are accepted.
  */
-export interface StructuralParseOptions extends ParserBaseOptions {}
+export interface StructuralParseOptions extends ParserBaseOptions {
+  /** When true, attach source position info (`position`) to every StructuralNode. Default: false. */
+  trackPositions?: boolean;
+}
 
 // ── Internal types (not re-exported from index) ──
 
@@ -179,6 +196,8 @@ export interface ParseContext {
   root: TextToken[];
   stack: ParseStackNode[];
   buffer: string;
+  bufferStart: number;
+  bufferSourceEnd: number;
   i: number;
 }
 

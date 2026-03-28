@@ -12,15 +12,21 @@ export const consumeSingleTrailingLineBreak = (text: string, index: number): num
   return index;
 };
 
+export interface NormalizedContent {
+  content: string;
+  leadingTrim: number;
+}
+
 export const normalizeBlockTagContent = (
   tag: string,
   content: string,
   mode: ParseMode,
   blockTagSet: BlockTagLookup,
   form: MultilineForm,
-): string => {
-  if (!blockTagSet.has(tag, form)) return content;
-  return stripSingleLeadingLineBreak(content);
+): NormalizedContent => {
+  if (!blockTagSet.has(tag, form)) return { content, leadingTrim: 0 };
+  const stripped = stripSingleLeadingLineBreak(content);
+  return { content: stripped, leadingTrim: content.length - stripped.length };
 };
 
 export const consumeBlockTagTrailingLineBreak = (

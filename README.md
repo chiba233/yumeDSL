@@ -75,6 +75,7 @@ major versions with explicit migration notes.
 - [Writing Tag Handlers](#writing-tag-handlers)
 - [Utility Exports](#utility-exports)
     - [PipeArgs](#pipeargs)
+- [Source Position Tracking](#source-position-tracking)
 - [Error Handling](#error-handling)
 - [Graceful Degradation](#graceful-degradation)
 - [Vue 3 Rendering](#vue-3-rendering)
@@ -384,17 +385,19 @@ interface ParseOptions extends ParserBaseOptions {
 }
 
 interface StructuralParseOptions extends ParserBaseOptions {
+    trackPositions?: boolean;
 }
 ```
 
-| Param                | Type                         | Description                                                                         |
-|----------------------|------------------------------|-------------------------------------------------------------------------------------|
-| `text`               | `string`                     | DSL source                                                                          |
-| `options.handlers`   | `Record<string, TagHandler>` | Tag recognition & form gating (same rules as `parseRichText`). Omit for accept-all. |
-| `options.allowForms` | `readonly TagForm[]`         | Restrict accepted forms (requires `handlers`)                                       |
-| `options.depthLimit` | `number`                     | Max nesting depth (default `50`)                                                    |
-| `options.syntax`     | `Partial<SyntaxInput>`       | Override syntax tokens                                                              |
-| `options.tagName`    | `Partial<TagNameConfig>`     | Override tag-name character rules                                                   |
+| Param                      | Type                         | Description                                                                         |
+|----------------------------|------------------------------|-------------------------------------------------------------------------------------|
+| `text`                     | `string`                     | DSL source                                                                          |
+| `options.handlers`         | `Record<string, TagHandler>` | Tag recognition & form gating (same rules as `parseRichText`). Omit for accept-all. |
+| `options.allowForms`       | `readonly TagForm[]`         | Restrict accepted forms (requires `handlers`)                                       |
+| `options.depthLimit`       | `number`                     | Max nesting depth (default `50`)                                                    |
+| `options.syntax`           | `Partial<SyntaxInput>`       | Override syntax tokens                                                              |
+| `options.tagName`          | `Partial<TagNameConfig>`     | Override tag-name character rules                                                   |
+| `options.trackPositions`   | `boolean`                    | Attach `position` to every node (default `false`)                                   |
 
 When `handlers` is provided, tag recognition and form gating are **identical** to `parseRichText` — the same
 `supportsInlineForm` decision table and `filterHandlersByForms` logic are used (shared code, not mirrored).
@@ -423,17 +426,20 @@ withSyntax(customSyntax, () => {
 | `raw`       | `tag`, `args`, `content: string` | `$$tag(…)% … %end$$`          |
 | `block`     | `tag`, `args`, `children`        | `$$tag(…)* … *end$$`          |
 
+All variants carry an optional `position?: SourceSpan` when `trackPositions` is enabled.
+
 Differences from `parseRichText` (features, not bugs):
 
-|                          | `parseRichText`                   | `parseStructural`                        |
-|--------------------------|-----------------------------------|------------------------------------------|
-| Tag recognition          | Same (shared `ParserBaseOptions`) | Same (shared `ParserBaseOptions`)        |
-| Form gating              | Same                              | Same                                     |
-| Line-break normalization | Always strips (render mode)       | Always preserves                         |
-| Pipe `\|`                | Part of text                      | `separator` node in args; text elsewhere |
-| Error reporting          | `onError` callback                | Silent degradation                       |
-| Escape handling          | Unescaped at root level           | Structural `escape` nodes                |
-| Output type              | `TextToken[]`                     | `StructuralNode[]`                       |
+|                          | `parseRichText`                                        | `parseStructural`                        |
+|--------------------------|--------------------------------------------------------|------------------------------------------|
+| Tag recognition          | Same (shared `ParserBaseOptions`)                      | Same (shared `ParserBaseOptions`)        |
+| Form gating              | Same                                                   | Same                                     |
+| Line-break normalization | Always strips (render mode)                            | Always preserves                         |
+| Pipe `\|`                | Part of text                                           | `separator` node in args; text elsewhere |
+| Error reporting          | `onError` callback                                     | Silent degradation                       |
+| Escape handling          | Unescaped at root level                                | Structural `escape` nodes                |
+| Position tracking        | `trackPositions` on `TextToken.position` (normalized spans) | `trackPositions` on `StructuralNode.position` (raw syntax spans) |
+| Output type              | `TextToken[]`                                          | `StructuralNode[]`                       |
 
 **Which one do I use?** If your goal is *rendering content*, use `parseRichText`.
 If your goal is *analyzing source structure*, use `parseStructural`.
@@ -895,9 +901,11 @@ interface ParseOptions extends ParserBaseOptions {
     blockTags?: readonly BlockTagInput[];
     mode?: "render";
     onError?: (error: ParseError) => void;
+    trackPositions?: boolean;
 }
 
 interface StructuralParseOptions extends ParserBaseOptions {
+    trackPositions?: boolean;
 }
 ```
 
@@ -916,6 +924,7 @@ interface StructuralParseOptions extends ParserBaseOptions {
   objects for per-form control
 - `mode`: only `"render"` is supported. Use `parseStructural` for syntax-highlighting use cases
 - `onError`: callback for parse errors
+- `trackPositions`: attach source position info (`position`) to every `TextToken` (default `false`). See [Source Position Tracking](#source-position-tracking)
 
 ### allowForms
 
@@ -953,6 +962,7 @@ interface TextToken {
     type: string;
     value: string | TextToken[];
     id: string;
+    position?: SourceSpan;
 
     [key: string]: unknown;
 }
@@ -960,6 +970,9 @@ interface TextToken {
 
 `TextToken` is the parser's output type. The `type` and `value` fields are intentionally loose (`string`) so the parser
 can represent any tag without knowing your schema.
+
+The optional `position` field is present when [`trackPositions`](#source-position-tracking) is enabled. It records the
+source span (offset, line, column) of the original text that produced this token.
 
 Extra fields returned by handlers (e.g. `url`, `lang`, `title`) are preserved on the resulting `TextToken` and
 accessible as `unknown`. You can read them directly without a cast — just narrow the type before use:
@@ -1229,6 +1242,85 @@ parsePipeTextList("ts | Demo | Label");
 ```
 
 This is what `createPipeBlockHandlers` and `createPipeRawHandlers` use internally.
+
+---
+
+## Source Position Tracking
+
+Pass `trackPositions: true` to attach a `position` (source span) to every output node. Disabled by default — when off,
+no line table is built and no `position` fields appear. Zero overhead.
+
+```ts
+import { parseRichText, type SourceSpan } from "yume-dsl-rich-text";
+
+const tokens = parseRichText("hello $$bold(world)$$", {
+    handlers: { bold: { inline: (t) => ({ type: "bold", value: t }) } },
+    trackPositions: true,
+});
+
+// tokens[0].position
+// {
+//   start: { offset: 0,  line: 1, column: 1  },
+//   end:   { offset: 6,  line: 1, column: 7  }
+// }
+
+// tokens[1].position
+// {
+//   start: { offset: 6,  line: 1, column: 7  },
+//   end:   { offset: 21, line: 1, column: 22 }
+// }
+```
+
+`parseStructural` supports the same option:
+
+```ts
+import { parseStructural } from "yume-dsl-rich-text";
+
+const nodes = parseStructural("$$bold(hi)$$", { trackPositions: true });
+// nodes[0].position → { start: { offset: 0, ... }, end: { offset: 12, ... } }
+```
+
+### Types
+
+```ts
+interface SourcePosition {
+    offset: number;   // 0-indexed byte offset
+    line: number;      // 1-indexed
+    column: number;    // 1-indexed
+}
+
+interface SourceSpan {
+    start: SourcePosition;
+    end: SourcePosition;
+}
+```
+
+### What `position` covers
+
+Each token's `position` spans the **full source range consumed by the parser** for that token, including any trailing
+line break consumed by block-tag normalization.
+
+For example, in `$$info()*\nhello\n*end$$\nnext`, the `info` token's `position.end` points past the `\n` after
+`*end$$`, because the parser consumes that trailing line break as part of the block tag.
+
+### Semantic differences between `parseRichText` and `parseStructural`
+
+| Aspect | `parseRichText` | `parseStructural` |
+|--------|----------------|-------------------|
+| Block children offset | Adjusted for leading line-break normalization — inner `position` maps back to the original source through the normalized content | Raw syntax positions — no normalization adjustment, children start at the content delimiter |
+
+Both APIs use the same `SourceSpan` type, but the inner child positions reflect their respective processing models.
+If you compare child positions across the two APIs on the same input, block content may show an offset difference
+equal to the stripped leading line break (1 for `\n`, 2 for `\r\n`).
+
+### Performance
+
+When `trackPositions` is `false` (default):
+- No line-offset table is allocated
+- No `position` computation occurs at any point
+- The only overhead is a single `null` check per token creation site — effectively zero cost
+
+When enabled, a line-offset table is built once (O(n) scan), and each position resolution uses O(log n) binary search.
 
 ---
 
@@ -1641,6 +1733,19 @@ tagMap.date = DateText;
 ---
 
 ## Changelog
+
+### 1.0.2
+
+- Add opt-in source position tracking (`trackPositions: true`) for both `parseRichText` and `parseStructural`
+    - New types: `SourcePosition`, `SourceSpan`
+    - `TextToken.position?` and `StructuralNode.position?` — present only when enabled
+    - Pre-computed line-offset table with O(log n) binary search for line/column resolution
+    - Zero overhead when disabled (default) — no allocation, no computation
+    - Block/raw tag `position` covers the full consumed span including trailing line-break normalization
+    - Nested block content positions map back to the original source via base-offset adjustment
+    - Error reporting reuses the line-offset table when position tracking is active
+- `normalizeBlockTagContent` now returns `{ content, leadingTrim }` instead of a plain string (internal change,
+  not part of the public API)
 
 ### 1.0.1
 

@@ -3,7 +3,7 @@ import { getSyntax } from "./syntax.js";
 import { readEscaped, unescapeInline } from "./escape.js";
 import { materializeTextTokens } from "./builders.js";
 import { emitError } from "./errors.js";
-import { flushBuffer, getCurrentTokens, pushTextToCurrent } from "./context.js";
+import { appendToBuffer, flushBuffer, getCurrentTokens, pushTextToCurrent } from "./context.js";
 import {
   findBlockClose,
   findInlineClose,
@@ -15,6 +15,7 @@ import {
 import { tryParseComplexTag } from "./complex.js";
 import { createToken } from "./createToken.js";
 import { consumeBlockTagTrailingLineBreak } from "./blockTagFormatting.js";
+import { makePosition } from "./positions.js";
 
 /**
  * Decide whether a tag may be consumed via the inline code path.
@@ -60,7 +61,7 @@ export const tryConsumeDepthLimitedTag = (ctx: ParseContext, info: TagStartInfo)
   const tagInfo = getTagCloserType(ctx.text, info.inlineContentStart);
 
   if (!tagInfo) {
-    ctx.buffer += ctx.text.slice(ctx.i, info.inlineContentStart);
+    appendToBuffer(ctx, ctx.text.slice(ctx.i, info.inlineContentStart), ctx.i);
     ctx.i = info.inlineContentStart;
     return true;
   }
@@ -69,12 +70,12 @@ export const tryConsumeDepthLimitedTag = (ctx: ParseContext, info: TagStartInfo)
     const end = findInlineClose(ctx.text, info.inlineContentStart);
     if (end === -1) {
       const degradedEnd = skipDegradedInline(ctx.text, info.inlineContentStart);
-      ctx.buffer += ctx.text.slice(ctx.i, degradedEnd);
+      appendToBuffer(ctx, ctx.text.slice(ctx.i, degradedEnd), ctx.i);
       ctx.i = degradedEnd;
       return true;
     }
 
-    ctx.buffer += ctx.text.slice(ctx.i, end + endTag.length);
+    appendToBuffer(ctx, ctx.text.slice(ctx.i, end + endTag.length), ctx.i);
     ctx.i = end + endTag.length;
     return true;
   }
@@ -84,12 +85,12 @@ export const tryConsumeDepthLimitedTag = (ctx: ParseContext, info: TagStartInfo)
     const end = findBlockClose(ctx.text, contentStart);
 
     if (end === -1) {
-      ctx.buffer += ctx.text.slice(ctx.i, contentStart);
+      appendToBuffer(ctx, ctx.text.slice(ctx.i, contentStart), ctx.i);
       ctx.i = contentStart;
       return true;
     }
 
-    ctx.buffer += ctx.text.slice(ctx.i, end + blockClose.length);
+    appendToBuffer(ctx, ctx.text.slice(ctx.i, end + blockClose.length), ctx.i);
     ctx.i = end + blockClose.length;
     return true;
   }
@@ -99,12 +100,12 @@ export const tryConsumeDepthLimitedTag = (ctx: ParseContext, info: TagStartInfo)
     const end = findRawClose(ctx.text, contentStart);
 
     if (end === -1) {
-      ctx.buffer += ctx.text.slice(ctx.i, contentStart);
+      appendToBuffer(ctx, ctx.text.slice(ctx.i, contentStart), ctx.i);
       ctx.i = contentStart;
       return true;
     }
 
-    ctx.buffer += ctx.text.slice(ctx.i, end + rawClose.length);
+    appendToBuffer(ctx, ctx.text.slice(ctx.i, end + rawClose.length), ctx.i);
     ctx.i = consumeBlockTagTrailingLineBreak(
       info.tag,
       ctx.text,
@@ -149,7 +150,7 @@ export const tryConsumeComplexTag = (
   }
 
   if (result.fallbackText) {
-    ctx.buffer += result.fallbackText;
+    appendToBuffer(ctx, result.fallbackText, info.tagOpenPos);
   }
 
   if (result.token) {
@@ -179,7 +180,7 @@ export const tryConsumeInlineTag = (
       info.tagOpenPos,
       info.inlineContentStart - info.tagOpenPos,
     );
-    ctx.buffer += ctx.text.slice(ctx.i, info.inlineContentStart);
+    appendToBuffer(ctx, ctx.text.slice(ctx.i, info.inlineContentStart), info.tagOpenPos);
     ctx.i = info.inlineContentStart;
     return true;
   }
@@ -217,12 +218,13 @@ export const tryConsumeTagStart = (
 };
 
 export const finalizeClosedNode = (ctx: ParseContext, node: ParseContext["stack"][0]) => {
+  const { endTag } = getSyntax();
   const materializedTokens = materializeTextTokens(node.tokens);
 
   if (!node.richType) {
     materializedTokens.forEach((t) => {
       if (t.type === "text" && typeof t.value === "string") {
-        pushTextToCurrent(ctx, unescapeInline(t.value));
+        pushTextToCurrent(ctx, unescapeInline(t.value), t.position);
       } else {
         getCurrentTokens(ctx).push(t);
       }
@@ -232,13 +234,15 @@ export const finalizeClosedNode = (ctx: ParseContext, node: ParseContext["stack"
   }
 
   const handler = ctx.handlers[node.richType];
+  const position = makePosition(node.openPos, ctx.i + endTag.length);
+
   getCurrentTokens(ctx).push(
     handler?.inline
-      ? createToken(handler.inline(node.tokens))
+      ? createToken(handler.inline(node.tokens), position)
       : createToken({
           type: node.richType,
           value: materializedTokens,
-        }),
+        }, position),
   );
 };
 
@@ -248,7 +252,7 @@ export const tryConsumeTagClose = (ctx: ParseContext): boolean => {
 
   if (ctx.stack.length === 0) {
     emitError(ctx.onError, "UNEXPECTED_CLOSE", ctx.text, ctx.i, endTag.length);
-    ctx.buffer += endTag;
+    appendToBuffer(ctx, endTag, ctx.i);
     ctx.i += endTag.length;
     return true;
   }
@@ -278,7 +282,7 @@ export const tryConsumeEscape = (ctx: ParseContext): boolean => {
   }
 
   const [char, next] = readEscaped(ctx.text, ctx.i);
-  ctx.buffer += ctx.stack.length > 0 ? ctx.text.slice(ctx.i, next) : char;
+  appendToBuffer(ctx, ctx.stack.length > 0 ? ctx.text.slice(ctx.i, next) : char, ctx.i, next);
   ctx.i = next;
   return true;
 };

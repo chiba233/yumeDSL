@@ -13,10 +13,11 @@ import type {
 import { extractText } from "./builders.js";
 import { createTagNameConfig, withTagNameConfig } from "./chars.js";
 import { tryConsumeEscape, tryConsumeTagClose, tryConsumeTagStart } from "./consumers.js";
-import { finalizeUnclosedTags, flushBuffer } from "./context.js";
+import { appendToBuffer, finalizeUnclosedTags, flushBuffer } from "./context.js";
 import { withCreateId } from "./createToken.js";
 import { parseStructural } from "./structural.js";
 import { createSyntax, withSyntax } from "./syntax.js";
+import { buildPositionTracker, withPositionTracker } from "./positions.js";
 
 const buildBlockTagLookup = (inputs: readonly BlockTagInput[]): BlockTagLookup => {
   const rawSet = new Set<string>();
@@ -117,6 +118,8 @@ const internalParse = (
     root: [],
     stack: [],
     buffer: "",
+    bufferStart: -1,
+    bufferSourceEnd: -1,
     i: 0,
   };
 
@@ -142,7 +145,7 @@ const internalParse = (
     if (tryConsumeTagClose(ctx)) continue;
     if (tryConsumeEscape(ctx)) continue;
 
-    ctx.buffer += ctx.text[ctx.i];
+    appendToBuffer(ctx, ctx.text[ctx.i], ctx.i);
     ctx.i++;
   }
 
@@ -167,19 +170,22 @@ export const parseRichText = (text: string, options: ParseOptions = {}): TextTok
   const tagName = createTagNameConfig(options.tagName);
   let seed = 0;
   const createId = options.createId ?? (() => `rt-${seed++}`);
+  const tracker = options.trackPositions ? buildPositionTracker(text) : null;
 
   return withSyntax(syntax, () =>
     withTagNameConfig(tagName, () =>
       withCreateId(createId, () =>
-        internalParse(
-          text,
-          options.depthLimit ?? 50,
-          { mode: options.mode ?? "render" },
-          allowInline,
-          registeredTags,
-          options.onError,
-          handlers,
-          blockTagSet,
+        withPositionTracker(tracker, () =>
+          internalParse(
+            text,
+            options.depthLimit ?? 50,
+            { mode: options.mode ?? "render" },
+            allowInline,
+            registeredTags,
+            options.onError,
+            handlers,
+            blockTagSet,
+          ),
         ),
       ),
     ),

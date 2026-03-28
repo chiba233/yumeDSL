@@ -1,4 +1,5 @@
 import type { ErrorCode, ParseError } from "./types.js";
+import { getPositionTracker } from "./positions.js";
 
 const ERROR_MESSAGES: Record<ErrorCode, string> = {
   DEPTH_LIMIT: "Nesting too deep",
@@ -11,15 +12,25 @@ const ERROR_MESSAGES: Record<ErrorCode, string> = {
 };
 
 export const getErrorContext = (text: string, index: number, length = 1, range = 15) => {
-  let line = 1;
-  let lastLineStart = 0;
-  for (let i = 0; i < index; i++) {
-    if (text[i] === "\n") {
-      line++;
-      lastLineStart = i + 1;
+  const tracker = getPositionTracker();
+  let line: number;
+  let column: number;
+
+  if (tracker) {
+    const pos = tracker.resolve(index);
+    line = pos.line;
+    column = pos.column;
+  } else {
+    line = 1;
+    let lastLineStart = 0;
+    for (let i = 0; i < index; i++) {
+      if (text[i] === "\n") {
+        line++;
+        lastLineStart = i + 1;
+      }
     }
+    column = index - lastLineStart + 1;
   }
-  const column = index - lastLineStart + 1;
 
   const start = Math.max(0, index - range);
   const end = Math.min(text.length, index + length + range);
