@@ -1,10 +1,10 @@
 import type { DslContext, SyntaxConfig } from "./types.js";
 import { getSyntax } from "./syntax.js";
 
-/** @internal */
+/** @internal Resolve syntax from DslContext, bare SyntaxConfig, or module default. */
 export const resolveSyntax = (ctx?: DslContext | SyntaxConfig): SyntaxConfig => {
   if (!ctx) return getSyntax();
-  return "escapableTokens" in ctx ? ctx : ctx.syntax;
+  return "syntax" in ctx ? ctx.syntax : ctx;
 };
 
 export const readEscapedSequence = (

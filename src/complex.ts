@@ -135,7 +135,7 @@ export const tryParseComplexTag = (
           dslCtx,
         ),
         position,
-        createId,
+        dslCtx,
       ),
     };
   }
@@ -204,6 +204,6 @@ export const tryParseComplexTag = (
   return {
     handled: true,
     nextIndex,
-    token: createToken(handler.raw(arg, content, dslCtx), position, createId),
+    token: createToken(handler.raw(arg, content, dslCtx), position, dslCtx),
   };
 };

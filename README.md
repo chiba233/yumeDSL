@@ -1089,12 +1089,8 @@ interface TagHandler {
 You only need to implement the forms your tag supports.
 Unsupported forms fall back gracefully instead of breaking the parse.
 
-`ctx` is optional for backward compatibility. New handlers should accept it and pass it through when calling public
-utility functions such as `parsePipeArgs`, `parsePipeTextList`, `materializeTextTokens`, `unescapeInline`, or
-`createToken`.
-
-New code should consistently pass `DslContext`.
-Old code may omit it; that path is retained only for backward compatibility.
+Handlers should accept `ctx` and pass it through when calling public utility functions such as `parsePipeArgs`,
+`parsePipeTextList`, `materializeTextTokens`, `unescapeInline`, or `createToken`.
 
 ### Example: full handler set
 
@@ -1209,12 +1205,8 @@ Convenience functions for creating handlers in bulk — most projects only need 
 Lower-level tools for writing custom `TagHandler` implementations.
 You will not need these if you only use the handler helpers above.
 
-Most utilities accept an optional `ctx?: DslContext | SyntaxConfig` parameter. Passing `DslContext` is the recommended
-new form; passing `SyntaxConfig` is still supported as a shorthand when only syntax is needed. `createToken()` also
-continues to accept a bare `CreateId` function for backward compatibility. When omitted, utilities fall back to
-module-level defaults set by `withSyntax` / `withCreateId` during parsing — so existing handler code continues to work
-unchanged. In a future major version, the utility context will be tightened toward explicit `DslContext`. See
-[DslContext](#dslcontext) below.
+Public utility calls should use an explicit `ctx: DslContext`.
+Treat that as the contract for new code and for the upcoming 2.0 API surface. See [DslContext](#dslcontext) below.
 
 | Export                                | Who uses it                                | Description                                              |
 |---------------------------------------|--------------------------------------------|----------------------------------------------------------|
@@ -1229,9 +1221,6 @@ unchanged. In a future major version, the utility context will be tightened towa
 | `createToken(draft, position?, ctx?)` | Handlers building tokens manually          | Add an `id` (and optional `position`) to a `TokenDraft`  |
 | `resetTokenIdSeed()`                  | Test code                                  | Reset the token id counter for deterministic test output |
 
-For every `ctx?` entry above, the accepted value is currently `DslContext | SyntaxConfig`, except
-`createToken(draft, position?, ctx?)`, which also accepts a bare `CreateId` function for backward compatibility.
-
 > During parsing, token ids default to a parse-local sequence (`rt-0`, `rt-1`, ...).
 > `createToken()` only uses the module-level counter when called outside an active parse, and `resetTokenIdSeed()` is
 > mainly intended for tests around that standalone usage.
@@ -1240,7 +1229,7 @@ For every `ctx?` entry above, the accepted value is currently `DslContext | Synt
 
 ### DslContext
 
-`DslContext` is the recommended lightweight context for public utility functions:
+`DslContext` is the lightweight context for public utility functions:
 
 ```ts
 interface DslContext {
@@ -1261,18 +1250,11 @@ What `ctx` actually is:
 - When a handler calls public utilities, pass the same `ctx` through so those utilities stay on the same parse-local configuration.
 - Outside parsing, you can construct `DslContext` yourself and pass it explicitly.
 
-**Current behavior:** most utility functions currently accept `ctx?: DslContext | SyntaxConfig`.
+Use `DslContext` consistently:
 
-- Pass `DslContext` when you want both `syntax` and `createId`.
-- Pass `SyntaxConfig` as a shorthand when only syntax matters.
-- Omit `ctx` to read from module-level state set by `withSyntax` / `withCreateId`.
-- `createToken(draft, position?, ctx?)` also accepts a bare `CreateId` function as a backward-compatible shorthand.
-
-New code should consistently pass `DslContext`.
-Old code may omit it; that path is retained only for backward compatibility.
-
-This works correctly inside handler callbacks during parsing, because `parseRichText` wraps the entire parse in these
-context closures.
+- Inside a `TagHandler`, receive `ctx` from the parser and pass it through to public utilities.
+- Outside parsing, construct `DslContext` explicitly and pass it yourself.
+- Treat explicit `DslContext` as the intended 2.0 contract.
 
 ```ts
 // Inside a handler: reuse the parse-local ctx passed in by the parser
@@ -1289,19 +1271,11 @@ const args = parsePipeTextArgs("ts | Demo", ctx);
 const token = createToken({type: "text", value: "hello"}, undefined, ctx);
 ```
 
-**Future major version:** the utility context will move toward explicit `DslContext`. Adopt it now when calling
-utilities outside of handler callbacks (e.g. in standalone scripts or tests). Inside handlers called during parsing, the
-implicit fallback will continue to work until the major version change.
+This keeps handler code, standalone scripts, and future 2.0 usage on the same explicit model.
 
 ### Migration Guide
 
-**Do existing codebases need to change right now?**
-
-No.
-
-- Existing handlers and utility calls continue to work without changes.
-- Omitting `ctx` is still supported in this release for backward compatibility.
-- New code should adopt `DslContext` now so the eventual major-version migration is small and mechanical.
+Use this section as the migration target for 2.0 preparation.
 
 **Affected APIs**
 
@@ -1317,18 +1291,9 @@ This migration affects the handler-to-utility call chain, not the entire library
 - `readEscapedSequence`
 - `createToken`
 
-**Before / after**
+**Target pattern**
 
 ```ts
-// Before: still supported
-link: {
-    inline: (tokens) => {
-        const args = parsePipeArgs(tokens);
-        return {type: "link", url: args.text(0), value: args.materializedTailTokens(1)};
-    },
-}
-
-// After: recommended
 link: {
     inline: (tokens, ctx) => {
         const args = parsePipeArgs(tokens, ctx);
@@ -1338,11 +1303,6 @@ link: {
 ```
 
 ```ts
-// Before: standalone utility calls relying on ambient defaults
-const args = parsePipeTextArgs("ts | Demo");
-const token = createToken({type: "text", value: "hello"});
-
-// After: explicit standalone usage
 const ctx: DslContext = {syntax: createSyntax(), createId: (draft) => `demo-${draft.type}`};
 const args = parsePipeTextArgs("ts | Demo", ctx);
 const token = createToken({type: "text", value: "hello"}, undefined, ctx);
@@ -1351,18 +1311,9 @@ const token = createToken({type: "text", value: "hello"}, undefined, ctx);
 **Recommended migration order**
 
 1. Update custom `TagHandler` signatures to accept `ctx`.
-2. Pass that `ctx` through to any public utility used inside handlers.
+2. Pass that `ctx` through to every public utility used inside handlers.
 3. Update standalone scripts/tests to construct and pass `DslContext` explicitly.
-4. Leave legacy implicit calls in untouched old code until you naturally revisit them.
-
-**Future major boundary**
-
-The planned tightening is specific:
-
-- Public utility calls will move toward explicit `DslContext`.
-- Handler examples and helper composition should assume `ctx` is present and forwarded.
-- The old implicit path (`withSyntax` / `withCreateId` ambient fallback, or omitting `ctx`) is expected to remain only as a compatibility bridge until that major version.
-- `createToken(..., ctx?)` may keep its bare `CreateId` shorthand longer for compatibility, but new code should not rely on that.
+4. Review examples and internal docs so they no longer show implicit utility calls.
 
 ### PipeArgs
 

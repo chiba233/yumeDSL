@@ -227,7 +227,8 @@ export const tryConsumeTagStart = (
 
 export const finalizeClosedNode = (ctx: ParseContext, node: ParseContext["stack"][0]) => {
   const { endTag } = ctx.syntax;
-  const materializedTokens = materializeTextTokens(node.tokens, ctx.syntax);
+  const dslCtx: import("./types.js").DslContext = { syntax: ctx.syntax, createId: ctx.createId };
+  const materializedTokens = materializeTextTokens(node.tokens, dslCtx);
 
   if (!node.richType) {
     materializedTokens.forEach((t) => {
@@ -243,15 +244,11 @@ export const finalizeClosedNode = (ctx: ParseContext, node: ParseContext["stack"
 
   const handler = ctx.handlers[node.richType];
   const position = makePosition(ctx.tracker, node.openPos, ctx.i + endTag.length);
-  const dslCtx: import("./types.js").DslContext = { syntax: ctx.syntax, createId: ctx.createId };
 
   getCurrentTokens(ctx).push(
     handler?.inline
-      ? createToken(handler.inline(node.tokens, dslCtx), position, ctx.createId)
-      : createToken({
-          type: node.richType,
-          value: materializedTokens,
-        }, position, ctx.createId),
+      ? createToken(handler.inline(node.tokens, dslCtx), position, dslCtx)
+      : createToken({ type: node.richType, value: materializedTokens }, position, dslCtx),
   );
 };
 

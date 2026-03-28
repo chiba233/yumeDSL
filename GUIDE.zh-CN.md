@@ -1057,11 +1057,8 @@ interface TagHandler {
 你只需实现标签支持的形式。
 不支持的形式会优雅降级，而非中断解析。
 
-`ctx` 为了向后兼容仍是可选的。新写法建议接收它，并在调用 `parsePipeArgs`、`parsePipeTextList`、
-`materializeTextTokens`、`unescapeInline`、`createToken` 等公开工具函数时继续透传。
-
-新代码请统一传 `DslContext`。
-旧代码可以不传，这条路径仅为向后兼容保留。
+handler 应接收 `ctx`，并在调用 `parsePipeArgs`、`parsePipeTextList`、`materializeTextTokens`、
+`unescapeInline`、`createToken` 等公开工具函数时继续透传。
 
 ### 示例：完整处理器集
 
@@ -1175,10 +1172,8 @@ const tokens = dsl.parse(input);
 编写自定义 `TagHandler` 时使用的底层工具。
 如果你只使用上面的辅助函数，则不需要这些。
 
-大部分工具函数接受可选的 `ctx?: DslContext | SyntaxConfig` 参数。推荐的新写法是传 `DslContext`；如果只需要 syntax，也兼容直接传
-`SyntaxConfig` 作为简写。`createToken()` 还继续兼容直接传裸 `CreateId` 函数，以保持向后兼容。省略时回退到 `withSyntax` /
-`withCreateId` 在解析期间设置的模块级默认值——现有 handler 代码无需修改。未来 major 版本中，工具函数会逐步收紧到显式
-`DslContext`。详见下方 [DslContext](#dslcontext)。
+公开工具函数调用应显式传入 `ctx: DslContext`。
+把它视为新代码和即将到来的 2.0 API contract。详见下方 [DslContext](#dslcontext)。
 
 | 导出                                    | 使用者                   | 说明                                      |
 |---------------------------------------|-----------------------|-----------------------------------------|
@@ -1193,16 +1188,13 @@ const tokens = dsl.parse(input);
 | `createToken(draft, position?, ctx?)` | 手动构建 token 的处理器       | 为 `TokenDraft` 添加 `id`（和可选的 `position`） |
 | `resetTokenIdSeed()`                  | 测试代码                  | 重置 token id 计数器，用于确定性测试输出               |
 
-上表中所有带 `ctx?` 的条目，当前都接受 `DslContext | SyntaxConfig`；其中 `createToken(draft, position?, ctx?)`
-还额外兼容直接传裸 `CreateId` 函数。
-
 > 解析期间，token id 默认按单次 parse 局部递增（`rt-0`、`rt-1` ...）。
 > `createToken()` 只有在解析器外单独调用时才会使用模块级计数器，`resetTokenIdSeed()` 也主要用于这种测试场景。
 > 如果你在 SSR 或并发异步请求里要求严格隔离，建议按运行时边界隔离 parser 的使用。
 
 ### DslContext
 
-`DslContext` 是公开工具函数推荐使用的轻量上下文：
+`DslContext` 是公开工具函数使用的轻量上下文：
 
 ```ts
 interface DslContext {
@@ -1223,17 +1215,11 @@ interface DslContext {
 - handler 内调用公开工具函数时，应继续把同一个 `ctx` 透传下去，这样所有工具都会沿用同一套 parse 级配置。
 - 在解析器外部，你也可以手动构造 `DslContext` 并显式传入。
 
-**当前行为：** 大部分工具函数当前接受 `ctx?: DslContext | SyntaxConfig`。
+统一使用 `DslContext`：
 
-- 传 `DslContext`：同时显式提供 `syntax` 和 `createId`
-- 传 `SyntaxConfig`：只显式提供 syntax 的简写
-- 省略 `ctx`：从 `withSyntax` / `withCreateId` 设置的模块级状态读取
-- `createToken(draft, position?, ctx?)` 还兼容直接传裸 `CreateId` 函数，作为向后兼容简写
-
-新代码请统一传 `DslContext`。
-旧代码可以不传，这条路径仅为向后兼容保留。
-
-在解析期间的 handler 回调中，这种省略写法是正确的，因为 `parseRichText` 用这些闭包包裹了整个解析过程。
+- 在 `TagHandler` 内接收解析器传入的 `ctx`，并继续透传给公开工具函数。
+- 在解析器外部手动构造 `DslContext` 并显式传入。
+- 把显式 `DslContext` 视为 2.0 目标 contract。
 
 ```ts
 // handler 内：复用解析器传进来的 parse-local ctx
@@ -1250,18 +1236,11 @@ const args = parsePipeTextArgs("ts | Demo", ctx);
 const token = createToken({type: "text", value: "hello"}, undefined, ctx);
 ```
 
-**未来 major 版本：** 工具函数会逐步收紧到显式 `DslContext`。建议现在开始在 handler 回调之外（如独立脚本或测试中）调用工具函数时传入
-`DslContext`。handler 内部的隐式回退在 major 版本变更前将继续工作。
+这样可以让 handler、独立脚本和未来 2.0 用法全部收敛到同一套显式模型。
 
 ### 迁移指南
 
-**现有代码现在必须修改吗？**
-
-不需要。
-
-- 现有 handler 和工具函数调用在本版本里仍然可以不改继续工作。
-- 省略 `ctx` 仍然受支持，这一版保留它 purely 是为了向后兼容。
-- 新代码现在就应采用 `DslContext`，这样未来 major 的迁移会变得很小而且机械。
+这一节描述的是面向 2.0 的迁移目标。
 
 **受影响的 API**
 
@@ -1277,18 +1256,9 @@ const token = createToken({type: "text", value: "hello"}, undefined, ctx);
 - `readEscapedSequence`
 - `createToken`
 
-**Before / After**
+**目标写法**
 
 ```ts
-// Before：仍然兼容
-link: {
-    inline: (tokens) => {
-        const args = parsePipeArgs(tokens);
-        return {type: "link", url: args.text(0), value: args.materializedTailTokens(1)};
-    },
-}
-
-// After：推荐写法
 link: {
     inline: (tokens, ctx) => {
         const args = parsePipeArgs(tokens, ctx);
@@ -1298,11 +1268,6 @@ link: {
 ```
 
 ```ts
-// Before：独立工具调用依赖 ambient 默认值
-const args = parsePipeTextArgs("ts | Demo");
-const token = createToken({type: "text", value: "hello"});
-
-// After：显式传入 DslContext
 const ctx: DslContext = {syntax: createSyntax(), createId: (draft) => `demo-${draft.type}`};
 const args = parsePipeTextArgs("ts | Demo", ctx);
 const token = createToken({type: "text", value: "hello"}, undefined, ctx);
@@ -1313,16 +1278,7 @@ const token = createToken({type: "text", value: "hello"}, undefined, ctx);
 1. 先把自定义 `TagHandler` 签名改成接收 `ctx`。
 2. 再把 handler 内调用的公开 utility 全部透传同一个 `ctx`。
 3. 最后把独立脚本 / 测试中的 utility 调用改成手动构造并传入 `DslContext`。
-4. 旧代码里暂时还能工作的隐式调用，可以等自然触达时再迁。
-
-**未来 major 的收紧边界**
-
-计划中的收紧范围是明确的：
-
-- 公开 utility 会继续朝显式 `DslContext` 收紧。
-- handler 示例和 helper 组合都应默认认为 `ctx` 会被接收并继续透传。
-- 旧的隐式路径（`withSyntax` / `withCreateId` 的 ambient fallback，以及省略 `ctx`）预期只作为 major 版本到来前的兼容桥接层保留。
-- `createToken(..., ctx?)` 也许会比其他 API 更久地保留裸 `CreateId` 简写，但新代码不应再依赖这种写法。
+4. 检查示例和内部文档，移除所有隐式 utility 调用写法。
 
 ### PipeArgs
 

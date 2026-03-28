@@ -14,14 +14,16 @@
     compatibility — user handlers calling public utilities (`parsePipeArgs`, `createToken`, `unescapeInline`, etc.)
     continue to work without changes
 - New type: `DslContext { syntax, createId? }` — lightweight context for public utility functions
-  - All public utilities (`readEscapedSequence`, `readEscaped`, `unescapeInline`, `splitTokensByPipe`,
-    `parsePipeArgs`, `parsePipeTextArgs`, `parsePipeTextList`, `materializeTextTokens`, `createToken`) now accept an
-    optional `ctx?: DslContext | SyntaxConfig` parameter
-  - Pass `DslContext` for full explicit context, or `SyntaxConfig` as a shorthand when only syntax is needed
-  - `createToken(..., ctx?)` also keeps accepting a bare `CreateId` function for backward compatibility
-  - When omitted, fall back to module-level defaults (`getSyntax()` / `activeCreateId`) — existing code continues to
-    work unchanged
-  - A future major version will tighten this toward explicit `DslContext`
+  - Builder utilities (`splitTokensByPipe`, `parsePipeArgs`, `parsePipeTextArgs`, `parsePipeTextList`,
+    `materializeTextTokens`) accept `ctx?: DslContext`
+  - Escape utilities (`readEscapedSequence`, `readEscaped`, `unescapeInline`) accept `ctx?: DslContext | SyntaxConfig`
+    — `DslContext` for user code, bare `SyntaxConfig` for internal scanner calls
+  - `createToken(..., ctx?)` accepts `ctx?: DslContext | CreateId` — `DslContext` for user code, bare `CreateId` for
+    internal context threading
+  - Syntax resolution (`resolveSyntax`) and createId resolution (`resolveCreateId`) are each centralized in one place
+  - When `ctx` is omitted, all utilities fall back to module-level defaults (`getSyntax()` / `activeCreateId`) —
+    existing code continues to work unchanged
+  - A future major version will tighten this toward required `DslContext`
 - `TagHandler` callback signatures now receive an optional `ctx?: DslContext` as the last parameter
   - `inline?: (tokens, ctx?) => TokenDraft`
   - `raw?: (arg, content, ctx?) => TokenDraft`

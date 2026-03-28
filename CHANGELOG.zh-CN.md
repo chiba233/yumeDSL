@@ -12,13 +12,15 @@
   - `parseRichText` 入口仍用 `withSyntax` / `withTagNameConfig` / `withCreateId` 包裹以保持向后兼容——用户 handler
     中调用公开工具函数（`parsePipeArgs`、`createToken`、`unescapeInline` 等）无需任何修改
 - 新增类型：`DslContext { syntax, createId? }` — 公开工具函数的轻量上下文
-  - 所有公开工具函数（`readEscapedSequence`、`readEscaped`、`unescapeInline`、`splitTokensByPipe`、`parsePipeArgs`、
-    `parsePipeTextArgs`、`parsePipeTextList`、`materializeTextTokens`、`createToken`）现在接受可选
-    `ctx?: DslContext | SyntaxConfig` 参数
-  - 传 `DslContext` 可显式提供完整上下文；只需要 syntax 时也兼容直接传 `SyntaxConfig`
-  - `createToken(..., ctx?)` 还继续兼容直接传裸 `CreateId` 函数，以保持向后兼容
-  - 省略时回退到模块级默认值（`getSyntax()` / `activeCreateId`）——现有代码无需修改
-  - **未来 major 版本会逐步收紧到显式 `DslContext`** — 建议现在开始采用 `DslContext` 以提前准备迁移
+  - 构建器工具（`splitTokensByPipe`、`parsePipeArgs`、`parsePipeTextArgs`、`parsePipeTextList`、
+    `materializeTextTokens`）接受 `ctx?: DslContext`
+  - 转义工具（`readEscapedSequence`、`readEscaped`、`unescapeInline`）接受 `ctx?: DslContext | SyntaxConfig`
+    ——用户代码传 `DslContext`，内部 scanner 调用传裸 `SyntaxConfig`
+  - `createToken(..., ctx?)` 接受 `ctx?: DslContext | CreateId`——用户代码传 `DslContext`，内部上下文透传传裸
+    `CreateId`
+  - syntax 解析（`resolveSyntax`）和 createId 解析（`resolveCreateId`）各集中在一处
+  - 省略 `ctx` 时，所有工具函数回退到模块级默认值（`getSyntax()` / `activeCreateId`）——现有代码无需修改
+  - **未来 major 版本将收紧为必填 `DslContext`**
 - `TagHandler` 回调签名新增可选末尾参数 `ctx?: DslContext`
   - `inline?: (tokens, ctx?) => TokenDraft`
   - `raw?: (arg, content, ctx?) => TokenDraft`

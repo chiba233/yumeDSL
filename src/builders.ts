@@ -1,8 +1,8 @@
-import type { DslContext, SyntaxConfig, TextToken } from "./types.js";
+import type { DslContext, TextToken } from "./types.js";
 import { readEscapedSequence, resolveSyntax, unescapeInline } from "./escape.js";
 import { createToken } from "./createToken.js";
 
-const createTextToken = (value: string, ctx?: DslContext | SyntaxConfig): TextToken =>
+const createTextToken = (value: string, ctx?: DslContext): TextToken =>
   createToken({ type: "text", value }, undefined, ctx);
 
 export const extractText = (tokens?: TextToken[]): string => {
@@ -21,7 +21,7 @@ export const extractText = (tokens?: TextToken[]): string => {
  */
 export const materializeTextTokens = (
   tokens: TextToken[],
-  ctx?: DslContext | SyntaxConfig,
+  ctx?: DslContext,
 ): TextToken[] => {
   const syntax = resolveSyntax(ctx);
   return tokens.map((token) => {
@@ -33,7 +33,7 @@ export const materializeTextTokens = (
 
     return {
       ...token,
-      value: materializeTextTokens(token.value, syntax),
+      value: materializeTextTokens(token.value, ctx),
     };
   });
 };
@@ -47,7 +47,7 @@ export interface PipeArgs {
 
 export const splitTokensByPipe = (
   tokens: TextToken[],
-  ctx?: DslContext | SyntaxConfig,
+  ctx?: DslContext,
 ): TextToken[][] => {
   const s = resolveSyntax(ctx);
   const { escapeChar, tagDivider } = s;
@@ -97,23 +97,23 @@ export const splitTokensByPipe = (
 
 export const parsePipeArgs = (
   tokens: TextToken[],
-  ctx?: DslContext | SyntaxConfig,
+  ctx?: DslContext,
 ): PipeArgs => {
   const s = resolveSyntax(ctx);
-  const parts = splitTokensByPipe(tokens, s);
+  const parts = splitTokensByPipe(tokens, ctx);
 
   return {
     parts,
     text: (index) => unescapeInline(extractText(parts[index] ?? []), s).trim(),
-    materializedTokens: (index) => materializeTextTokens(parts[index] ?? [], s),
+    materializedTokens: (index) => materializeTextTokens(parts[index] ?? [], ctx),
     materializedTailTokens: (startIndex) =>
-      materializeTextTokens(parts.slice(startIndex).flat(), s),
+      materializeTextTokens(parts.slice(startIndex).flat(), ctx),
   };
 };
 
 export const parsePipeTextArgs = (
   text: string,
-  ctx?: DslContext | SyntaxConfig,
+  ctx?: DslContext,
 ): PipeArgs => parsePipeArgs([createTextToken(text, ctx)], ctx);
 
 /**
@@ -126,7 +126,7 @@ export const parsePipeTextArgs = (
  */
 export const parsePipeTextList = (
   text: string,
-  ctx?: DslContext | SyntaxConfig,
+  ctx?: DslContext,
 ): string[] => {
   const parsed = parsePipeTextArgs(text, ctx);
   return parsed.parts.map((_, i) => parsed.text(i));
