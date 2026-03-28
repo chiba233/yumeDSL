@@ -470,7 +470,7 @@ const tokens = parseRichText("@@bold(hello)@@", {
     syntax,
     handlers: {
         bold: {
-            inline: (tokens) => ({type: "bold", value: tokens}),
+            inline: (tokens, _ctx) => ({type: "bold", value: tokens}),
         },
     },
 });
@@ -630,7 +630,7 @@ import {createParser, createTagNameConfig} from "yume-dsl-rich-text";
 
 const dsl = createParser({
     handlers: {
-        "ui:button": {inline: (value) => ({type: "ui:button", value})},
+        "ui:button": {inline: (value, _ctx) => ({type: "ui:button", value})},
     },
     // Only override isTagChar — isTagStartChar keeps the default.
     // Keep the normal tag characters, and additionally allow ":" after the first character.
@@ -646,7 +646,7 @@ You can also pass a plain partial object directly to `tagName` — `createTagNam
 
 ```ts
 parseRichText("$$1tag(hello)$$", {
-    handlers: {"1tag": {inline: (v) => ({type: "1tag", value: v})}},
+    handlers: {"1tag": {inline: (v, _ctx) => ({type: "1tag", value: v})}},
     tagName: {
         isTagStartChar: (char) => /[A-Za-z0-9_]/.test(char),  // allow digit start
         isTagChar: (char) => /[A-Za-z0-9_-]/.test(char) || char === ":",  // keep normal chars, also allow ":"
@@ -679,7 +679,7 @@ const dsl = createParser({
 
         // Mix with custom handlers that need more logic
         link: {
-            inline: (tokens) => { /* ... */
+            inline: (tokens, ctx) => { /* ... */
             }
         },
     },
@@ -691,15 +691,15 @@ const dsl = createParser({
 ```ts
 // Before — repetitive
 bold:      {
-    inline: (tokens) => ({type: "bold", value: materializeTextTokens(tokens)})
+    inline: (tokens, ctx) => ({type: "bold", value: materializeTextTokens(tokens, ctx)})
 }
 ,
 italic:    {
-    inline: (tokens) => ({type: "italic", value: materializeTextTokens(tokens)})
+    inline: (tokens, ctx) => ({type: "italic", value: materializeTextTokens(tokens, ctx)})
 }
 ,
 underline: {
-    inline: (tokens) => ({type: "underline", value: materializeTextTokens(tokens)})
+    inline: (tokens, ctx) => ({type: "underline", value: materializeTextTokens(tokens, ctx)})
 }
 ,
 
@@ -1408,7 +1408,7 @@ no line table is built and no `position` fields appear.
 import {parseRichText, type SourceSpan} from "yume-dsl-rich-text";
 
 const tokens = parseRichText("hello $$bold(world)$$", {
-    handlers: {bold: {inline: (t) => ({type: "bold", value: t})}},
+    handlers: {bold: {inline: (t, _ctx) => ({type: "bold", value: t})}},
     trackPositions: true,
 });
 
@@ -1603,7 +1603,7 @@ entire markup degrades to plain text.
 const dsl = createParser({
     handlers: {
         // "note" only supports inline, not raw
-        note: {inline: (tokens) => ({type: "note", value: tokens})},
+        note: {inline: (tokens, _ctx) => ({type: "note", value: tokens})},
     },
 });
 
@@ -1624,8 +1624,8 @@ When `allowForms` excludes a form, the parser acts as if handlers don't support 
 ```ts
 const dsl = createParser({
     handlers: {
-        bold: {inline: (tokens) => ({type: "bold", value: tokens})},
-        code: {raw: (arg, content) => ({type: "code", lang: arg ?? "text", value: content})},
+        bold: {inline: (tokens, _ctx) => ({type: "bold", value: tokens})},
+        code: {raw: (arg, content, _ctx) => ({type: "code", lang: arg ?? "text", value: content})},
     },
     allowForms: ["inline"],   // ← raw and block disabled
 });
@@ -1733,8 +1733,8 @@ export const dsl = createParser({
         },
 
         date: {
-            inline: (tokens): TokenDraft => {
-                const args = parsePipeArgs(tokens);
+            inline: (tokens, ctx): TokenDraft => {
+                const args = parsePipeArgs(tokens, ctx);
                 return {
                     type: "date",
                     date: args.text(0),
@@ -1745,8 +1745,8 @@ export const dsl = createParser({
         },
 
         fromNow: {
-            inline: (tokens): TokenDraft => {
-                const args = parsePipeArgs(tokens);
+            inline: (tokens, ctx): TokenDraft => {
+                const args = parsePipeArgs(tokens, ctx);
                 return {
                     type: "fromNow",
                     date: args.text(0),

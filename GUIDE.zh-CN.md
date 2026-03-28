@@ -458,7 +458,7 @@ const tokens = parseRichText("@@bold(hello)@@", {
     syntax,
     handlers: {
         bold: {
-            inline: (tokens) => ({type: "bold", value: tokens}),
+            inline: (tokens, _ctx) => ({type: "bold", value: tokens}),
         },
     },
 });
@@ -615,7 +615,7 @@ import {createParser, createTagNameConfig} from "yume-dsl-rich-text";
 
 const dsl = createParser({
     handlers: {
-        "ui:button": {inline: (value) => ({type: "ui:button", value})},
+        "ui:button": {inline: (value, _ctx) => ({type: "ui:button", value})},
     },
     // 只覆盖 isTagChar——isTagStartChar 保持默认。
     // 保留默认可用字符，并额外允许 ":" 出现在首字符之后。
@@ -631,7 +631,7 @@ dsl.parse("$$ui:button(hello)$$");  // 正常工作
 
 ```ts
 parseRichText("$$1tag(hello)$$", {
-    handlers: {"1tag": {inline: (v) => ({type: "1tag", value: v})}},
+    handlers: {"1tag": {inline: (v, _ctx) => ({type: "1tag", value: v})}},
     tagName: {
         isTagStartChar: (char) => /[A-Za-z0-9_]/.test(char),  // 允许数字开头
         isTagChar: (char) => /[A-Za-z0-9_-]/.test(char) || char === ":",  // 保留默认字符，并额外允许 ":"
@@ -663,7 +663,7 @@ const dsl = createParser({
 
         // 与需要更多逻辑的自定义处理器混合使用
         link: {
-            inline: (tokens) => { /* ... */
+            inline: (tokens, ctx) => { /* ... */
             }
         },
     },
@@ -675,15 +675,15 @@ const dsl = createParser({
 ```ts
 // 之前 — 重复
 bold:      {
-    inline: (tokens) => ({type: "bold", value: materializeTextTokens(tokens)})
+    inline: (tokens, ctx) => ({type: "bold", value: materializeTextTokens(tokens, ctx)})
 }
 ,
 italic:    {
-    inline: (tokens) => ({type: "italic", value: materializeTextTokens(tokens)})
+    inline: (tokens, ctx) => ({type: "italic", value: materializeTextTokens(tokens, ctx)})
 }
 ,
 underline: {
-    inline: (tokens) => ({type: "underline", value: materializeTextTokens(tokens)})
+    inline: (tokens, ctx) => ({type: "underline", value: materializeTextTokens(tokens, ctx)})
 }
 ,
 
@@ -1368,7 +1368,7 @@ parsePipeTextList("ts | Demo | Label");
 import {parseRichText, type SourceSpan} from "yume-dsl-rich-text";
 
 const tokens = parseRichText("hello $$bold(world)$$", {
-    handlers: {bold: {inline: (t) => ({type: "bold", value: t})}},
+    handlers: {bold: {inline: (t, _ctx) => ({type: "bold", value: t})}},
     trackPositions: true,
 });
 
@@ -1555,7 +1555,7 @@ dsl.parse("Hello $$bold(world)$$ and $$italic(goodbye)$$");
 const dsl = createParser({
     handlers: {
         // "note" 只支持 inline，不支持 raw
-        note: {inline: (tokens) => ({type: "note", value: tokens})},
+        note: {inline: (tokens, _ctx) => ({type: "note", value: tokens})},
     },
 });
 
@@ -1576,8 +1576,8 @@ dsl.parse("$$note(ok)%\nraw content\n%end$$");
 ```ts
 const dsl = createParser({
     handlers: {
-        bold: {inline: (tokens) => ({type: "bold", value: tokens})},
-        code: {raw: (arg, content) => ({type: "code", lang: arg ?? "text", value: content})},
+        bold: {inline: (tokens, _ctx) => ({type: "bold", value: tokens})},
+        code: {raw: (arg, content, _ctx) => ({type: "code", lang: arg ?? "text", value: content})},
     },
     allowForms: ["inline"],   // ← 禁用了 raw 和 block
 });
@@ -1685,8 +1685,8 @@ export const dsl = createParser({
         },
 
         date: {
-            inline: (tokens): TokenDraft => {
-                const args = parsePipeArgs(tokens);
+            inline: (tokens, ctx): TokenDraft => {
+                const args = parsePipeArgs(tokens, ctx);
                 return {
                     type: "date",
                     date: args.text(0),
@@ -1697,8 +1697,8 @@ export const dsl = createParser({
         },
 
         fromNow: {
-            inline: (tokens): TokenDraft => {
-                const args = parsePipeArgs(tokens);
+            inline: (tokens, ctx): TokenDraft => {
+                const args = parsePipeArgs(tokens, ctx);
                 return {
                     type: "fromNow",
                     date: args.text(0),
