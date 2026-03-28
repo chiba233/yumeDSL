@@ -516,18 +516,18 @@ import {DEFAULT_SYNTAX} from "yume-dsl-rich-text";
 **Token dependency** — `createSyntax` does a plain shallow merge; no auto-derivation.
 The parser has hard couplings between certain tokens — break them and tags stop working:
 
-| If you change… | Must also update…                  | Why                                                                  |
-|-----------------|------------------------------------|----------------------------------------------------------------------|
-| `tagOpen`       | `tagClose`                         | `findTagArgClose` counts `tagOpen`/`tagClose` for depth matching     |
-| `tagClose`      | `tagOpen`, `endTag`, `rawOpen`, `blockOpen` | `tagOpen` pairs with it; the other three must start with `tagClose` because `getTagCloserType` matches from the `tagClose` position |
-| `endTag`        | must start with `tagClose`         | Matched at the position where `findTagArgClose` stopped              |
-| `rawOpen`       | must start with `tagClose`         | Same reason                                                          |
-| `blockOpen`     | must start with `tagClose`         | Same reason                                                          |
-| `tagPrefix`     | —                                  | Independent                                                          |
-| `rawClose`      | —                                  | Independent (whole-line match)                                       |
-| `blockClose`    | —                                  | Independent (whole-line match)                                       |
-| `tagDivider`    | —                                  | Independent                                                          |
-| `escapeChar`    | —                                  | Independent                                                          |
+| Token         | Constraint                                          | Why                                                                              |
+|---------------|-----------------------------------------------------|----------------------------------------------------------------------------------|
+| `tagClose`    | **`endTag`, `rawOpen`, `blockOpen` must start with it** | `getTagCloserType` matches these three from the position where `findTagArgClose` stopped — that position points to `tagClose` |
+| `tagOpen`     | Must pair with `tagClose`                           | `findTagArgClose` counts `tagOpen`/`tagClose` for nested depth matching          |
+| `endTag`      | Must start with `tagClose`                          | See `tagClose` above                                                             |
+| `rawOpen`     | Must start with `tagClose`                          | See `tagClose` above                                                             |
+| `blockOpen`   | Must start with `tagClose`                          | See `tagClose` above                                                             |
+| `tagPrefix`   | —                                                   | Independent                                                                      |
+| `rawClose`    | —                                                   | Independent (whole-line match)                                                   |
+| `blockClose`  | —                                                   | Independent (whole-line match)                                                   |
+| `tagDivider`  | —                                                   | Independent                                                                      |
+| `escapeChar`  | —                                                   | Independent                                                                      |
 
 ### createSyntax
 

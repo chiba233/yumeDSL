@@ -504,18 +504,18 @@ import {DEFAULT_SYNTAX} from "yume-dsl-rich-text";
 **符号联动关系** — `createSyntax` 只做纯 shallow merge，无自动推导。
 解析器内部存在硬耦合——破坏它们标签就会失效：
 
-| 修改…           | 必须同步更新…                           | 原因                                                                    |
-|-----------------|---------------------------------------|-------------------------------------------------------------------------|
-| `tagOpen`       | `tagClose`                            | `findTagArgClose` 用 `tagOpen`/`tagClose` 做深度配对                      |
-| `tagClose`      | `tagOpen`、`endTag`、`rawOpen`、`blockOpen` | `tagOpen` 与之配对；后三者必须以 `tagClose` 开头，因为 `getTagCloserType` 从 `tagClose` 位置开始匹配 |
-| `endTag`        | 必须以 `tagClose` 开头                  | 在 `findTagArgClose` 停止的位置匹配                                        |
-| `rawOpen`       | 必须以 `tagClose` 开头                  | 同上                                                                    |
-| `blockOpen`     | 必须以 `tagClose` 开头                  | 同上                                                                    |
-| `tagPrefix`     | —                                     | 独立                                                                    |
-| `rawClose`      | —                                     | 独立（整行匹配）                                                          |
-| `blockClose`    | —                                     | 独立（整行匹配）                                                          |
-| `tagDivider`    | —                                     | 独立                                                                    |
-| `escapeChar`    | —                                     | 独立                                                                    |
+| 符号          | 约束                                                  | 原因                                                                              |
+|---------------|------------------------------------------------------|-----------------------------------------------------------------------------------|
+| `tagClose`    | **`endTag`、`rawOpen`、`blockOpen` 必须以它开头**        | `getTagCloserType` 从 `findTagArgClose` 停止的位置匹配这三个符号——该位置指向 `tagClose` |
+| `tagOpen`     | 必须与 `tagClose` 配对                                 | `findTagArgClose` 用 `tagOpen`/`tagClose` 做嵌套深度配对                              |
+| `endTag`      | 必须以 `tagClose` 开头                                 | 见 `tagClose`                                                                     |
+| `rawOpen`     | 必须以 `tagClose` 开头                                 | 见 `tagClose`                                                                     |
+| `blockOpen`   | 必须以 `tagClose` 开头                                 | 见 `tagClose`                                                                     |
+| `tagPrefix`   | —                                                    | 独立                                                                              |
+| `rawClose`    | —                                                    | 独立（整行匹配）                                                                    |
+| `blockClose`  | —                                                    | 独立（整行匹配）                                                                    |
+| `tagDivider`  | —                                                    | 独立                                                                              |
+| `escapeChar`  | —                                                    | 独立                                                                              |
 
 ### createSyntax
 
