@@ -66,20 +66,19 @@ major versions with explicit migration notes.
 - [Handler Helpers](#handler-helpers)
     - [createPipeHandlers](#createpipehandlersdefinitions)
     - [createSimpleInlineHandlers / createSimpleBlockHandlers / createSimpleRawHandlers](#createsimpleinlinehandlersnames--createsimpleblockhandlersnames--createsimplerawhandlersnames)
-    - [createPipeBlockHandlers / createPipeRawHandlers](#createpipeblockhandlersnames--createpiperawhandlersnames)
     - [declareMultilineTags](#declaremultilinetagsnames)
-    - [createPassthroughTags (advanced)](#createpassthroughtagsnames-advanced)
 - [ParseOptions](#parseoptions)
 - [Token Structure](#token-structure)
     - [Strong Typing](#strong-typing)
 - [Writing Tag Handlers](#writing-tag-handlers)
 - [Utility Exports](#utility-exports)
     - [DslContext](#dslcontext)
-    - [PipeArgs](#pipeargs)
+    - [PipeArgs / parsePipeTextList](#pipeargs--parsepipetextlist)
 - [Source Position Tracking](#source-position-tracking)
 - [Error Handling](#error-handling)
 - [Graceful Degradation](#graceful-degradation)
 - [Vue 3 Rendering](#vue-3-rendering)
+- [Deprecated API](#deprecated-api)
 - [Changelog](https://github.com/chiba233/yumeDSL/blob/main/yume-dsl-rich-text/CHANGELOG.md)
 - [License](#license)
 
@@ -674,41 +673,41 @@ Each handler receives pre-parsed `PipeArgs` — no manual `parsePipeArgs` / `par
 import {createParser, createPipeHandlers, createSimpleInlineHandlers} from "yume-dsl-rich-text";
 
 const dsl = createParser({
-  handlers: {
-    // Simple tags — use createSimpleInlineHandlers
-    ...createSimpleInlineHandlers(["bold", "italic", "underline"]),
+    handlers: {
+        // Simple tags — use createSimpleInlineHandlers
+        ...createSimpleInlineHandlers(["bold", "italic", "underline"]),
 
-    // Tags with pipe parameters or multiple forms — use createPipeHandlers
-    ...createPipeHandlers({
-      link: {
-        inline: (args) => ({
-          type: "link",
-          url: args.text(0),
-          value: args.materializedTailTokens(1),
+        // Tags with pipe parameters or multiple forms — use createPipeHandlers
+        ...createPipeHandlers({
+            link: {
+                inline: (args) => ({
+                    type: "link",
+                    url: args.text(0),
+                    value: args.materializedTailTokens(1),
+                }),
+            },
+            info: {
+                inline: (args) => ({
+                    type: "info",
+                    title: args.text(0, "Info"),
+                    value: args.materializedTailTokens(1),
+                }),
+                block: (args, content, _ctx, rawArg) => ({
+                    type: "info",
+                    title: rawArg || "Info",
+                    value: content,
+                }),
+            },
+            code: {
+                raw: (args, content) => ({
+                    type: "raw-code",
+                    lang: args.text(0, "text"),
+                    title: args.text(1, "Code:"),
+                    value: content,
+                }),
+            },
         }),
-      },
-      info: {
-        inline: (args) => ({
-          type: "info",
-          title: args.text(0, "Info"),
-          value: args.materializedTailTokens(1),
-        }),
-        block: (args, content, _ctx, rawArg) => ({
-          type: "info",
-          title: rawArg || "Info",
-          value: content,
-        }),
-      },
-      code: {
-        raw: (args, content) => ({
-          type: "raw-code",
-          lang: args.text(0, "text"),
-          title: args.text(1, "Code:"),
-          value: content,
-        }),
-      },
-    }),
-  },
+    },
 });
 ```
 
@@ -727,11 +726,11 @@ const dsl = createParser({
 
 Bulk-register tags that don't need pipe parameters or custom logic. Each form produces a minimal token:
 
-| Helper | Token shape |
-|--------|------------|
-| `createSimpleInlineHandlers` | `{ type: tagName, value: materializedTokens }` |
-| `createSimpleBlockHandlers` | `{ type: tagName, arg, value: content }` |
-| `createSimpleRawHandlers` | `{ type: tagName, arg, value: content }` (string) |
+| Helper                       | Token shape                                       |
+|------------------------------|---------------------------------------------------|
+| `createSimpleInlineHandlers` | `{ type: tagName, value: materializedTokens }`    |
+| `createSimpleBlockHandlers`  | `{ type: tagName, arg, value: content }`          |
+| `createSimpleRawHandlers`    | `{ type: tagName, arg, value: content }` (string) |
 
 ```ts
 import {
@@ -752,32 +751,15 @@ const dsl = createParser({
 
 ```ts
 function createSimpleInlineHandlers(names: readonly string[]): Record<string, TagHandler>;
+
 function createSimpleBlockHandlers(names: readonly string[]): Record<string, TagHandler>;
+
 function createSimpleRawHandlers(names: readonly string[]): Record<string, TagHandler>;
 ```
 
 ### `createPipeBlockHandlers(names)` / `createPipeRawHandlers(names)`
 
-Single-form shorthands over `createPipeHandlers`. Each creates handlers that keep the original `arg`, split it by pipe
-into `args`, and preserve the content: `{ type: tagName, arg, args, value: content }`.
-
-For new code, prefer `createPipeHandlers` unless you specifically want the narrow single-form shortcut.
-
-```ts
-import {createParser, createPipeBlockHandlers, createPipeRawHandlers} from "yume-dsl-rich-text";
-
-const dsl = createParser({
-    handlers: {
-        ...createPipeBlockHandlers(["panel"]),
-        ...createPipeRawHandlers(["code"]),
-    },
-});
-```
-
-```ts
-function createPipeBlockHandlers(names: readonly string[]): Record<string, TagHandler>;
-function createPipeRawHandlers(names: readonly string[]): Record<string, TagHandler>;
-```
+> **Deprecated.** See [Deprecated API](#deprecated-api).
 
 ### `declareMultilineTags(names)`
 
@@ -824,31 +806,9 @@ type BlockTagInput = string | { tag: string; forms?: readonly MultilineForm[] };
 function declareMultilineTags(names: readonly BlockTagInput[]): BlockTagInput[];
 ```
 
-### `createPassthroughTags(names)` (advanced)
+### `createPassthroughTags(names)`
 
-> For most use cases, prefer `createSimpleInlineHandlers` above.
-
-Creates empty tag handlers (`{}`) that register tag names with the parser but contain no logic.
-The parser produces `{ type: tagName, value: materializedTokens }` for recognized tags without an `inline` method — the
-same output shape as `createSimpleInlineHandlers`.
-
-The difference is **explicit vs implicit**: `createSimpleInlineHandlers` explicitly declares each tag's inline behavior;
-`createPassthroughTags` relies on you knowing that the parser's default for recognized tags already produces typed
-tokens. This also means `handler.inline` is `undefined`, which matters if external code inspects handlers directly.
-
-```ts
-import {createParser, createPassthroughTags} from "yume-dsl-rich-text";
-
-const dsl = createParser({
-    handlers: {
-        ...createPassthroughTags(["bold", "italic"]),
-    },
-});
-```
-
-```ts
-function createPassthroughTags(names: readonly string[]): Record<string, TagHandler>;
-```
+> **Deprecated.** See [Deprecated API](#deprecated-api).
 
 ---
 
@@ -1158,20 +1118,10 @@ Recommended
 | `createSimpleInlineHandlers(names)` | Create inline handlers for simple tags in bulk                     |
 | `createSimpleBlockHandlers(names)`  | Create block-form handlers for simple tags in bulk                 |
 | `createSimpleRawHandlers(names)`    | Create raw handlers for simple tags in bulk                        |
+| `declareMultilineTags(names)`       | Declare which tags need multiline normalization                    |
 
-Shorthand
-
-| Export                           | Description                                        |
-|----------------------------------|----------------------------------------------------|
-| `createPipeBlockHandlers(names)` | Block-only shorthand for `createPipeHandlers(...)` |
-| `createPipeRawHandlers(names)`   | Raw-only shorthand for `createPipeHandlers(...)`   |
-| `declareMultilineTags(names)`    | Declare which tags need multiline normalization    |
-
-Advanced
-
-| Export                         | Description                                      |
-|--------------------------------|--------------------------------------------------|
-| `createPassthroughTags(names)` | Advanced shortcut for empty handler registration |
+See also [Deprecated API](#deprecated-api) for `createPipeBlockHandlers`, `createPipeRawHandlers`,
+`createPassthroughTags`.
 
 ### Handler Utilities
 
@@ -1291,7 +1241,7 @@ const token = createToken({type: "text", value: "hello"}, undefined, ctx);
 3. Update standalone scripts/tests to construct and pass `DslContext` explicitly.
 4. Review examples and internal docs so they no longer show implicit utility calls.
 
-### PipeArgs
+### PipeArgs / parsePipeTextList
 
 `parsePipeArgs` and `parsePipeTextArgs` return a `PipeArgs` object:
 
@@ -1313,18 +1263,11 @@ interface PipeArgs {
 | `materializedTokens(i, fallback?)`     | Unescaped tokens of part `i`                                 |
 | `materializedTailTokens(i, fallback?)` | All parts from index `i` onward, merged into one token array |
 
-### parsePipeTextList
-
-If you only need the text values as `string[]` (no token trees), `parsePipeTextList` is a shorthand:
+If you only need `string[]` without token trees, use `parsePipeTextList` instead:
 
 ```ts
-import {parsePipeTextList} from "yume-dsl-rich-text";
-
-parsePipeTextList("ts | Demo | Label");
-// → ["ts", "Demo", "Label"]
+parsePipeTextList("ts | Demo | Label");  // → ["ts", "Demo", "Label"]
 ```
-
-This is what `createPipeBlockHandlers` and `createPipeRawHandlers` use internally.
 
 ---
 
@@ -1847,6 +1790,24 @@ const DateText: FunctionalComponent<{ date?: string }> = (props) =>
 
 tagMap.date = DateText;
 ```
+
+---
+
+## Deprecated API
+
+The following exports will be removed in a future major version. They remain functional for backward compatibility.
+
+| Export                           | Use instead                       | Reason                                                    |
+|----------------------------------|-----------------------------------|-----------------------------------------------------------|
+| `createPipeBlockHandlers(names)` | `createPipeHandlers`              | Strict subset; `createPipeHandlers` covers all use cases  |
+| `createPipeRawHandlers(names)`   | `createPipeHandlers`              | Same as above                                             |
+| `createPassthroughTags(names)`   | `createSimpleInlineHandlers`      | Implicit behavior; explicit handlers are clearer          |
+| `withSyntax(syntax, fn)`         | `DslContext`                      | Module-level implicit state; pass `DslContext` explicitly |
+| `getSyntax()`                    | `DslContext`                      | Same as above                                             |
+| `withTagNameConfig(config, fn)`  | Pass `tagName` via `ParseOptions` | Same as above                                             |
+| `withCreateId(createId, fn)`     | `DslContext`                      | Same as above                                             |
+| `resetTokenIdSeed()`             | `DslContext.createId`             | Only needed when relying on module-level id counter       |
+| `mode` in `ParseOptions`         | *(remove)*                        | Only one value (`"render"`); no longer meaningful         |
 
 ---
 
