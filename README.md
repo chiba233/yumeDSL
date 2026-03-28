@@ -169,7 +169,8 @@ First-time users:
 3. [createParser](#createparserdefaults--recommended-entry-point) — the main entry point
 4. [Handler Helpers](#handler-helpers) — bulk-register tags without boilerplate
 5. [Writing Tag Handlers](#writing-tag-handlers) — custom handler logic
-6. [parseStructural](#parsestructural--structural-parse) — only when you need highlighting / linting / structural analysis
+6. [parseStructural](#parsestructural--structural-parse) — only when you need highlighting / linting / structural
+   analysis
 
 ---
 
@@ -517,127 +518,56 @@ import {DEFAULT_SYNTAX} from "yume-dsl-rich-text";
 **Token dependency** — `createSyntax` does a plain shallow merge; no auto-derivation.
 The parser has hard couplings between certain tokens — break them and tags stop working:
 
-| Token         | Constraint                                          | Why                                                                              |
-|---------------|-----------------------------------------------------|----------------------------------------------------------------------------------|
-| `tagClose`    | **`endTag`, `rawOpen`, `blockOpen` must start with it** | `getTagCloserType` matches these three from the position where `findTagArgClose` stopped — that position points to `tagClose` |
-| `tagOpen`     | Must pair with `tagClose`                           | `findTagArgClose` counts `tagOpen`/`tagClose` for nested depth matching          |
-| `endTag`      | Must start with `tagClose`                          | See `tagClose` above                                                             |
-| `rawOpen`     | Must start with `tagClose`                          | See `tagClose` above                                                             |
-| `blockOpen`   | Must start with `tagClose`                          | See `tagClose` above                                                             |
-| `tagPrefix`   | —                                                   | Independent                                                                      |
-| `rawClose`    | —                                                   | Independent (whole-line match)                                                   |
-| `blockClose`  | —                                                   | Independent (whole-line match)                                                   |
-| `tagDivider`  | —                                                   | Independent                                                                      |
-| `escapeChar`  | —                                                   | Independent                                                                      |
+| Token        | Constraint                                              | Why                                                                                                                           |
+|--------------|---------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|
+| `tagClose`   | **`endTag`, `rawOpen`, `blockOpen` must start with it** | `getTagCloserType` matches these three from the position where `findTagArgClose` stopped — that position points to `tagClose` |
+| `tagOpen`    | Must pair with `tagClose`                               | `findTagArgClose` counts `tagOpen`/`tagClose` for nested depth matching                                                       |
+| `endTag`     | Must start with `tagClose`                              | See `tagClose` above                                                                                                          |
+| `rawOpen`    | Must start with `tagClose`                              | See `tagClose` above                                                                                                          |
+| `blockOpen`  | Must start with `tagClose`                              | See `tagClose` above                                                                                                          |
+| `tagPrefix`  | —                                                       | Independent                                                                                                                   |
+| `rawClose`   | —                                                       | Independent (whole-line match)                                                                                                |
+| `blockClose` | —                                                       | Independent (whole-line match)                                                                                                |
+| `tagDivider` | —                                                       | Independent                                                                                                                   |
+| `escapeChar` | —                                                       | Independent                                                                                                                   |
 
 ### createEasySyntax (recommended)
 
-`createEasySyntax` is the convenience builder for custom syntax.
-
-Use it when you want to change the visible DSL shape, but you do **not** want to manually keep every related token in
-sync.
-
-You provide only the **base tokens**:
-
-- `tagPrefix`
-- `tagOpen`
-- `tagClose`
-- `tagDivider`
-- `escapeChar`
-
-It then fills in the **compound tokens** for you:
-
-- `endTag`
-- `rawOpen`
-- `blockOpen`
-- `rawClose`
-- `blockClose`
-
-The derivation protocol is:
-
-```text
-endTag     = tagClose + tagPrefix          ")" + "$$"  → ")$$"
-rawOpen    = tagClose + RAW_MARKER         ")" + "%"   → ")%"
-blockOpen  = tagClose + BLOCK_MARKER       ")" + "*"   → ")*"
-rawClose   = RAW_MARKER + "end" + tagPrefix   "%end" + "$$" → "%end$$"
-blockClose = BLOCK_MARKER + "end" + tagPrefix "*end" + "$$" → "*end$$"
+```ts
+function createEasySyntax(overrides?: Partial<SyntaxInput>): SyntaxConfig
 ```
 
-Explicit compound overrides still take precedence over derivation.
+Change the base tokens, compound tokens stay in sync automatically.
+Accepts any subset of `SyntaxInput` — base tokens drive derivation, explicit compound overrides take precedence.
+
+| Base tokens (you set)                                           | Compound tokens (auto-derived)                     |
+|-----------------------------------------------------------------|----------------------------------------------------|
+| `tagPrefix`, `tagOpen`, `tagClose`, `tagDivider`, `escapeChar`  | `endTag`, `rawOpen`, `blockOpen`, `rawClose`, `blockClose` |
+
+Derivation rules:
+
+```text
+endTag     = tagClose + tagPrefix       ")" + "$$"     → ")$$"
+rawOpen    = tagClose + "%"             ")" + "%"      → ")%"
+blockOpen  = tagClose + "*"             ")" + "*"      → ")*"
+rawClose   = "%" + "end" + tagPrefix    "%end" + "$$"  → "%end$$"
+blockClose = "*" + "end" + tagPrefix    "*end" + "$$"  → "*end$$"
+```
 
 ```ts
 import {createEasySyntax} from "yume-dsl-rich-text";
 
-const syntax1 = createEasySyntax({tagPrefix: "@@"});
-// You changed only the prefix.
-// The rest stays aligned automatically:
-// endTag     = ")@@"
-// rawOpen    = ")%"
-// blockOpen  = ")*"
-// rawClose   = "%end@@"
-// blockClose = "*end@@"
+// Change prefix — compounds follow
+createEasySyntax({tagPrefix: "@@"});
+// endTag → ")@@"   rawClose → "%end@@"   blockClose → "*end@@"
 
-const syntax2 = createEasySyntax({tagPrefix: "@@", tagClose: "]"});
-// Change the prefix and the close token together:
-// endTag     = "]@@"
-// rawOpen    = "]%"
-// blockOpen  = "]*"
-// rawClose   = "%end@@"
-// blockClose = "*end@@"
-
-const syntax3 = createEasySyntax({tagPrefix: "@@", rawClose: "%%end@@"});
-// Explicit compound overrides win.
-// rawClose is exactly "%%end@@", while the other compound tokens are still derived.
+// Change prefix + closer — compounds adapt to both
+createEasySyntax({tagPrefix: "@@", tagClose: "]"});
+// endTag → "]@@"   rawOpen → "]%"   blockOpen → "]*"
 ```
 
-Choose `createEasySyntax` by default.
-Choose `createSyntax` only when you intentionally want full manual control over every token.
-
-Do not use `createEasySyntax` when your syntax does **not** follow this derivation model. Typical examples:
-
-- `rawOpen`, `blockOpen`, or `endTag` do not share the `tagClose + ...` shape
-- `rawClose` / `blockClose` are not `marker + closeMiddle + tagPrefix`
-- the raw form and block form use unrelated closing words
-- one compound token changes in a way that cannot be described as “same protocol, different base tokens”
-
-In short: `createEasySyntax` is for “same syntax family, different surface tokens”.
-If your DSL is irregular, asymmetric, or intentionally weird, use `createSyntax` and spell out every token yourself.
-
-Examples that should use `createSyntax` instead:
-
-```ts
-import {createSyntax} from "yume-dsl-rich-text";
-
-// Example 1:
-// raw/block openings do not start with tagClose, so they are outside the easy-syntax family.
-createSyntax({
-  tagPrefix: "@@",
-  tagOpen: "(",
-  tagClose: ")",
-  tagDivider: "|",
-  endTag: ")@@",
-  rawOpen: "<raw>",
-  blockOpen: "<block>",
-  rawClose: "</raw>",
-  blockClose: "</block>",
-  escapeChar: "\\",
-});
-
-// Example 2:
-// raw and block use different closing words, so there is no single shared closeMiddle to derive.
-createSyntax({
-  tagPrefix: "@@",
-  tagOpen: "(",
-  tagClose: ")",
-  tagDivider: "|",
-  endTag: ")@@",
-  rawOpen: ")%",
-  blockOpen: ")*",
-  rawClose: "%finish@@",
-  blockClose: "*stop@@",
-  escapeChar: "\\",
-});
-```
+When your opening/closing protocol is irregular (e.g. `rawOpen: "<raw>"` or raw/block use different close keywords),
+derivation can't help — use [`createSyntax`](#createsyntax-low-level) instead.
 
 ### createSyntax (low-level)
 
@@ -666,55 +596,45 @@ interface SyntaxConfig extends SyntaxInput {
 
 ## Custom Tag Name Characters
 
-The parser decides which characters may appear in a tag name via two functions:
+```ts
+function createTagNameConfig(overrides?: Partial<TagNameConfig>): TagNameConfig
+```
 
-| Function         | Default                       | Role                            |
-|------------------|-------------------------------|---------------------------------|
-| `isTagStartChar` | `a-z`, `A-Z`, `_`             | First character of the tag name |
-| `isTagChar`      | `a-z`, `A-Z`, `0-9`, `_`, `-` | Remaining characters            |
+Controls which characters the parser accepts in tag names. Provide only the functions you want to change — the rest
+falls back to `DEFAULT_TAG_NAME`.
 
-These defaults are exported as `DEFAULT_TAG_NAME`.
+| Function         | Default                       | Role                   | Example match          |
+|------------------|-------------------------------|------------------------|------------------------|
+| `isTagStartChar` | `a-z`, `A-Z`, `_`             | First character        | `$$bold(` — `b`        |
+| `isTagChar`      | `a-z`, `A-Z`, `0-9`, `_`, `-` | Remaining characters   | `$$my-tag(` — `y-tag`  |
 
-### Overriding
-
-Pass a `tagName` option to `createParser` or `parseRichText`.
-You only need to specify the functions you want to change — unspecified fields fall back to `DEFAULT_TAG_NAME`.
-`createTagNameConfig()` is a convenience helper that does this merge, but you can also pass a plain partial object
-directly.
-
-**Via `createParser`** (pre-bound, recommended):
+By default, `$$ui:button(...)$$` would fail because `:` is not in `isTagChar`. To allow it:
 
 ```ts
 import {createParser, createTagNameConfig} from "yume-dsl-rich-text";
 
 const dsl = createParser({
     handlers: {
-        "ui:button": {
-            inline: (value) => ({type: "ui:button", value}),
-        },
+        "ui:button": { inline: (value) => ({type: "ui:button", value}) },
     },
+    // Only override isTagChar — isTagStartChar keeps the default.
+    // Keep the normal tag characters, and additionally allow ":" after the first character.
     tagName: createTagNameConfig({
-        isTagChar: (char) => /[A-Za-z0-9_:-]/.test(char),
+        isTagChar: (char) => /[A-Za-z0-9_-]/.test(char) || char === ":",
     }),
 });
 
-dsl.parse("$$ui:button(hello)$$");
+dsl.parse("$$ui:button(hello)$$");  // works
 ```
 
-**Via `parseRichText`** (per-call):
+You can also pass a plain partial object directly to `tagName` — `createTagNameConfig` is optional:
 
 ```ts
-import {parseRichText} from "yume-dsl-rich-text";
-
-const tokens = parseRichText("$$1ui:button(hello)$$", {
-    handlers: {
-        "1ui:button": {
-            inline: (value) => ({type: "1ui:button", value}),
-        },
-    },
+parseRichText("$$1tag(hello)$$", {
+    handlers: { "1tag": { inline: (v) => ({type: "1tag", value: v}) } },
     tagName: {
-        isTagStartChar: (char) => /[A-Za-z0-9_]/.test(char),
-        isTagChar: (char) => /[A-Za-z0-9_:-]/.test(char),
+        isTagStartChar: (char) => /[A-Za-z0-9_]/.test(char),  // allow digit start
+        isTagChar: (char) => /[A-Za-z0-9_-]/.test(char) || char === ":",  // keep normal chars, also allow ":"
     },
 });
 ```
@@ -1229,7 +1149,8 @@ const tokens = dsl.parse(input);
 
 ### Configuration
 
-See [Custom Syntax](#custom-syntax) and [Custom Tag Name Characters](#custom-tag-name-characters) for full documentation.
+See [Custom Syntax](#custom-syntax) and [Custom Tag Name Characters](#custom-tag-name-characters) for full
+documentation.
 
 | Export                           | Description                                             |
 |----------------------------------|---------------------------------------------------------|

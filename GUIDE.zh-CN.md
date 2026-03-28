@@ -521,112 +521,41 @@ import {DEFAULT_SYNTAX} from "yume-dsl-rich-text";
 
 ### createEasySyntax（推荐）
 
-`createEasySyntax` 是自定义语法的便捷构造器。
-
-适合这种场景：你想调整 DSL 的外观，但不想手动维护一整组彼此有关联的 token。
-
-你只需要提供**基础 token**：
-
-- `tagPrefix`
-- `tagOpen`
-- `tagClose`
-- `tagDivider`
-- `escapeChar`
-
-它会自动补齐这些**复合 token**：
-
-- `endTag`
-- `rawOpen`
-- `blockOpen`
-- `rawClose`
-- `blockClose`
-
-推导协议如下：
-
-```text
-endTag     = tagClose + tagPrefix          ")" + "$$"  → ")$$"
-rawOpen    = tagClose + RAW_MARKER         ")" + "%"   → ")%"
-blockOpen  = tagClose + BLOCK_MARKER       ")" + "*"   → ")*"
-rawClose   = RAW_MARKER + "end" + tagPrefix   "%end" + "$$" → "%end$$"
-blockClose = BLOCK_MARKER + "end" + tagPrefix "*end" + "$$" → "*end$$"
+```ts
+function createEasySyntax(overrides?: Partial<SyntaxInput>): SyntaxConfig
 ```
 
-显式传入的复合符号优先于推导。
+改基础 token，复合 token 自动保持一致。
+接受 `SyntaxInput` 的任意子集——基础 token 驱动推导，显式传入的复合 token 优先。
+
+| 基础 token（你设置）                                              | 复合 token（自动推导）                                         |
+|------------------------------------------------------------|--------------------------------------------------------|
+| `tagPrefix`、`tagOpen`、`tagClose`、`tagDivider`、`escapeChar` | `endTag`、`rawOpen`、`blockOpen`、`rawClose`、`blockClose` |
+
+推导规则：
+
+```text
+endTag     = tagClose + tagPrefix       ")" + "$$"     → ")$$"
+rawOpen    = tagClose + "%"             ")" + "%"      → ")%"
+blockOpen  = tagClose + "*"             ")" + "*"      → ")*"
+rawClose   = "%" + "end" + tagPrefix    "%end" + "$$"  → "%end$$"
+blockClose = "*" + "end" + tagPrefix    "*end" + "$$"  → "*end$$"
+```
 
 ```ts
 import {createEasySyntax} from "yume-dsl-rich-text";
 
-const syntax1 = createEasySyntax({tagPrefix: "@@"});
-// 你只改了前缀，其它关联符号会自动保持一致：
-// endTag     = ")@@"
-// rawOpen    = ")%"
-// blockOpen  = ")*"
-// rawClose   = "%end@@"
-// blockClose = "*end@@"
+// 改前缀——复合符号跟随变化
+createEasySyntax({tagPrefix: "@@"});
+// endTag → ")@@"   rawClose → "%end@@"   blockClose → "*end@@"
 
-const syntax2 = createEasySyntax({tagPrefix: "@@", tagClose: "]"});
-// 同时改前缀和闭合符时，相关复合符号也会一起适配：
-// endTag     = "]@@"
-// rawOpen    = "]%"
-// blockOpen  = "]*"
-// rawClose   = "%end@@"
-// blockClose = "*end@@"
-
-const syntax3 = createEasySyntax({tagPrefix: "@@", rawClose: "%%end@@"});
-// 显式传入的复合 token 优先：
-// rawClose 会严格等于 "%%end@@"
-// 其它复合 token 仍按规则自动推导
+// 改前缀 + 闭合符——复合符号同时适配
+createEasySyntax({tagPrefix: "@@", tagClose: "]"});
+// endTag → "]@@"   rawOpen → "]%"   blockOpen → "]*"
 ```
 
-默认优先使用 `createEasySyntax`。
-只有在你明确要手动控制每一个 token 时，才使用 `createSyntax`。
-
-如果你的语法**不符合这套推导协议**，就不要用 `createEasySyntax`。常见情况包括：
-
-- `rawOpen`、`blockOpen`、`endTag` 不是 `tagClose + ...` 这种结构
-- `rawClose` / `blockClose` 不是 `marker + closeMiddle + tagPrefix` 这种结构
-- raw form 和 block form 使用完全不同的 closing keyword
-- 某个复合 token 的变化已经不能描述成“同一套协议下，只替换基础 token”
-
-一句话说：
-`createEasySyntax` 适合“同一家族、只换表面符号”的 DSL。
-如果你的 DSL 本身就是不规则的、非对称的、故意长得很怪，那就应该用 `createSyntax` 手动写全量 token。
-
-下面这些情况就应该直接用 `createSyntax`：
-
-```ts
-import {createSyntax} from "yume-dsl-rich-text";
-
-// 例 1：
-// raw/block 的开头根本不是 tagClose + ... 的结构，不属于 easy syntax 这套家族。
-createSyntax({
-    tagPrefix: "@@",
-    tagOpen: "(",
-    tagClose: ")",
-    tagDivider: "|",
-    endTag: ")@@",
-    rawOpen: "<raw>",
-    blockOpen: "<block>",
-    rawClose: "</raw>",
-    blockClose: "</block>",
-    escapeChar: "\\",
-});
-
-// 例 2：
-// raw 和 block 使用完全不同的 closing word，没法共用同一个 closeMiddle 来推导。
-createSyntax({
-    tagPrefix: "@@",
-    tagOpen: "(",
-    tagClose: ")",
-    tagDivider: "|",
-    endTag: ")@@",
-    rawOpen: ")%",
-    blockOpen: ")*",
-    rawClose: "%finish@@",
-    blockClose: "*stop@@",
-    escapeChar: "\\",
-});
-```
+当开闭协议本身不规则时（如 `rawOpen: "<raw>"` 或 raw/block 使用不同的关闭关键字），推导帮不上忙——改用
+[`createSyntax`](#createsyntax底层)。
 
 ### createSyntax（底层）
 
@@ -653,54 +582,44 @@ interface SyntaxConfig extends SyntaxInput {
 
 ## 自定义标签名字符规则
 
-解析器通过两个函数决定哪些字符可以出现在标签名中：
+```ts
+function createTagNameConfig(overrides?: Partial<TagNameConfig>): TagNameConfig
+```
 
-| 函数               | 默认值                       | 作用       |
-|------------------|---------------------------|----------|
-| `isTagStartChar` | `a-z`、`A-Z`、`_`           | 标签名的首字符  |
-| `isTagChar`      | `a-z`、`A-Z`、`0-9`、`_`、`-` | 首字符之后的字符 |
+控制解析器接受哪些标签名字符。只需提供要修改的函数，其余回退到 `DEFAULT_TAG_NAME`。
 
-默认值导出为 `DEFAULT_TAG_NAME`。
+| 函数               | 默认值                       | 作用   | 匹配示例                  |
+|------------------|---------------------------|------|-----------------------|
+| `isTagStartChar` | `a-z`、`A-Z`、`_`           | 首字符  | `$$bold(` — `b`       |
+| `isTagChar`      | `a-z`、`A-Z`、`0-9`、`_`、`-` | 后续字符 | `$$my-tag(` — `y-tag` |
 
-### 覆盖方式
-
-向 `createParser` 或 `parseRichText` 传入 `tagName` 选项。
-只需指定要修改的函数，未指定的字段自动回退 `DEFAULT_TAG_NAME`。
-`createTagNameConfig()` 是执行这个合并的便利函数，但你也可以直接传入部分对象。
-
-**通过 `createParser`**（预绑定，推荐）：
+默认情况下 `$$ui:button(...)$$` 会失败，因为 `:` 不在 `isTagChar` 中。允许它：
 
 ```ts
 import {createParser, createTagNameConfig} from "yume-dsl-rich-text";
 
 const dsl = createParser({
     handlers: {
-        "ui:button": {
-            inline: (value) => ({type: "ui:button", value}),
-        },
+        "ui:button": {inline: (value) => ({type: "ui:button", value})},
     },
+    // 只覆盖 isTagChar——isTagStartChar 保持默认。
+    // 保留默认可用字符，并额外允许 ":" 出现在首字符之后。
     tagName: createTagNameConfig({
-        isTagChar: (char) => /[A-Za-z0-9_:-]/.test(char),
+        isTagChar: (char) => /[A-Za-z0-9_-]/.test(char) || char === ":",
     }),
 });
 
-dsl.parse("$$ui:button(hello)$$");
+dsl.parse("$$ui:button(hello)$$");  // 正常工作
 ```
 
-**通过 `parseRichText`**（单次调用）：
+也可以直接传 partial 对象给 `tagName`——`createTagNameConfig` 不是必须的：
 
 ```ts
-import {parseRichText} from "yume-dsl-rich-text";
-
-const tokens = parseRichText("$$1ui:button(hello)$$", {
-    handlers: {
-        "1ui:button": {
-            inline: (value) => ({type: "1ui:button", value}),
-        },
-    },
+parseRichText("$$1tag(hello)$$", {
+    handlers: {"1tag": {inline: (v) => ({type: "1tag", value: v})}},
     tagName: {
-        isTagStartChar: (char) => /[A-Za-z0-9_]/.test(char),
-        isTagChar: (char) => /[A-Za-z0-9_:-]/.test(char),
+        isTagStartChar: (char) => /[A-Za-z0-9_]/.test(char),  // 允许数字开头
+        isTagChar: (char) => /[A-Za-z0-9_-]/.test(char) || char === ":",  // 保留默认字符，并额外允许 ":"
     },
 });
 ```
