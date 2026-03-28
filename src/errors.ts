@@ -1,5 +1,5 @@
 import type { ErrorCode, ParseError } from "./types.js";
-import { getPositionTracker } from "./positions.js";
+import type { PositionTracker } from "./positions.js";
 
 const ERROR_MESSAGES: Record<ErrorCode, string> = {
   DEPTH_LIMIT: "Nesting too deep",
@@ -11,8 +11,13 @@ const ERROR_MESSAGES: Record<ErrorCode, string> = {
   INLINE_NOT_CLOSED: "Inline tag not closed",
 };
 
-export const getErrorContext = (text: string, index: number, length = 1, range = 15) => {
-  const tracker = getPositionTracker();
+export const getErrorContext = (
+  tracker: PositionTracker | null,
+  text: string,
+  index: number,
+  length = 1,
+  range = 15,
+) => {
   let line: number;
   let column: number;
 
@@ -52,6 +57,7 @@ export const getErrorContext = (text: string, index: number, length = 1, range =
 };
 
 export const emitError = (
+  tracker: PositionTracker | null,
   onError: ((error: ParseError) => void) | undefined,
   code: ErrorCode,
   text: string,
@@ -60,7 +66,7 @@ export const emitError = (
 ) => {
   if (!onError) return;
 
-  const { line, column, snippet } = getErrorContext(text, index, length);
+  const { line, column, snippet } = getErrorContext(tracker, text, index, length);
   const base = ERROR_MESSAGES[code] ?? code;
   const message = `(L${line}:C${column}) ${base}: ${snippet}`;
 

@@ -15,9 +15,10 @@ import { getSyntax } from "./syntax.js";
 import {
   consumeBlockTagTrailingLineBreak,
   normalizeBlockTagContent,
+  prepareBlockContent,
 } from "./blockTagFormatting.js";
 import { createToken } from "./createToken.js";
-import { makePosition, withBaseOffset } from "./positions.js";
+import { makePosition, offsetTracker, type PositionTracker } from "./positions.js";
 
 export const tryParseComplexTag = (
   text: string,
@@ -29,10 +30,12 @@ export const tryParseComplexTag = (
   mode: ParseMode,
   handlers: Record<string, TagHandler>,
   blockTagSet: BlockTagLookup,
+  tracker: PositionTracker | null,
   parseInlineContent: (
     text: string,
     depthLimit: number,
     options?: { mode?: ParseMode },
+    innerTracker?: PositionTracker | null,
   ) => TextToken[],
 ): ComplexTagParseResult => {
   const handler = handlers[tag];
@@ -103,14 +106,8 @@ export const tryParseComplexTag = (
     }
 
     const arg = text.slice(argStart, argClose).trim();
-    const { content: blockContent, leadingTrim } = normalizeBlockTagContent(
-      tag,
-      text.slice(contentStart, end),
-      mode,
-      blockTagSet,
-      "block",
-    );
-    const innerBaseOffset = contentStart + leadingTrim;
+    const prepared = prepareBlockContent(tag, text, contentStart, end, mode, blockTagSet, "block");
+    const innerTracker = offsetTracker(tracker, prepared.baseOffset);
 
     const nextIndex = consumeBlockTagTrailingLineBreak(
       tag,
@@ -120,7 +117,7 @@ export const tryParseComplexTag = (
       blockTagSet,
       "block",
     );
-    const position = makePosition(tagOpenPos, nextIndex);
+    const position = makePosition(tracker, tagOpenPos, nextIndex);
 
     return {
       handled: true,
@@ -128,9 +125,7 @@ export const tryParseComplexTag = (
       token: createToken(
         handler.block(
           arg,
-          withBaseOffset(innerBaseOffset, () =>
-            parseInlineContent(blockContent, Math.max(depthLimit - 1, 0), { mode }),
-          ),
+          parseInlineContent(prepared.content, Math.max(depthLimit - 1, 0), { mode }, innerTracker),
         ),
         position,
       ),
@@ -195,7 +190,7 @@ export const tryParseComplexTag = (
     blockTagSet,
     "raw",
   );
-  const position = makePosition(tagOpenPos, nextIndex);
+  const position = makePosition(tracker, tagOpenPos, nextIndex);
 
   return {
     handled: true,

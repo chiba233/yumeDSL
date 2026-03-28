@@ -1,4 +1,4 @@
-import type { ParseContext, TagStartInfo, TextToken } from "./types.js";
+import type { ParseContext, PositionTracker, TagStartInfo, TextToken } from "./types.js";
 import { getSyntax } from "./syntax.js";
 import { readEscaped, unescapeInline } from "./escape.js";
 import { materializeTextTokens } from "./builders.js";
@@ -50,6 +50,7 @@ export const tryConsumeDepthLimitedTag = (ctx: ParseContext, info: TagStartInfo)
 
   if (ctx.stack.length === ctx.depthLimit) {
     emitError(
+      ctx.tracker,
       ctx.onError,
       "DEPTH_LIMIT",
       ctx.text,
@@ -128,6 +129,7 @@ export const tryConsumeComplexTag = (
     text: string,
     depthLimit: number,
     options?: { mode?: ParseContext["mode"] },
+    innerTracker?: PositionTracker | null,
   ) => TextToken[],
 ): boolean => {
   const result = tryParseComplexTag(
@@ -140,13 +142,14 @@ export const tryConsumeComplexTag = (
     ctx.mode,
     ctx.handlers,
     ctx.blockTagSet,
+    ctx.tracker,
     parseInlineContent,
   );
 
   if (!result.handled) return false;
 
   if (result.error) {
-    emitError(ctx.onError, result.error.code, ctx.text, result.error.index, result.error.length);
+    emitError(ctx.tracker, ctx.onError, result.error.code, ctx.text, result.error.index, result.error.length);
   }
 
   if (result.fallbackText) {
@@ -174,6 +177,7 @@ export const tryConsumeInlineTag = (
 
   if (inlineEnd === -1) {
     emitError(
+      ctx.tracker,
       ctx.onError,
       "INLINE_NOT_CLOSED",
       ctx.text,
@@ -202,6 +206,7 @@ export const tryConsumeTagStart = (
     text: string,
     depthLimit: number,
     options?: { mode?: ParseContext["mode"] },
+    innerTracker?: PositionTracker | null,
   ) => TextToken[],
 ): boolean => {
   const info = readTagStartInfo(ctx.text, ctx.i);
@@ -234,7 +239,7 @@ export const finalizeClosedNode = (ctx: ParseContext, node: ParseContext["stack"
   }
 
   const handler = ctx.handlers[node.richType];
-  const position = makePosition(node.openPos, ctx.i + endTag.length);
+  const position = makePosition(ctx.tracker, node.openPos, ctx.i + endTag.length);
 
   getCurrentTokens(ctx).push(
     handler?.inline
@@ -251,7 +256,7 @@ export const tryConsumeTagClose = (ctx: ParseContext): boolean => {
   if (!ctx.text.startsWith(endTag, ctx.i)) return false;
 
   if (ctx.stack.length === 0) {
-    emitError(ctx.onError, "UNEXPECTED_CLOSE", ctx.text, ctx.i, endTag.length);
+    emitError(ctx.tracker, ctx.onError, "UNEXPECTED_CLOSE", ctx.text, ctx.i, endTag.length);
     appendToBuffer(ctx, endTag, ctx.i);
     ctx.i += endTag.length;
     return true;

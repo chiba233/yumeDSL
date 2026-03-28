@@ -285,10 +285,13 @@ dsl.parse(text, {onError: (e) => console.warn(e)});
 | 选项               | 预绑定后的效果                        |
 |------------------|--------------------------------|
 | `handlers`       | 标签定义 — 不需要每次调用都传入              |
+| `allowForms`     | 限制接受的标签形式（默认：全部启用）             |
 | `syntax`         | 自定义语法符号（如覆盖 `$$` 前缀等）          |
 | `tagName`        | 自定义标签名字符规则                     |
-| `mode`           | 已弃用 — 保留向后兼容，行为始终等同 `"render"` |
 | `depthLimit`     | 嵌套深度限制 — 很少需要逐次修改              |
+| `createId`       | 自定义 token id 生成器（仍可按次覆盖）       |
+| `blockTags`      | 需要 block 换行归一化的标签              |
+| `mode`           | 已弃用 — 保留向后兼容，行为始终等同 `"render"` |
 | `onError`        | 默认错误处理器（仍可按次覆盖）                |
 | `trackPositions` | 为所有输出节点附加源码位置（仍可按次覆盖）          |
 
@@ -1731,6 +1734,20 @@ tagMap.date = DateText;
 ---
 
 ## 更新日志
+
+### 1.0.3
+
+- **重构：** 位置追踪器从模块级隐式状态改为显式参数透传
+    - `ParseContext` 直接携带 `tracker: PositionTracker | null`
+    - `parseStructural` 通过 `parseNodes` 显式传递 tracker——无隐藏全局状态
+    - `emitError` / `getErrorContext` 改为接收 tracker 参数，不再读模块状态
+    - `complex.ts` 显式接收 tracker；内层解析偏移调整使用 `offsetTracker`（替代 `withBaseOffset` + `withPositionTracker`）
+- **重构：** Buffer 累积状态合并为 `BufferState` 对象
+    - `ParseContext.buffer` / `bufferStart` / `bufferSourceEnd` 合并为 `ParseContext.buf: BufferState`
+    - `emptyBuffer()` 工厂函数用于初始化和重置
+- **重构：** Block 内容归一化 + 偏移映射封装为 `prepareBlockContent`
+    - 返回 `{ content, baseOffset }`——调用方不再手动拼接 `normalizeBlockTagContent` + `leadingTrim` + `contentStart`
+- 无公开 API 变更，全部为内部改动
 
 ### 1.0.2
 

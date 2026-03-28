@@ -13,11 +13,11 @@ import type {
 import { extractText } from "./builders.js";
 import { createTagNameConfig, withTagNameConfig } from "./chars.js";
 import { tryConsumeEscape, tryConsumeTagClose, tryConsumeTagStart } from "./consumers.js";
-import { appendToBuffer, finalizeUnclosedTags, flushBuffer } from "./context.js";
+import { emptyBuffer, appendToBuffer, finalizeUnclosedTags, flushBuffer } from "./context.js";
 import { withCreateId } from "./createToken.js";
 import { parseStructural } from "./structural.js";
 import { createSyntax, withSyntax } from "./syntax.js";
-import { buildPositionTracker, withPositionTracker } from "./positions.js";
+import { buildPositionTracker, type PositionTracker } from "./positions.js";
 
 const buildBlockTagLookup = (inputs: readonly BlockTagInput[]): BlockTagLookup => {
   const rawSet = new Set<string>();
@@ -103,6 +103,7 @@ const internalParse = (
   onError: ParseContext["onError"],
   handlers: Record<string, import("./types").TagHandler>,
   blockTagSet: BlockTagLookup,
+  tracker: PositionTracker | null,
 ): TextToken[] => {
   if (!text) return [];
 
@@ -115,11 +116,10 @@ const internalParse = (
     onError,
     handlers,
     blockTagSet,
+    tracker,
     root: [],
     stack: [],
-    buffer: "",
-    bufferStart: -1,
-    bufferSourceEnd: -1,
+    buf: emptyBuffer(),
     i: 0,
   };
 
@@ -127,6 +127,7 @@ const internalParse = (
     innerText: string,
     innerDepthLimit: number,
     innerOptions?: { mode?: ParseContext["mode"] },
+    innerTracker?: PositionTracker | null,
   ): TextToken[] => {
     return internalParse(
       innerText,
@@ -137,6 +138,7 @@ const internalParse = (
       onError,
       handlers,
       blockTagSet,
+      innerTracker !== undefined ? innerTracker : tracker,
     );
   };
 
@@ -175,17 +177,16 @@ export const parseRichText = (text: string, options: ParseOptions = {}): TextTok
   return withSyntax(syntax, () =>
     withTagNameConfig(tagName, () =>
       withCreateId(createId, () =>
-        withPositionTracker(tracker, () =>
-          internalParse(
-            text,
-            options.depthLimit ?? 50,
-            { mode: options.mode ?? "render" },
-            allowInline,
-            registeredTags,
-            options.onError,
-            handlers,
-            blockTagSet,
-          ),
+        internalParse(
+          text,
+          options.depthLimit ?? 50,
+          { mode: options.mode ?? "render" },
+          allowInline,
+          registeredTags,
+          options.onError,
+          handlers,
+          blockTagSet,
+          tracker,
         ),
       ),
     ),

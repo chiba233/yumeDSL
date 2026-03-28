@@ -1,24 +1,6 @@
-import type { SourcePosition, SourceSpan } from "./types.js";
+import type { PositionTracker, SourcePosition, SourceSpan } from "./types.js";
 
-// ── Position tracker (module-scoped, follows withSyntax / withCreateId pattern) ──
-
-export interface PositionTracker {
-  resolve(offset: number): SourcePosition;
-}
-
-let activeTracker: PositionTracker | null = null;
-
-export const getPositionTracker = (): PositionTracker | null => activeTracker;
-
-export const withPositionTracker = <T>(tracker: PositionTracker | null, fn: () => T): T => {
-  const prev = activeTracker;
-  activeTracker = tracker;
-  try {
-    return fn();
-  } finally {
-    activeTracker = prev;
-  }
-};
+export type { PositionTracker };
 
 export const buildPositionTracker = (text: string): PositionTracker => {
   const lineStarts: number[] = [0];
@@ -40,24 +22,24 @@ export const buildPositionTracker = (text: string): PositionTracker => {
   };
 };
 
-/**
- * Create a tracker that shifts all offsets by `baseOffset` before resolving.
- * Used for recursive inner parses on substrings of the original text.
- */
-export const withBaseOffset = <T>(baseOffset: number, fn: () => T): T => {
-  const tracker = activeTracker;
-  if (!tracker || baseOffset === 0) return fn();
-  return withPositionTracker(
-    { resolve: (offset) => tracker.resolve(offset + baseOffset) },
-    fn,
-  );
+/** Build a SourceSpan from the tracker, or return undefined if tracker is null. */
+export const makePosition = (
+  tracker: PositionTracker | null,
+  start: number,
+  end: number,
+): SourceSpan | undefined => {
+  if (!tracker) return undefined;
+  return { start: tracker.resolve(start), end: tracker.resolve(end) };
 };
 
-/** Helper: build a SourceSpan from the active tracker, or return undefined. */
-export const makePosition = (start: number, end: number): SourceSpan | undefined => {
-  if (!activeTracker) return undefined;
-  return {
-    start: activeTracker.resolve(start),
-    end: activeTracker.resolve(end),
-  };
+/**
+ * Create an offset-adjusted tracker for recursive inner parses on substrings.
+ * Returns null if the outer tracker is null.
+ */
+export const offsetTracker = (
+  tracker: PositionTracker | null,
+  baseOffset: number,
+): PositionTracker | null => {
+  if (!tracker || baseOffset === 0) return tracker;
+  return { resolve: (offset) => tracker.resolve(offset + baseOffset) };
 };

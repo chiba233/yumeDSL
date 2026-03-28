@@ -3,6 +3,12 @@ import { createToken } from "./createToken.js";
 import { emitError } from "./errors.js";
 import { makePosition } from "./positions.js";
 
+export const emptyBuffer = (): { content: string; start: number; sourceEnd: number } => ({
+  content: "",
+  start: -1,
+  sourceEnd: -1,
+});
+
 export const getCurrentTokens = (ctx: ParseContext): TextToken[] => {
   return ctx.stack.length ? ctx.stack[ctx.stack.length - 1].tokens : ctx.root;
 };
@@ -24,32 +30,32 @@ export const pushTextToCurrent = (ctx: ParseContext, str: string, position?: Sou
 };
 
 export const appendToBuffer = (ctx: ParseContext, text: string, startOffset: number, sourceEnd?: number) => {
-  if (ctx.bufferStart === -1) ctx.bufferStart = startOffset;
-  ctx.bufferSourceEnd = sourceEnd ?? startOffset + text.length;
-  ctx.buffer += text;
+  const buf = ctx.buf;
+  if (buf.start === -1) buf.start = startOffset;
+  buf.sourceEnd = sourceEnd ?? startOffset + text.length;
+  buf.content += text;
 };
 
 export const flushBuffer = (ctx: ParseContext) => {
-  if (!ctx.buffer) return;
-  const position = ctx.bufferStart >= 0
-    ? makePosition(ctx.bufferStart, ctx.bufferSourceEnd)
+  const buf = ctx.buf;
+  if (!buf.content) return;
+  const position = buf.start >= 0
+    ? makePosition(ctx.tracker, buf.start, buf.sourceEnd)
     : undefined;
-  pushTextToCurrent(ctx, ctx.buffer, position);
-  ctx.buffer = "";
-  ctx.bufferStart = -1;
-  ctx.bufferSourceEnd = -1;
+  pushTextToCurrent(ctx, buf.content, position);
+  ctx.buf = emptyBuffer();
 };
 
 export const finalizeUnclosedTags = (ctx: ParseContext) => {
   while (ctx.stack.length) {
     const node = ctx.stack.pop() as ParseStackNode;
-    emitError(ctx.onError, "INLINE_NOT_CLOSED", ctx.text, node.openPos, node.openLen);
+    emitError(ctx.tracker, ctx.onError, "INLINE_NOT_CLOSED", ctx.text, node.openPos, node.openLen);
 
     const openEnd = node.openPos + node.openLen;
     pushTextToCurrent(
       ctx,
       ctx.text.slice(node.openPos, openEnd),
-      makePosition(node.openPos, openEnd),
+      makePosition(ctx.tracker, node.openPos, openEnd),
     );
 
     node.tokens.forEach((t) => {

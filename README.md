@@ -292,10 +292,13 @@ dsl.parse(text, {onError: (e) => console.warn(e)});
 | Option           | What it does when pre-bound                                                |
 |------------------|----------------------------------------------------------------------------|
 | `handlers`       | Your tag definitions — no need to pass them on every call                  |
+| `allowForms`     | Restrict accepted tag forms (default: all forms enabled)                   |
 | `syntax`         | Custom syntax tokens (if you override `$$` prefix, etc.)                   |
 | `tagName`        | Custom tag-name character rules                                            |
-| `mode`           | Deprecated — kept for backward compatibility, always behaves as `"render"` |
 | `depthLimit`     | Nesting limit — rarely changes per call                                    |
+| `createId`       | Custom token id generator (can be overridden per call)                     |
+| `blockTags`      | Tags that receive block-level line-break normalization                     |
+| `mode`           | Deprecated — kept for backward compatibility, always behaves as `"render"` |
 | `onError`        | Default error handler (can still be overridden per call)                   |
 | `trackPositions` | Attach source positions to all output nodes (can be overridden per call)   |
 
@@ -1774,6 +1777,20 @@ tagMap.date = DateText;
 ---
 
 ## Changelog
+
+### 1.0.3
+
+- **Refactor:** Position tracker moved from module-level implicit state to explicit parameter threading
+    - `ParseContext` now carries `tracker: PositionTracker | null` directly
+    - `parseStructural` passes tracker explicitly through `parseNodes` — no hidden globals
+    - `emitError` / `getErrorContext` receive tracker as a parameter instead of reading module state
+    - `complex.ts` receives tracker explicitly; inner-parse offset adjustment uses `offsetTracker` (replaces `withBaseOffset` + `withPositionTracker`)
+- **Refactor:** Buffer accumulation state consolidated into `BufferState` object
+    - `ParseContext.buffer` / `bufferStart` / `bufferSourceEnd` merged into `ParseContext.buf: BufferState`
+    - `emptyBuffer()` factory for initialization and reset
+- **Refactor:** Block content normalization + offset mapping encapsulated as `prepareBlockContent`
+    - Returns `{ content, baseOffset }` — callers no longer manually combine `normalizeBlockTagContent` + `leadingTrim` + `contentStart`
+- No public API changes; all changes are internal
 
 ### 1.0.2
 

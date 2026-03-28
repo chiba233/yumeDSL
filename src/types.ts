@@ -184,6 +184,16 @@ export interface StructuralParseOptions extends ParserBaseOptions {
 
 export type ParseMode = "render";
 
+export interface PositionTracker {
+  resolve(offset: number): SourcePosition;
+}
+
+export interface BufferState {
+  content: string;
+  start: number;
+  sourceEnd: number;
+}
+
 export interface ParseContext {
   text: string;
   depthLimit: number;
@@ -193,11 +203,10 @@ export interface ParseContext {
   onError: ((error: ParseError) => void) | undefined;
   handlers: Record<string, TagHandler>;
   blockTagSet: BlockTagLookup;
+  tracker: PositionTracker | null;
   root: TextToken[];
   stack: ParseStackNode[];
-  buffer: string;
-  bufferStart: number;
-  bufferSourceEnd: number;
+  buf: BufferState;
   i: number;
 }
 

@@ -40,3 +40,26 @@ export const consumeBlockTagTrailingLineBreak = (
   if (!blockTagSet.has(tag, form)) return index;
   return consumeSingleTrailingLineBreak(text, index);
 };
+
+/**
+ * Prepare block content for recursive inner parsing:
+ * normalize leading line break and compute the base offset for position mapping.
+ */
+export interface PreparedBlockContent {
+  content: string;
+  baseOffset: number;
+}
+
+export const prepareBlockContent = (
+  tag: string,
+  text: string,
+  contentStart: number,
+  contentEnd: number,
+  mode: ParseMode,
+  blockTagSet: BlockTagLookup,
+  form: MultilineForm,
+): PreparedBlockContent => {
+  const raw = text.slice(contentStart, contentEnd);
+  const { content, leadingTrim } = normalizeBlockTagContent(tag, raw, mode, blockTagSet, form);
+  return { content, baseOffset: contentStart + leadingTrim };
+};

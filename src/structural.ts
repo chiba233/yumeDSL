@@ -13,7 +13,7 @@ import {
   skipTagBoundary,
   skipDegradedInline,
 } from "./scanner.js";
-import { buildPositionTracker, getPositionTracker, withPositionTracker } from "./positions.js";
+import { buildPositionTracker, makePosition, type PositionTracker } from "./positions.js";
 
 // ── Form gating context ──
 
@@ -22,14 +22,6 @@ interface GatingContext {
   registeredTags: ReadonlySet<string>;
   allowInline: boolean;
 }
-
-// ── Position helper ──
-
-const makePosition = (start: number, end: number): SourceSpan | undefined => {
-  const tracker = getPositionTracker();
-  if (!tracker) return undefined;
-  return { start: tracker.resolve(start), end: tracker.resolve(end) };
-};
 
 // ── Structural parser ──
 
@@ -53,6 +45,7 @@ const tryInlineFallback = (
   depthLimit: number,
   gating: GatingContext,
   baseOffset: number,
+  tracker: PositionTracker | null,
 ): { nodes: StructuralNode[] | null; nextI: number; bufferAppend: string } => {
   const { endTag } = getSyntax();
   const handler = gating.handlers[info.tag];
@@ -78,17 +71,25 @@ const tryInlineFallback = (
     gating,
     true,
     baseOffset + info.inlineContentStart,
+    tracker,
   );
   const nextI = closeStart + endTag.length;
+  const position = makePosition(tracker, baseOffset + i, baseOffset + nextI);
   return {
-    nodes: [{
-      type: "inline" as const,
-      tag: info.tag,
-      children,
-      ...( makePosition(baseOffset + i, baseOffset + nextI)
-        ? { position: makePosition(baseOffset + i, baseOffset + nextI) }
-        : {}),
-    }],
+    nodes: [
+      position
+        ? {
+            type: "inline" as const,
+            tag: info.tag,
+            children,
+            position,
+          }
+        : {
+            type: "inline" as const,
+            tag: info.tag,
+            children,
+          },
+    ],
     nextI,
     bufferAppend: "",
   };
@@ -101,6 +102,7 @@ const parseNodes = (
   gating: GatingContext | null,
   insideArgs: boolean,
   baseOffset: number,
+  tracker: PositionTracker | null,
 ): StructuralNode[] => {
   const { tagDivider, tagOpen, endTag, rawOpen, rawClose, blockOpen, blockClose } = getSyntax();
 
@@ -112,7 +114,7 @@ const parseNodes = (
   const flush = () => {
     if (!buffer) return;
     const position = bufferStart >= 0
-      ? makePosition(baseOffset + bufferStart, baseOffset + i)
+      ? makePosition(tracker, baseOffset + bufferStart, baseOffset + i)
       : undefined;
     const node: StructuralNode = { type: "text", value: buffer };
     if (position) node.position = position;
@@ -126,7 +128,7 @@ const parseNodes = (
     const [escaped, next] = readEscapedSequence(text, i);
     if (escaped !== null) {
       flush();
-      const position = makePosition(baseOffset + i, baseOffset + next);
+      const position = makePosition(tracker, baseOffset + i, baseOffset + next);
       const node: StructuralNode = { type: "escape", raw: text.slice(i, next) };
       if (position) node.position = position;
       nodes.push(node);
@@ -137,7 +139,7 @@ const parseNodes = (
     // ── Pipe separator (only inside tag argument sections) ──
     if (insideArgs && text.startsWith(tagDivider, i)) {
       flush();
-      const position = makePosition(baseOffset + i, baseOffset + i + tagDivider.length);
+      const position = makePosition(tracker, baseOffset + i, baseOffset + i + tagDivider.length);
       const node: StructuralNode = { type: "separator" };
       if (position) node.position = position;
       nodes.push(node);
@@ -194,7 +196,7 @@ const parseNodes = (
       }
       flush();
       const nextI = closeStart + endTag.length;
-      const position = makePosition(baseOffset + i, baseOffset + nextI);
+      const position = makePosition(tracker, baseOffset + i, baseOffset + nextI);
       const node: StructuralNode = {
         type: "inline",
         tag: info.tag,
@@ -205,6 +207,7 @@ const parseNodes = (
           gating,
           true,
           baseOffset + info.inlineContentStart,
+          tracker,
         ),
       };
       if (position) node.position = position;
@@ -222,7 +225,7 @@ const parseNodes = (
       const hasComplexSupport = !!handler?.raw || !!handler?.block;
 
       if (!hasComplexSupport) {
-        const fb = tryInlineFallback(text, i, info, depth, depthLimit, gating, baseOffset);
+        const fb = tryInlineFallback(text, i, info, depth, depthLimit, gating, baseOffset, tracker);
         if (fb.nodes) {
           flush();
           fb.nodes.forEach((n) => nodes.push(n));
@@ -257,7 +260,7 @@ const parseNodes = (
 
       flush();
       const nextI = closeStart + rawClose.length;
-      const position = makePosition(baseOffset + i, baseOffset + nextI);
+      const position = makePosition(tracker, baseOffset + i, baseOffset + nextI);
       const node: StructuralNode = {
         type: "raw",
         tag: info.tag,
@@ -268,6 +271,7 @@ const parseNodes = (
           gating,
           true,
           baseOffset + info.inlineContentStart,
+          tracker,
         ),
         content: text.slice(contentStart, closeStart),
       };
@@ -298,7 +302,7 @@ const parseNodes = (
 
     flush();
     const nextI = closeStart + blockClose.length;
-    const position = makePosition(baseOffset + i, baseOffset + nextI);
+    const position = makePosition(tracker, baseOffset + i, baseOffset + nextI);
     const node: StructuralNode = {
       type: "block",
       tag: info.tag,
@@ -309,8 +313,9 @@ const parseNodes = (
         gating,
         true,
         baseOffset + info.inlineContentStart,
+        tracker,
       ),
-      children: parseNodes(text.slice(contentStart, closeStart), depth + 1, depthLimit, gating, false, baseOffset + contentStart),
+      children: parseNodes(text.slice(contentStart, closeStart), depth + 1, depthLimit, gating, false, baseOffset + contentStart, tracker),
     };
     if (position) node.position = position;
     nodes.push(node);
@@ -359,7 +364,7 @@ export const parseStructural = (
   const tracker = options?.trackPositions ? buildPositionTracker(text) : null;
 
   // ── Build run function with optional context closures ──
-  let run: () => StructuralNode[] = () => parseNodes(text, 0, depthLimit, gating, false, 0);
+  let run: () => StructuralNode[] = () => parseNodes(text, 0, depthLimit, gating, false, 0, tracker);
 
   if (options?.tagName) {
     const inner = run;
@@ -371,11 +376,6 @@ export const parseStructural = (
     const inner = run;
     const syntax = createSyntax(options.syntax);
     run = () => withSyntax(syntax, inner);
-  }
-
-  if (tracker) {
-    const inner = run;
-    run = () => withPositionTracker(tracker, inner);
   }
 
   return run();
