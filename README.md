@@ -1802,6 +1802,10 @@ one-time `console.warn` when called by user code. Internal calls from `parseRich
 `parseStructural` warns only when it detects that ambient state has been changed via `withSyntax` /
 `withTagNameConfig`; normal calls without ambient wrapping do not warn.
 
+Warnings are suppressed when `NODE_ENV=production`.
+
+These APIs will **not** be removed before September 2026.
+
 | Export                           | Use instead                       | Warns | Reason                                                    |
 |----------------------------------|-----------------------------------|-------|-----------------------------------------------------------|
 | `withSyntax(syntax, fn)`         | `DslContext`                      | Yes   | Module-level implicit state; pass `DslContext` explicitly |

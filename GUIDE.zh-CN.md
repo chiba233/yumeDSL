@@ -1761,6 +1761,10 @@ Ambient-state API（`withSyntax`、`getSyntax`、`withTagNameConfig`、`withCrea
 调用时会发出一次性 `console.warn`。`parseRichText` 内部调用自动屏蔽，不产生告警噪音。`parseStructural` 仅在检测到
 ambient 状态被 `withSyntax` / `withTagNameConfig` 改变时告警；没有 ambient 包裹的正常调用不会告警。
 
+`NODE_ENV=production` 时告警被静默。
+
+这些 API 在 **2026 年 9 月前不会被移除**。
+
 | 导出                               | 替代方案                          | 告警 | 原因                                    |
 |----------------------------------|-------------------------------|----|---------------------------------------|
 | `withSyntax(syntax, fn)`         | `DslContext`                  | 是  | 模块级隐式状态；应显式传 `DslContext`             |

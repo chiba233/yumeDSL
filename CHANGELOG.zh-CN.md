@@ -20,9 +20,11 @@
   - `parseRichText` 内部调用通过 `withInternalCaller` 屏蔽——正常解析不产生告警噪音
   - `parseStructural()` 在检测到 ambient `withSyntax()` / `withTagNameConfig()` 状态偏离默认值时专门告警；
     没有 ambient 包裹的正常调用不会告警
+  - `NODE_ENV=production` 时告警被静默
 - 待弃用导出正式写入新增的 **待弃用 API** 文档段落：
   `createPipeBlockHandlers`、`createPipeRawHandlers`、`createPassthroughTags`、`withSyntax`、`getSyntax`、
   `withTagNameConfig`、`withCreateId`、`resetTokenIdSeed`、`ParseOptions.mode`
+- 待弃用 API 在 **2026 年 9 月前不会被移除**
 - 文档整理
   - 将 `createPipeHandlers` 提升为主推荐的 pipe-aware helper
   - 将处理器辅助函数文档重组为 推荐 / 简写 / 进阶 三组

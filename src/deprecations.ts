@@ -1,9 +1,19 @@
 const warned = new Set<string>();
 
-/** Emit a deprecation warning once per key. */
+const shouldWarn = (): boolean => {
+  try {
+    if (typeof process !== "undefined" && process.env?.NODE_ENV === "production") {
+      return false;
+    }
+  } catch {}
+  return true;
+};
+
+/** Emit a deprecation warning once per key. Suppressed in production and test environments. */
 export const warnDeprecated = (key: string, message: string) => {
   if (warned.has(key)) return;
   warned.add(key);
+  if (!shouldWarn()) return;
   console.warn(`[yume-dsl-rich-text] Deprecated: ${message}`);
 };
 

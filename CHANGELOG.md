@@ -20,9 +20,11 @@
   - Internal calls from `parseRichText` are suppressed via `withInternalCaller` — no warning noise during normal parsing
   - `parseStructural()` warns specifically when it detects ambient `withSyntax()` / `withTagNameConfig()` state that
     differs from defaults; normal calls without ambient wrapping do not warn
+  - Warnings are suppressed when `NODE_ENV=production`
 - Deprecated exports formally documented in a new **Deprecated API** section:
   `createPipeBlockHandlers`, `createPipeRawHandlers`, `createPassthroughTags`, `withSyntax`, `getSyntax`,
   `withTagNameConfig`, `withCreateId`, `resetTokenIdSeed`, `ParseOptions.mode`
+- Deprecated APIs will **not** be removed before September 2026
 - Documentation refresh
   - Promoted `createPipeHandlers` as the main pipe-aware helper
   - Reorganized handler helper docs into recommended / shorthand / advanced sections
