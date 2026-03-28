@@ -32,7 +32,13 @@ export {
 export { unescapeInline, readEscapedSequence } from "./escape.js";
 export { createToken, resetTokenIdSeed } from "./createToken.js";
 
-// ── Context ──
+// ── Legacy context (compat) ──
+// These module-level context wrappers are still used in two places:
+// 1. parseRichText wraps with withSyntax/withTagNameConfig/withCreateId so that
+//    user handlers calling public utilities without ctx still get correct values.
+// 2. parseStructural reads getSyntax()/getTagNameConfig() at entry to capture
+//    ambient context when no explicit overrides are provided.
+// Will be removed in a future major version — migrate to DslContext.
 export { withSyntax, getSyntax } from "./syntax.js";
 export { withTagNameConfig } from "./chars.js";
 

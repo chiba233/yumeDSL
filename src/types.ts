@@ -78,9 +78,15 @@ export interface TagNameConfig {
 /**
  * Lightweight context for public utility functions.
  *
- * Currently optional — when omitted, utilities fall back to module-level
- * defaults set by `withSyntax` / `withCreateId`. Will become **required**
- * in a future major version.
+ * Currently optional on all public APIs. When omitted:
+ * - Builder utilities (`parsePipeArgs`, `splitTokensByPipe`, etc.) fall back to `getSyntax()`
+ * - Escape utilities (`unescapeInline`, `readEscapedSequence`, etc.) also accept bare `SyntaxConfig`
+ *   for internal scanner use, falling back to `getSyntax()` when omitted entirely
+ * - `createToken` also accepts bare `CreateId` for internal context threading,
+ *   falling back to `activeCreateId` / `tokenIdSeed` when omitted entirely
+ *
+ * Will become **required** in a future major version — adopt `DslContext` now
+ * to prepare for the migration.
  */
 export interface DslContext {
   syntax: SyntaxConfig;
