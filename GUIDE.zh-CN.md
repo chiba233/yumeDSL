@@ -449,21 +449,48 @@ const tokens = parseRichText("@@bold(hello)@@", {
 
 ### 默认语法
 
+默认符号及其在语法中的位置：
+
+```text
+Inline:   $$tag(content)$$
+               ↑         ↑
+          tagOpen(    endTag)$$
+
+带参数：   $$tag(arg | content)$$
+                    ↑
+               tagDivider |
+
+Raw:      $$tag(arg)%
+                   ↑  raw 内容（不递归解析）
+              rawOpen)%
+          %end$$
+          ↑
+          rawClose
+
+Block:    $$tag(arg)*
+                   ↑  block 内容（递归解析）
+             blockOpen)*
+          *end$$
+          ↑
+          blockClose
+
+转义：     \)  \\  \|
+          ↑
+          escapeChar \
+```
+
 ```ts
 import {DEFAULT_SYNTAX} from "yume-dsl-rich-text";
-
-// {
-//   tagPrefix: "$$",
-//   tagOpen: "(",
-//   tagClose: ")",
-//   tagDivider: "|",
-//   endTag: ")$$",
-//   rawOpen: ")%",
-//   blockOpen: ")*",
-//   blockClose: "*end$$",
-//   rawClose: "%end$$",
-//   escapeChar: "\\",
-// }
+// DEFAULT_SYNTAX.tagPrefix   === "$$"        // 标签起始标记
+// DEFAULT_SYNTAX.tagOpen     === "("         // 打开标签参数/内容
+// DEFAULT_SYNTAX.tagClose    === ")"         // 单独不使用；作为下面复合符号的组成部分
+// DEFAULT_SYNTAX.tagDivider  === "|"         // 在 (…) 内分隔参数
+// DEFAULT_SYNTAX.endTag      === ")$$"       // 关闭 inline 标签
+// DEFAULT_SYNTAX.rawOpen     === ")%"        // 从参数切换到 raw 内容
+// DEFAULT_SYNTAX.blockOpen   === ")*"        // 从参数切换到 block 内容
+// DEFAULT_SYNTAX.rawClose    === "%end$$"    // 关闭 raw 标签（必须独占一行）
+// DEFAULT_SYNTAX.blockClose  === "*end$$"    // 关闭 block 标签（必须独占一行）
+// DEFAULT_SYNTAX.escapeChar  === "\\"        // 将下一个语法符号按字面量转义
 ```
 
 > 注意：

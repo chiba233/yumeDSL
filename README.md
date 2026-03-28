@@ -461,21 +461,48 @@ const tokens = parseRichText("@@bold(hello)@@", {
 
 ### Default Syntax
 
+The default tokens and where they appear:
+
+```text
+Inline:   $$tag(content)$$
+               ↑         ↑
+          tagOpen(    endTag)$$
+
+With arg: $$tag(arg | content)$$
+                    ↑
+               tagDivider |
+
+Raw:      $$tag(arg)%
+                   ↑  raw content (no parsing)
+              rawOpen)%
+          %end$$
+          ↑
+          rawClose
+
+Block:    $$tag(arg)*
+                   ↑  block content (recursive parsing)
+             blockOpen)*
+          *end$$
+          ↑
+          blockClose
+
+Escape:   \)  \\  \|
+          ↑
+          escapeChar \
+```
+
 ```ts
 import {DEFAULT_SYNTAX} from "yume-dsl-rich-text";
-
-// {
-//   tagPrefix: "$$",
-//   tagOpen: "(",
-//   tagClose: ")",
-//   tagDivider: "|",
-//   endTag: ")$$",
-//   rawOpen: ")%",
-//   blockOpen: ")*",
-//   blockClose: "*end$$",
-//   rawClose: "%end$$",
-//   escapeChar: "\\",
-// }
+// DEFAULT_SYNTAX.tagPrefix   === "$$"        // tag start marker
+// DEFAULT_SYNTAX.tagOpen     === "("         // opens the tag argument/content
+// DEFAULT_SYNTAX.tagClose    === ")"         // unused standalone; part of compound tokens below
+// DEFAULT_SYNTAX.tagDivider  === "|"         // separates params inside (…)
+// DEFAULT_SYNTAX.endTag      === ")$$"       // closes an inline tag
+// DEFAULT_SYNTAX.rawOpen     === ")%"        // switches from args to raw content
+// DEFAULT_SYNTAX.blockOpen   === ")*"        // switches from args to block content
+// DEFAULT_SYNTAX.rawClose    === "%end$$"    // closes a raw tag (must be on its own line)
+// DEFAULT_SYNTAX.blockClose  === "*end$$"    // closes a block tag (must be on its own line)
+// DEFAULT_SYNTAX.escapeChar  === "\\"        // escapes the next syntax token literally
 ```
 
 > Warning:
