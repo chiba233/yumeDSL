@@ -501,17 +501,16 @@ import {DEFAULT_SYNTAX} from "yume-dsl-rich-text";
 > 语法符号之间必须保持可区分。
 > 如果两个符号配置为相同的字符串，行为未定义。
 
-**符号之间的联动关系** — 部分符号包含其他符号。修改其中一个时，通常需要同步更新相关符号以保持一致：
+**符号的匹配方式** — 解析器对每个符号独立匹配（`text.startsWith(token, pos)`），符号之间没有自动推导：
+`createSyntax` 只做纯 shallow merge。因此你可以自由覆盖任意子集，但需要自己确保符号之间可区分且视觉上一致。
 
-| 修改…             | 通常还需要修改…                                              | 原因                                                       |
-|-------------------|------------------------------------------------------------|-----------------------------------------------------------|
-| `tagPrefix`       | `endTag`                                                   | `endTag` 默认为 `)` + `tagPrefix`                          |
-| `tagOpen`         | `tagClose`                                                 | `tagClose` 是配对的关闭符，用于深度追踪                       |
-| `tagClose`        | `endTag`、`rawOpen`、`blockOpen`                            | 它们都以 `tagClose` 开头（`)$$`、`)%`、`)*`）                |
-| `rawClose`        | —                                                          | 独立（整行符号）                                             |
-| `blockClose`      | —                                                          | 独立（整行符号）                                             |
-| `escapeChar`      | —                                                          | 独立                                                       |
-| `tagDivider`      | —                                                          | 独立                                                       |
+**实际强耦合：`tagOpen` ↔ `tagClose`** — 这是解析器中唯一一对硬耦合的符号。
+`findTagArgClose` 通过计数 `tagOpen` 和 `tagClose` 的出现次数来追踪嵌套深度。改了其中一个必须同时改另一个，
+否则括号匹配会出错。
+
+其余符号（`endTag`、`rawOpen`、`blockOpen`、`rawClose`、`blockClose`、`tagDivider`、`escapeChar`）
+均作为独立字面串匹配。它们的默认值碰巧共享字符（如 `endTag` = `)$$` 的 `)` 与 `tagClose` 相同），
+但解析器不会从一个推导出另一个——改 `tagPrefix` **不会**自动更新 `endTag`。需要语法看起来合理时，请一起覆盖。
 
 ### createSyntax
 
@@ -1575,6 +1574,11 @@ tagMap.date = DateText;
 ---
 
 ## 更新日志
+
+### 1.0.1
+
+- 提升文档可读性——精简首页信息密度、新增推荐阅读顺序、新增 API 选型建议、新增生态组合指南、
+  重写 Default Syntax 章节（ASCII 语法示意图 + 符号联动说明）
 
 ### 1.0.0
 

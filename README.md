@@ -513,18 +513,19 @@ import {DEFAULT_SYNTAX} from "yume-dsl-rich-text";
 > Syntax tokens must remain distinguishable from one another.
 > If two tokens are configured to the same string, behavior is undefined.
 
-**Dependency between tokens** — some tokens contain others. When you override one, you usually need to update the
-related tokens to stay consistent:
+**How tokens are matched** — each token is matched independently by the parser (`text.startsWith(token, pos)`).
+There is no automatic derivation between tokens: `createSyntax` does a plain shallow merge onto defaults.
+This means you can override any subset freely, but you are responsible for keeping them distinguishable
+and visually coherent.
 
-| If you change…   | You probably also need to change…                          | Why                                                       |
-|-------------------|------------------------------------------------------------|-----------------------------------------------------------|
-| `tagPrefix`       | `endTag`                                                   | `endTag` defaults to `)` + `tagPrefix`                    |
-| `tagOpen`         | `tagClose`                                                 | `tagClose` is the matching closer for depth tracking       |
-| `tagClose`        | `endTag`, `rawOpen`, `blockOpen`                           | These all start with `tagClose` (`)"$$"`, `)%`, `)*`)     |
-| `rawClose`        | —                                                          | Independent (whole-line token)                             |
-| `blockClose`      | —                                                          | Independent (whole-line token)                             |
-| `escapeChar`      | —                                                          | Independent                                               |
-| `tagDivider`      | —                                                          | Independent                                               |
+**Practical dependency: `tagOpen` ↔ `tagClose`** — these are the only pair with a hard coupling in the parser.
+`findTagArgClose` tracks nested depth by counting `tagOpen` vs `tagClose` occurrences. If you change one, you
+must change the other to keep paren-matching correct.
+
+All other tokens (`endTag`, `rawOpen`, `blockOpen`, `rawClose`, `blockClose`, `tagDivider`, `escapeChar`) are
+matched as independent literal strings. Their default values happen to share characters (e.g. `endTag` = `)$$`
+starts with the same `)` as `tagClose`), but the parser does not derive one from another — so changing
+`tagPrefix` does **not** auto-update `endTag`. Override them together when you want the syntax to stay logical.
 
 ### createSyntax
 
@@ -1611,6 +1612,12 @@ tagMap.date = DateText;
 ---
 
 ## Changelog
+
+### 1.0.1
+
+- Improve documentation readability — reduce info density in the opening sections, add recommended reading order,
+  add decision guidance ("which API to use"), add ecosystem combination guide, rewrite Default Syntax section with
+  ASCII diagrams and token dependency notes
 
 ### 1.0.0
 
