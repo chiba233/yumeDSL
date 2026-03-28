@@ -261,8 +261,8 @@ const dsl = createParser({
         ...createSimpleInlineHandlers(["bold", "italic", "underline"]),
 
         link: {
-            inline: (tokens) => {
-                const args = parsePipeArgs(tokens);
+            inline: (tokens, ctx) => {
+                const args = parsePipeArgs(tokens, ctx);
                 return {
                     type: "link",
                     url: args.text(0),
@@ -1048,14 +1048,20 @@ function render(token: MyToken): string {
 
 ```ts
 interface TagHandler {
-    inline?: (tokens: TextToken[]) => TokenDraft;
-    raw?: (arg: string | undefined, content: string) => TokenDraft;
-    block?: (arg: string | undefined, content: TextToken[]) => TokenDraft;
+    inline?: (tokens: TextToken[], ctx?: DslContext) => TokenDraft;
+    raw?: (arg: string | undefined, content: string, ctx?: DslContext) => TokenDraft;
+    block?: (arg: string | undefined, content: TextToken[], ctx?: DslContext) => TokenDraft;
 }
 ```
 
 你只需实现标签支持的形式。
 不支持的形式会优雅降级，而非中断解析。
+
+`ctx` 为了向后兼容仍是可选的。新写法建议接收它，并在调用 `parsePipeArgs`、`parsePipeTextList`、
+`materializeTextTokens`、`unescapeInline`、`createToken` 等公开工具函数时继续透传。
+
+新代码请统一传 `DslContext`。
+旧代码可以不传，这条路径仅为向后兼容保留。
 
 ### 示例：完整处理器集
 
@@ -1074,8 +1080,8 @@ const dsl = createParser({
 
         // 自定义：管道参数 → 额外字段
         link: {
-            inline: (tokens) => {
-                const args = parsePipeArgs(tokens);
+            inline: (tokens, ctx) => {
+                const args = parsePipeArgs(tokens, ctx);
                 return {
                     type: "link",
                     url: args.text(0),
@@ -1089,7 +1095,7 @@ const dsl = createParser({
 
         // 自定义：raw 形式 → 内容按原样保留
         code: {
-            raw: (arg, content) => ({
+            raw: (arg, content, _ctx) => ({
                 type: "code-block",
                 lang: arg ?? "text",
                 value: content,
@@ -1098,15 +1104,15 @@ const dsl = createParser({
 
         // 自定义：同时支持 inline 和 block 形式
         info: {
-            inline: (tokens) => {
-                const args = parsePipeArgs(tokens);
+            inline: (tokens, ctx) => {
+                const args = parsePipeArgs(tokens, ctx);
                 return {
                     type: "info",
                     title: extractText(args.materializedTokens(0)),
                     value: args.materializedTailTokens(1),
                 };
             },
-            block: (arg, content) => ({
+            block: (arg, content, _ctx) => ({
                 type: "info",
                 title: arg || "Info",
                 value: content,
@@ -1210,6 +1216,13 @@ interface DslContext {
 | `syntax`   | 当前 `SyntaxConfig` — 控制转义字符、分隔符等               |
 | `createId` | 可选的 token id 生成器 — `createToken` 构建 token 时使用 |
 
+`ctx` 到底是什么：
+
+- 在 `TagHandler` 内，`ctx` 是解析器为当前 parse 传入的第二/第三个参数。
+- 它携带了这次 parse 的活动 `syntax` 和 token id 生成器。
+- handler 内调用公开工具函数时，应继续把同一个 `ctx` 透传下去，这样所有工具都会沿用同一套 parse 级配置。
+- 在解析器外部，你也可以手动构造 `DslContext` 并显式传入。
+
 **当前行为：** 大部分工具函数当前接受 `ctx?: DslContext | SyntaxConfig`。
 
 - 传 `DslContext`：同时显式提供 `syntax` 和 `createId`
@@ -1217,7 +1230,25 @@ interface DslContext {
 - 省略 `ctx`：从 `withSyntax` / `withCreateId` 设置的模块级状态读取
 - `createToken(draft, position?, ctx?)` 还兼容直接传裸 `CreateId` 函数，作为向后兼容简写
 
+新代码请统一传 `DslContext`。
+旧代码可以不传，这条路径仅为向后兼容保留。
+
 在解析期间的 handler 回调中，这种省略写法是正确的，因为 `parseRichText` 用这些闭包包裹了整个解析过程。
+
+```ts
+// handler 内：复用解析器传进来的 parse-local ctx
+link: {
+    inline: (tokens, ctx) => {
+        const args = parsePipeArgs(tokens, ctx);
+        return {type: "link", url: args.text(0), value: args.materializedTailTokens(1)};
+    },
+}
+
+// 解析器外：手动构造 DslContext
+const ctx: DslContext = {syntax: createSyntax(), createId: (draft) => `demo-${draft.type}`};
+const args = parsePipeTextArgs("ts | Demo", ctx);
+const token = createToken({type: "text", value: "hello"}, undefined, ctx);
+```
 
 **未来 major 版本：** 工具函数会逐步收紧到显式 `DslContext`。建议现在开始在 handler 回调之外（如独立脚本或测试中）调用工具函数时传入
 `DslContext`。handler 内部的隐式回退在 major 版本变更前将继续工作。
@@ -1525,22 +1556,22 @@ import {
 } from "yume-dsl-rich-text";
 
 const titledHandler = (type: string, defaultTitle: string): TagHandler => ({
-    inline: (tokens): TokenDraft => {
-        const args = parsePipeArgs(tokens);
+    inline: (tokens, ctx): TokenDraft => {
+        const args = parsePipeArgs(tokens, ctx);
         if (args.parts.length <= 1) {
             return {type, title: defaultTitle, value: args.materializedTokens(0)};
         }
         return {type, title: args.text(0), value: args.materializedTailTokens(1)};
     },
-    block: (arg, tokens): TokenDraft => ({
+    block: (arg, tokens, _ctx): TokenDraft => ({
         type,
         title: arg || defaultTitle,
         value: tokens,
     }),
-    raw: (arg, content): TokenDraft => ({
+    raw: (arg, content, ctx): TokenDraft => ({
         type,
         title: arg || defaultTitle,
-        value: [createToken({type: "text", value: content})],
+        value: [createToken({type: "text", value: content}, undefined, ctx)],
     }),
 });
 
@@ -1553,8 +1584,8 @@ export const dsl = createParser({
         ]),
 
         link: {
-            inline: (tokens): TokenDraft => {
-                const args = parsePipeArgs(tokens);
+            inline: (tokens, ctx): TokenDraft => {
+                const args = parsePipeArgs(tokens, ctx);
                 const url = args.text(0);
                 const display =
                     args.parts.length > 1
@@ -1570,8 +1601,8 @@ export const dsl = createParser({
         collapse: {block: collapseBase.block, raw: collapseBase.raw},
 
         "raw-code": {
-            raw: (arg, content): TokenDraft => {
-                const args = parsePipeTextArgs(arg ?? "");
+            raw: (arg, content, ctx): TokenDraft => {
+                const args = parsePipeTextArgs(arg ?? "", ctx);
                 return {
                     type: "raw-code",
                     codeLang: args.text(0),

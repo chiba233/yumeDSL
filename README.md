@@ -268,8 +268,8 @@ const dsl = createParser({
         ...createSimpleInlineHandlers(["bold", "italic", "underline"]),
 
         link: {
-            inline: (tokens) => {
-                const args = parsePipeArgs(tokens);
+            inline: (tokens, ctx) => {
+                const args = parsePipeArgs(tokens, ctx);
                 return {
                     type: "link",
                     url: args.text(0),
@@ -1080,14 +1080,21 @@ Use [handler helpers](#handler-helpers) for simple wrapper tags. Write custom ha
 
 ```ts
 interface TagHandler {
-    inline?: (tokens: TextToken[]) => TokenDraft;
-    raw?: (arg: string | undefined, content: string) => TokenDraft;
-    block?: (arg: string | undefined, content: TextToken[]) => TokenDraft;
+    inline?: (tokens: TextToken[], ctx?: DslContext) => TokenDraft;
+    raw?: (arg: string | undefined, content: string, ctx?: DslContext) => TokenDraft;
+    block?: (arg: string | undefined, content: TextToken[], ctx?: DslContext) => TokenDraft;
 }
 ```
 
 You only need to implement the forms your tag supports.
 Unsupported forms fall back gracefully instead of breaking the parse.
+
+`ctx` is optional for backward compatibility. New handlers should accept it and pass it through when calling public
+utility functions such as `parsePipeArgs`, `parsePipeTextList`, `materializeTextTokens`, `unescapeInline`, or
+`createToken`.
+
+New code should consistently pass `DslContext`.
+Old code may omit it; that path is retained only for backward compatibility.
 
 ### Example: full handler set
 
@@ -1106,8 +1113,8 @@ const dsl = createParser({
 
         // Custom: pipe parameters → extra fields
         link: {
-            inline: (tokens) => {
-                const args = parsePipeArgs(tokens);
+            inline: (tokens, ctx) => {
+                const args = parsePipeArgs(tokens, ctx);
                 return {
                     type: "link",
                     url: args.text(0),
@@ -1121,7 +1128,7 @@ const dsl = createParser({
 
         // Custom: raw form → preserves content as-is
         code: {
-            raw: (arg, content) => ({
+            raw: (arg, content, _ctx) => ({
                 type: "code-block",
                 lang: arg ?? "text",
                 value: content,
@@ -1130,15 +1137,15 @@ const dsl = createParser({
 
         // Custom: supports both inline and block forms
         info: {
-            inline: (tokens) => {
-                const args = parsePipeArgs(tokens);
+            inline: (tokens, ctx) => {
+                const args = parsePipeArgs(tokens, ctx);
                 return {
                     type: "info",
                     title: extractText(args.materializedTokens(0)),
                     value: args.materializedTailTokens(1),
                 };
             },
-            block: (arg, content) => ({
+            block: (arg, content, _ctx) => ({
                 type: "info",
                 title: arg || "Info",
                 value: content,
@@ -1247,6 +1254,13 @@ interface DslContext {
 | `syntax`   | The active `SyntaxConfig` — controls escape characters, delimiters, etc. |
 | `createId` | Optional token id generator — used by `createToken` when building tokens |
 
+What `ctx` actually is:
+
+- Inside a `TagHandler`, `ctx` is the second/third argument passed in by the parser for the current parse.
+- It carries the active syntax and token-id generator for that parse.
+- When a handler calls public utilities, pass the same `ctx` through so those utilities stay on the same parse-local configuration.
+- Outside parsing, you can construct `DslContext` yourself and pass it explicitly.
+
 **Current behavior:** most utility functions currently accept `ctx?: DslContext | SyntaxConfig`.
 
 - Pass `DslContext` when you want both `syntax` and `createId`.
@@ -1254,8 +1268,26 @@ interface DslContext {
 - Omit `ctx` to read from module-level state set by `withSyntax` / `withCreateId`.
 - `createToken(draft, position?, ctx?)` also accepts a bare `CreateId` function as a backward-compatible shorthand.
 
+New code should consistently pass `DslContext`.
+Old code may omit it; that path is retained only for backward compatibility.
+
 This works correctly inside handler callbacks during parsing, because `parseRichText` wraps the entire parse in these
 context closures.
+
+```ts
+// Inside a handler: reuse the parse-local ctx passed in by the parser
+link: {
+    inline: (tokens, ctx) => {
+        const args = parsePipeArgs(tokens, ctx);
+        return {type: "link", url: args.text(0), value: args.materializedTailTokens(1)};
+    },
+}
+
+// Outside parsing: construct DslContext explicitly
+const ctx: DslContext = {syntax: createSyntax(), createId: (draft) => `demo-${draft.type}`};
+const args = parsePipeTextArgs("ts | Demo", ctx);
+const token = createToken({type: "text", value: "hello"}, undefined, ctx);
+```
 
 **Future major version:** the utility context will move toward explicit `DslContext`. Adopt it now when calling
 utilities outside of handler callbacks (e.g. in standalone scripts or tests). Inside handlers called during parsing, the
@@ -1572,22 +1604,22 @@ import {
 } from "yume-dsl-rich-text";
 
 const titledHandler = (type: string, defaultTitle: string): TagHandler => ({
-    inline: (tokens): TokenDraft => {
-        const args = parsePipeArgs(tokens);
+    inline: (tokens, ctx): TokenDraft => {
+        const args = parsePipeArgs(tokens, ctx);
         if (args.parts.length <= 1) {
             return {type, title: defaultTitle, value: args.materializedTokens(0)};
         }
         return {type, title: args.text(0), value: args.materializedTailTokens(1)};
     },
-    block: (arg, tokens): TokenDraft => ({
+    block: (arg, tokens, _ctx): TokenDraft => ({
         type,
         title: arg || defaultTitle,
         value: tokens,
     }),
-    raw: (arg, content): TokenDraft => ({
+    raw: (arg, content, ctx): TokenDraft => ({
         type,
         title: arg || defaultTitle,
-        value: [createToken({type: "text", value: content})],
+        value: [createToken({type: "text", value: content}, undefined, ctx)],
     }),
 });
 
@@ -1600,8 +1632,8 @@ export const dsl = createParser({
         ]),
 
         link: {
-            inline: (tokens): TokenDraft => {
-                const args = parsePipeArgs(tokens);
+            inline: (tokens, ctx): TokenDraft => {
+                const args = parsePipeArgs(tokens, ctx);
                 const url = args.text(0);
                 const display =
                     args.parts.length > 1
@@ -1617,8 +1649,8 @@ export const dsl = createParser({
         collapse: {block: collapseBase.block, raw: collapseBase.raw},
 
         "raw-code": {
-            raw: (arg, content): TokenDraft => {
-                const args = parsePipeTextArgs(arg ?? "");
+            raw: (arg, content, ctx): TokenDraft => {
+                const args = parsePipeTextArgs(arg ?? "", ctx);
                 return {
                     type: "raw-code",
                     codeLang: args.text(0),
