@@ -1540,6 +1540,8 @@ tagMap.date = DateText;
   语法高亮场景请使用 `parseStructural`
 - 将 `parseStructural` 重新定位为与 `parseRichText` 共享同一套语言配置的一等结构化解析 API，而非高亮辅助工具
 - 将自定义语法提升为核心特性——更新了介绍、设计理念、特性和适用场景章节
+- 取消导出 `supportsInlineForm` 和 `filterHandlersByForms`（仅内部使用，0.1.18–0.1.19 changelog 中误称已导出，
+  实际从未从 `index.ts` 重导出）
 
 ### 0.1.20
 

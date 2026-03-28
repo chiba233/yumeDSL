@@ -1576,6 +1576,8 @@ tagMap.date = DateText;
 - Reposition `parseStructural` as a first-class structural parse API sharing the same language configuration
   as `parseRichText`, not a highlighting helper
 - Elevate Custom Syntax as a core feature — updated intro, design philosophy, features, and when-to-use sections
+- Remove `supportsInlineForm` and `filterHandlersByForms` from public exports (internal-only, erroneously listed as
+  exported in 0.1.18–0.1.19 changelog but never actually re-exported from `index.ts`)
 
 ### 0.1.20
 
