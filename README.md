@@ -64,10 +64,13 @@ major versions with explicit migration notes.
     - [createSyntax](#createsyntax-low-level)
 - [Custom Tag Name Characters](#custom-tag-name-characters)
 - [Handler Helpers](#handler-helpers)
+    - [createPipeHandlers](#createpipehandlersdefinitions)
     - [createSimpleInlineHandlers](#createsimpleinlinehandlersnames)
-    - [declareMultilineTags](#declaremultilinetagsnames)
     - [createSimpleBlockHandlers](#createsimpleblockhandlersnames)
     - [createSimpleRawHandlers](#createsimplerawhandlersnames)
+    - [createPipeBlockHandlers](#createpipeblockhandlersnames)
+    - [createPipeRawHandlers](#createpiperawhandlersnames)
+    - [declareMultilineTags](#declaremultilinetagsnames)
     - [createPassthroughTags (advanced)](#createpassthroughtagsnames-advanced)
 - [ParseOptions](#parseoptions)
 - [Token Structure](#token-structure)
@@ -660,9 +663,68 @@ parseRichText("$$1tag(hello)$$", {
 
 ## Handler Helpers
 
-Most tags in a typical project are simple wrappers — bold, italic, underline, etc. — that don't need custom logic.
-Writing a full `{ inline: (tokens) => ({ type: "bold", value: ... }) }` for each one is tedious. Handler helpers let you
-register them in bulk.
+Handler helpers let you register tags in bulk without writing repetitive handler objects.
+
+### `createPipeHandlers(definitions)`
+
+The **recommended handler helper** for tags that need pipe parameters, multiple forms, or any custom logic beyond simple
+wrapping. Supports any combination of `inline`, `raw`, and `block` per tag in a single definition object.
+
+Each handler receives pre-parsed `PipeArgs` — no manual `parsePipeArgs` / `parsePipeTextArgs` boilerplate needed.
+`raw` and `block` handlers also receive the original `rawArg` string for cases where you need the unparsed value.
+
+```ts
+import {createParser, createPipeHandlers, createSimpleInlineHandlers} from "yume-dsl-rich-text";
+
+const dsl = createParser({
+  handlers: {
+    // Simple tags — use createSimpleInlineHandlers
+    ...createSimpleInlineHandlers(["bold", "italic", "underline"]),
+
+    // Tags with pipe parameters or multiple forms — use createPipeHandlers
+    ...createPipeHandlers({
+      link: {
+        inline: (args) => ({
+          type: "link",
+          url: args.text(0),
+          value: args.materializedTailTokens(1),
+        }),
+      },
+      info: {
+        inline: (args) => ({
+          type: "info",
+          title: args.text(0, "Info"),
+          value: args.materializedTailTokens(1),
+        }),
+        block: (args, content, _ctx, rawArg) => ({
+          type: "info",
+          title: rawArg || "Info",
+          value: content,
+        }),
+      },
+      code: {
+        raw: (args, content) => ({
+          type: "raw-code",
+          lang: args.text(0, "text"),
+          title: args.text(1, "Code:"),
+          value: content,
+        }),
+      },
+    }),
+  },
+});
+```
+
+**When to use which helper:**
+
+| Scenario                                  | Use                          |
+|-------------------------------------------|------------------------------|
+| Simple inline (bold, italic, etc.)        | `createSimpleInlineHandlers` |
+| Simple block (info, warning, etc.)        | `createSimpleBlockHandlers`  |
+| Simple raw (code, math, etc.)             | `createSimpleRawHandlers`    |
+| Pipe parameters (`$$link(url \| text)$$`) | `createPipeHandlers`         |
+| Multiple forms (inline + block + raw)     | `createPipeHandlers`         |
+| Raw/block tags with structured args       | `createPipeHandlers`         |
 
 ### `createSimpleInlineHandlers(names)`
 
@@ -712,52 +774,6 @@ createSimpleInlineHandlers(["bold", "italic", "underline"])
 
 ```ts
 function createSimpleInlineHandlers(names: readonly string[]): Record<string, TagHandler>;
-```
-
-### `declareMultilineTags(names)`
-
-Declares which already-registered tags are multiline types. Returns a `BlockTagInput[]` to pass as
-`ParseOptions.blockTags`.
-
-This does **not** register tags or create handlers — it only tells the parser which tags need line-break normalization (
-stripping the leading `\n` after `)*` / `)%` openers and the trailing `\n` before `*end$$` / `%end$$` closers).
-
-Each entry is either a plain tag name (normalization for **both** raw and block forms — backward compatible) or an
-object
-with a `forms` array to restrict normalization to specific multiline forms.
-
-```ts
-import {createParser, createSimpleInlineHandlers, declareMultilineTags} from "yume-dsl-rich-text";
-
-// Basic usage — all multiline forms normalized (backward compatible)
-const dsl = createParser({
-    handlers: {
-        ...createSimpleInlineHandlers(["bold", "italic"]),
-        info: { /* custom handler registered separately */},
-        warning: { /* custom handler registered separately */},
-    },
-    blockTags: declareMultilineTags(["info", "warning"]),
-});
-
-// Granular — restrict normalization to specific forms
-const dsl2 = createParser({
-    handlers: { /* ... */},
-    blockTags: declareMultilineTags([
-        "info",                              // both raw & block normalized
-        {tag: "code", forms: ["raw"]},     // only raw form normalized
-        {tag: "note", forms: ["block"]},   // only block form normalized
-    ]),
-});
-```
-
-> **Note:** If you omit `blockTags`, the parser auto-derives it from handlers that have `raw` or `block` methods.
-> Use `declareMultilineTags` when you need explicit control over which tags receive line-break normalization.
-
-```ts
-type MultilineForm = "raw" | "block";
-type BlockTagInput = string | { tag: string; forms?: readonly MultilineForm[] };
-
-function declareMultilineTags(names: readonly BlockTagInput[]): BlockTagInput[];
 ```
 
 ### `createSimpleBlockHandlers(names)`
@@ -824,37 +840,6 @@ const x = 1;
 function createSimpleRawHandlers(names: readonly string[]): Record<string, TagHandler>;
 ```
 
-### `createPipeHandlers(definitions)`
-
-Creates handlers whose inline tokens or `arg` strings are pre-parsed as `PipeArgs`.
-
-Use this when a tag may support any combination of `inline`, `raw`, and `block`, and you want one unified helper
-instead of separate pipe helpers per form.
-
-```ts
-import {createParser, createPipeHandlers} from "yume-dsl-rich-text";
-
-const dsl = createParser({
-    handlers: createPipeHandlers({
-        link: {
-            inline: (args) => ({
-                type: "link",
-                url: args.text(0),
-                value: args.materializedTailTokens(1),
-            }),
-        },
-        panel: {
-            block: (args, content, _ctx, rawArg) => ({
-                type: "panel",
-                arg: rawArg,
-                args: args.parts.map((_, i) => args.text(i)),
-                value: content,
-            }),
-        },
-    }),
-});
-```
-
 ### `createPipeBlockHandlers(names)`
 
 Thin shorthand for block-only `createPipeHandlers(...)`.
@@ -901,6 +886,51 @@ const dsl = createParser({
 
 ```ts
 function createPipeRawHandlers(names: readonly string[]): Record<string, TagHandler>;
+```
+
+### `declareMultilineTags(names)`
+
+Declares which already-registered tags are multiline types. Returns a `BlockTagInput[]` to pass as
+`ParseOptions.blockTags`.
+
+This does **not** register tags or create handlers — it only tells the parser which tags need line-break normalization (
+stripping the leading `\n` after `)*` / `)%` openers and the trailing `\n` before `*end$$` / `%end$$` closers).
+
+Each entry is either a plain tag name (normalization for **both** raw and block forms — backward compatible) or an
+object with a `forms` array to restrict normalization to specific multiline forms.
+
+```ts
+import {createParser, createSimpleInlineHandlers, declareMultilineTags} from "yume-dsl-rich-text";
+
+// Basic usage — all multiline forms normalized (backward compatible)
+const dsl = createParser({
+    handlers: {
+        ...createSimpleInlineHandlers(["bold", "italic"]),
+        info: { /* custom handler registered separately */},
+        warning: { /* custom handler registered separately */},
+    },
+    blockTags: declareMultilineTags(["info", "warning"]),
+});
+
+// Granular — restrict normalization to specific forms
+const dsl2 = createParser({
+    handlers: { /* ... */},
+    blockTags: declareMultilineTags([
+        "info",                              // both raw & block normalized
+        {tag: "code", forms: ["raw"]},     // only raw form normalized
+        {tag: "note", forms: ["block"]},   // only block form normalized
+    ]),
+});
+```
+
+> **Note:** If you omit `blockTags`, the parser auto-derives it from handlers that have `raw` or `block` methods.
+> Use `declareMultilineTags` when you need explicit control over which tags receive line-break normalization.
+
+```ts
+type MultilineForm = "raw" | "block";
+type BlockTagInput = string | { tag: string; forms?: readonly MultilineForm[] };
+
+function declareMultilineTags(names: readonly BlockTagInput[]): BlockTagInput[];
 ```
 
 ### `createPassthroughTags(names)` (advanced)
@@ -1231,20 +1261,20 @@ Convenience functions for creating handlers in bulk — most projects only need 
 
 Recommended
 
-| Export                              | Description                                             |
-|-------------------------------------|---------------------------------------------------------|
-| `createSimpleInlineHandlers(names)` | Create inline handlers for simple tags in bulk          |
-| `createSimpleBlockHandlers(names)`  | Create block-form handlers for simple tags in bulk      |
-| `createSimpleRawHandlers(names)`    | Create raw handlers for simple tags in bulk             |
-| `createPipeHandlers(definitions)`   | Recommended pipe-aware helper for inline/raw/block tags |
+| Export                              | Description                                                        |
+|-------------------------------------|--------------------------------------------------------------------|
+| `createPipeHandlers(definitions)`   | Pipe-aware handler builder for any combination of inline/raw/block |
+| `createSimpleInlineHandlers(names)` | Create inline handlers for simple tags in bulk                     |
+| `createSimpleBlockHandlers(names)`  | Create block-form handlers for simple tags in bulk                 |
+| `createSimpleRawHandlers(names)`    | Create raw handlers for simple tags in bulk                        |
 
 Shorthand
 
-| Export                           | Description                                         |
-|----------------------------------|-----------------------------------------------------|
-| `createPipeBlockHandlers(names)` | Block-only shorthand for `createPipeHandlers(...)`  |
-| `createPipeRawHandlers(names)`   | Raw-only shorthand for `createPipeHandlers(...)`    |
-| `declareMultilineTags(names)`    | Declare which tags need multiline normalization     |
+| Export                           | Description                                        |
+|----------------------------------|----------------------------------------------------|
+| `createPipeBlockHandlers(names)` | Block-only shorthand for `createPipeHandlers(...)` |
+| `createPipeRawHandlers(names)`   | Raw-only shorthand for `createPipeHandlers(...)`   |
+| `declareMultilineTags(names)`    | Declare which tags need multiline normalization    |
 
 Advanced
 
