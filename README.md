@@ -17,14 +17,15 @@ Shiki code-highlighting plugin · legitimate plugins · intentional malformed ma
 [![Contributing](https://img.shields.io/badge/Contributing-guide-blue.svg)](./CONTRIBUTING.md)
 [![Security](https://img.shields.io/badge/Security-policy-red.svg)](./SECURITY.md)
 
-A zero-dependency, recursive rich-text DSL parser with pluggable tag handlers, fully configurable syntax tokens,
-and customizable tag-name rules. Can be embedded inside Markdown or any other markup as a secondary syntax layer.
+Zero-dependency, single-pass, pluggable-semantics rich-text DSL parser.
+Turns text into a token tree — tag semantics, rendering, and UI integration are all yours to define.
 
-**Parser core only.**
-This package does not ship built-in tags, rendering, or UI integration.
-You define your own semantics and rendering layer.
+- No regex backtracking — deterministic linear scan
+- Inline / Raw / Block — three tag forms, one parser
+- Fully configurable syntax tokens and tag-name rules
 
-**Stable API.** All public APIs are now stable. Future updates will maintain backward compatibility.
+**Core API is stable.** Future updates will prioritize backward compatibility; breaking changes, if any, will land in
+major versions with explicit migration notes.
 
 ## Ecosystem
 
@@ -34,14 +35,17 @@ You define your own semantics and rendering layer.
 | [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker)       | Interpreter — token tree to output nodes         |
 | [`yume-dsl-shiki-highlight`](https://github.com/chiba233/yume-dsl-shiki-highlight) | Syntax highlighting — tokens or TextMate grammar |
 
+**Recommended combinations:**
+
+- **Parse DSL into tokens only** → `yume-dsl-rich-text`
+- **Interpret token trees into arbitrary output nodes** → add `yume-dsl-token-walker`
+- **Source-level highlighting or TextMate grammar** → add `yume-dsl-shiki-highlight`
+
 ---
 
 ## Table of Contents
 
 - [Design Philosophy](#design-philosophy)
-- [When to Use](#when-to-use)
-- [Boundaries](#boundaries)
-- [Features](#features)
 - [Install](#install)
 - [Quick Start](#quick-start)
 - [DSL Syntax](#dsl-syntax)
@@ -80,71 +84,14 @@ You define your own semantics and rendering layer.
 
 ## Design Philosophy
 
-This parser follows a **"parser core + user-defined semantics"** architecture:
-
-- **The parser knows nothing about your tags.** There are no built-in `bold`, `link`, or `code` tags. Every tag's
-  meaning is defined by the handler you register.
-- **Handlers are the semantic layer.** A handler receives parsed tokens and returns a `TokenDraft` — you decide the
-  output shape, extra fields, and behavior.
-- **Rendering is not our job.** The parser produces a token tree; how you render it (React, Vue, plain HTML, terminal)is
-  entirely up to you.
-- **Graceful degradation by default.** Unknown or unsupported tags never throw — they degrade silently so partial DSL
-  support works without crashing.
-- **Every syntax token is configurable.** Prefix, delimiters, escape character, block/raw markers — override any or all
-  of them via `options.syntax`. Tag-name character rules are also pluggable via `options.tagName`.
-
-This separation means you can swap rendering frameworks, add new tags, or change tag semantics without touching the
-parser.
-
----
-
-## When to Use
-
-Use this package when you want:
-
-- a custom rich-text mini language instead of Markdown
-- high control over parsing semantics and rendering behavior
-- a fully customizable syntax — swap prefix, delimiters, escape character, and tag-name rules
-- graceful fallback when a tag form is unsupported
-- a small parser core without opinionated semantics
-- predictable parsing without regex-based backtracking
-
----
-
-## Boundaries
-
-What this package **does**:
-
-- Parse DSL strings into a token tree (`TextToken[]`)
-- Provide tag registration via handlers — tags only exist if you register them
-- Handle recursive nesting, escaping, pipe-separated arguments
-- Degrade gracefully when tags are unknown or malformed
-- Report structured errors via `onError`
-
-What this package **does not do**:
-
-- Ship any built-in tags (no bold, italic, link, etc.)
-- Render tokens to HTML, React components, or any output format
-- Validate token semantics (that's your handler's job)
-- Provide a Markdown-compatible syntax
-
----
-
-## Features
-
-- Zero dependencies
-- Recursive parsing with depth limits
-- Pluggable tag handlers
-- Inline / Raw / Block tag forms
-- Handler helpers for bulk tag registration
-- Fully configurable syntax (prefix, delimiters, escape, block/raw markers) and tag-name character rules
-- First-class structural parse API (`parseStructural`) sharing the same language configuration
-- Graceful degradation for unknown tags
-- Custom error reporting
-- Utility helpers for pipe arguments and token processing
-- Single-pass forward scanner (no backtracking)
-- No RegExp-based parsing
-- Deterministic linear scan
+- **No built-in tags.** Every tag's meaning is defined by the handler you register.
+- **Handlers are the semantic layer.** A handler receives parsed tokens and returns a `TokenDraft` — output shape,
+  extra fields, and behavior are all yours.
+- **Rendering is not our job.** The parser produces a token tree; how you render it (React, Vue, plain HTML, terminal)
+  is entirely up to you.
+- **Graceful degradation.** Unknown or unsupported tags never throw — they degrade silently.
+- **Everything is configurable.** Syntax tokens, tag-name rules, nesting depth — override what you need, keep defaults
+  for the rest.
 
 ---
 
@@ -211,6 +158,17 @@ const plain = dsl.strip("Hello $$bold(world)$$!");
 Useful for extracting searchable plain text, generating previews, or building accessibility labels.
 
 Unregistered tags degrade gracefully instead of throwing or crashing.
+
+### Recommended reading order
+
+First-time users:
+
+1. **Quick Start** (you are here)
+2. [DSL Syntax](#dsl-syntax) — the three tag forms
+3. [createParser](#createparserdefaults--recommended-entry-point) — the main entry point
+4. [Handler Helpers](#handler-helpers) — bulk-register tags without boilerplate
+5. [Writing Tag Handlers](#writing-tag-handlers) — custom handler logic
+6. [parseStructural](#parsestructural--structural-parse) — only when you need highlighting / linting / structural analysis
 
 ---
 
@@ -376,14 +334,17 @@ function parseRichText(text: string, options?: ParseOptions): TextToken[];
 function stripRichText(text: string, options?: ParseOptions): string;
 ```
 
-For most applications, prefer [`createParser`](#createparser--recommended-entry-point) instead.
+Application code should generally use `createParser`; reach for the bare functions only in one-off utility scripts
+or when you need full per-call control.
 
 ### `parseStructural` — structural parse
 
-`parseStructural` is a first-class structural parse API that shares the same language configuration
-(`handlers`, `allowForms`, `syntax`, `tagName`, `depthLimit`) as `parseRichText`.
-It preserves the tag form (inline / raw / block) in the output tree, making it suitable for
-**syntax highlighting, linting, and structural analysis**.
+`parseStructural` is for **syntax highlighting, linting, and structural analysis** — any scenario where you need
+to know *which tag form* was used, not just the semantic result. It preserves the tag form (inline / raw / block)
+in the output tree.
+
+It shares the same language configuration (`handlers`, `allowForms`, `syntax`, `tagName`, `depthLimit`) as
+`parseRichText`, so you don't maintain two separate sets of DSL rules.
 
 ```ts
 import {parseStructural} from "yume-dsl-rich-text";
@@ -471,6 +432,9 @@ Differences from `parseRichText` (features, not bugs):
 | Error reporting          | `onError` callback                | Silent degradation                       |
 | Escape handling          | Unescaped at root level           | Structural `escape` nodes                |
 | Output type              | `TextToken[]`                     | `StructuralNode[]`                       |
+
+**Which one do I use?** If your goal is *rendering content*, use `parseRichText`.
+If your goal is *analyzing source structure*, use `parseStructural`.
 
 ---
 
