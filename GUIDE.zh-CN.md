@@ -501,6 +501,18 @@ import {DEFAULT_SYNTAX} from "yume-dsl-rich-text";
 > 语法符号之间必须保持可区分。
 > 如果两个符号配置为相同的字符串，行为未定义。
 
+**符号之间的联动关系** — 部分符号包含其他符号。修改其中一个时，通常需要同步更新相关符号以保持一致：
+
+| 修改…             | 通常还需要修改…                                              | 原因                                                       |
+|-------------------|------------------------------------------------------------|-----------------------------------------------------------|
+| `tagPrefix`       | `endTag`                                                   | `endTag` 默认为 `)` + `tagPrefix`                          |
+| `tagOpen`         | `tagClose`                                                 | `tagClose` 是配对的关闭符，用于深度追踪                       |
+| `tagClose`        | `endTag`、`rawOpen`、`blockOpen`                            | 它们都以 `tagClose` 开头（`)$$`、`)%`、`)*`）                |
+| `rawClose`        | —                                                          | 独立（整行符号）                                             |
+| `blockClose`      | —                                                          | 独立（整行符号）                                             |
+| `escapeChar`      | —                                                          | 独立                                                       |
+| `tagDivider`      | —                                                          | 独立                                                       |
+
 ### createSyntax
 
 `createSyntax` 从部分覆盖构建完整的 `SyntaxConfig`。适用于需要在解析之外检查或复用已解析语法的场景。

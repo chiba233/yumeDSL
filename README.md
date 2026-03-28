@@ -513,6 +513,19 @@ import {DEFAULT_SYNTAX} from "yume-dsl-rich-text";
 > Syntax tokens must remain distinguishable from one another.
 > If two tokens are configured to the same string, behavior is undefined.
 
+**Dependency between tokens** — some tokens contain others. When you override one, you usually need to update the
+related tokens to stay consistent:
+
+| If you change…   | You probably also need to change…                          | Why                                                       |
+|-------------------|------------------------------------------------------------|-----------------------------------------------------------|
+| `tagPrefix`       | `endTag`                                                   | `endTag` defaults to `)` + `tagPrefix`                    |
+| `tagOpen`         | `tagClose`                                                 | `tagClose` is the matching closer for depth tracking       |
+| `tagClose`        | `endTag`, `rawOpen`, `blockOpen`                           | These all start with `tagClose` (`)"$$"`, `)%`, `)*`)     |
+| `rawClose`        | —                                                          | Independent (whole-line token)                             |
+| `blockClose`      | —                                                          | Independent (whole-line token)                             |
+| `escapeChar`      | —                                                          | Independent                                               |
+| `tagDivider`      | —                                                          | Independent                                               |
+
 ### createSyntax
 
 `createSyntax` builds a full `SyntaxConfig` from partial overrides. This is useful if you need to inspect or reuse the
