@@ -1644,7 +1644,7 @@ tagMap.date = DateText;
 
 ### 1.0.1
 
-- Add `createEasySyntax(overrides)` — convenience builder that auto-derives compound tokens (`endTag`, `rawOpen`,
+- Add `createEasySyntax(overrides)` — convenience function that auto-derives compound tokens (`endTag`, `rawOpen`,
   `blockOpen`, `rawClose`, `blockClose`) from `tagPrefix` and `tagClose`. Explicit overrides still take precedence.
   `createSyntax` is retained as the low-level plain-merge alternative
 - Improve documentation readability — reduce info density in the opening sections, add recommended reading order,

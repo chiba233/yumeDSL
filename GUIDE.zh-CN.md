@@ -1610,7 +1610,7 @@ tagMap.date = DateText;
 ### 1.0.1
 
 - 新增 `createEasySyntax(overrides)` — 从 `tagPrefix` 和 `tagClose` 自动推导复合符号（`endTag`、`rawOpen`、
-  `blockOpen`、`rawClose`、`blockClose`）的便利构建器。显式覆盖仍优先。`createSyntax` 保留为底层纯 merge 版本
+  `blockOpen`、`rawClose`、`blockClose`）的便利函数。显式覆盖仍优先。`createSyntax` 保留为底层纯 merge 版本
 - 提升文档可读性——精简首页信息密度、新增推荐阅读顺序、新增 API 选型建议、新增生态组合指南、
   重写 Default Syntax 章节（ASCII 语法示意图 + 符号联动表）
 
