@@ -6,7 +6,7 @@ export type { Parser } from "./parse.js";
 export { parseStructural } from "./structural.js";
 
 // ── Configuration ──
-export { DEFAULT_SYNTAX, createSyntax } from "./syntax.js";
+export { DEFAULT_SYNTAX, createEasySyntax, createSyntax } from "./syntax.js";
 export { DEFAULT_TAG_NAME, createTagNameConfig } from "./chars.js";
 
 // ── Handler helpers ──

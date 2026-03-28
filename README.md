@@ -60,7 +60,8 @@ major versions with explicit migration notes.
     - [parseStructural](#parsestructural--structural-parse)
 - [Custom Syntax](#custom-syntax)
     - [Default Syntax](#default-syntax)
-    - [createSyntax](#createsyntax)
+    - [createEasySyntax](#createeasysyntax-recommended)
+    - [createSyntax](#createsyntax-low-level)
 - [Custom Tag Name Characters](#custom-tag-name-characters)
 - [Handler Helpers](#handler-helpers)
     - [createSimpleInlineHandlers](#createsimpleinlinehandlersnames)
@@ -444,13 +445,13 @@ Every syntax token — prefix, open/close delimiters, pipe divider, escape chara
 overridden through `options.syntax`. This lets you adapt the DSL to any host markup without conflicts.
 
 ```ts
-import {parseRichText} from "yume-dsl-rich-text";
+import {createEasySyntax, parseRichText} from "yume-dsl-rich-text";
+
+const syntax = createEasySyntax({tagPrefix: "@@"});
+// endTag, rawClose, blockClose are derived automatically: ")@@", "%end@@", "*end@@"
 
 const tokens = parseRichText("@@bold(hello)@@", {
-    syntax: {
-        tagPrefix: "@@",
-        endTag: ")@@",
-    },
+    syntax,
     handlers: {
         bold: {
             inline: (tokens) => ({type: "bold", value: tokens}),
@@ -529,28 +530,55 @@ The parser has hard couplings between certain tokens — break them and tags sto
 | `tagDivider`  | —                                                   | Independent                                                                      |
 | `escapeChar`  | —                                                   | Independent                                                                      |
 
-### createSyntax
+### createEasySyntax (recommended)
 
-`createSyntax` builds a full `SyntaxConfig` from partial overrides. This is useful if you need to inspect or reuse the
-resolved syntax outside of parsing.
+Provide only the **base tokens** — compound tokens are derived automatically via rule table:
+
+```text
+endTag     = tagClose + tagPrefix          ")" + "$$"  → ")$$"
+rawOpen    = tagClose + RAW_MARKER         ")" + "%"   → ")%"
+blockOpen  = tagClose + BLOCK_MARKER       ")" + "*"   → ")*"
+rawClose   = RAW_MARKER + "end" + tagPrefix   "%end" + "$$" → "%end$$"
+blockClose = BLOCK_MARKER + "end" + tagPrefix "*end" + "$$" → "*end$$"
+```
+
+Base tokens: `tagPrefix`, `tagOpen`, `tagClose`, `tagDivider`, `escapeChar`.
+Compound tokens: `endTag`, `rawOpen`, `blockOpen`, `rawClose`, `blockClose`.
+Explicit compound overrides still take precedence over derivation.
+
+```ts
+import {createEasySyntax} from "yume-dsl-rich-text";
+
+// Change prefix only — all compounds follow
+createEasySyntax({tagPrefix: "@@"});
+// endTag → ")@@"   rawClose → "%end@@"   blockClose → "*end@@"
+
+// Change prefix + closer — compounds adapt to both
+createEasySyntax({tagPrefix: "@@", tagClose: "]"});
+// endTag → "]@@"   rawOpen → "]%"   blockOpen → "]*"
+
+// Explicit compound override wins over derivation
+createEasySyntax({tagPrefix: "@@", rawClose: "%%end@@"});
+// rawClose → "%%end@@" (explicit), rest still derived
+```
+
+### createSyntax (low-level)
+
+Plain shallow merge onto `DEFAULT_SYNTAX` — no derivation. Use this only when you need full manual control over every
+token.
 
 ```ts
 import {createSyntax} from "yume-dsl-rich-text";
 
 const syntax = createSyntax({tagPrefix: "@@", endTag: ")@@"});
-
-// SyntaxConfig extends SyntaxInput with a precomputed field:
-// syntax.escapableTokens — tokens that can be escaped, sorted by length (descending)
+// You must update endTag, rawClose, blockClose yourself — no auto-derivation
 ```
 
 ```ts
 interface SyntaxConfig extends SyntaxInput {
-    escapableTokens: string[];
+    escapableTokens: string[];  // precomputed, sorted by length (descending)
 }
 ```
-
-You do not need `createSyntax` for normal usage — `options.syntax` accepts a `Partial<SyntaxInput>` and the parser
-resolves it internally.
 
 > Note:
 > Syntax overrides are applied through module-local active state during parsing.
@@ -1129,7 +1157,8 @@ See [Custom Syntax](#custom-syntax) and [Custom Tag Name Characters](#custom-tag
 | Export                           | Description                                             |
 |----------------------------------|---------------------------------------------------------|
 | `DEFAULT_SYNTAX`                 | The built-in syntax tokens (`$$`, `(`, `)$$`, etc.)     |
-| `createSyntax(overrides)`        | Build a full `SyntaxConfig` from partial overrides      |
+| `createEasySyntax(overrides)`    | Build `SyntaxConfig` with auto-derivation (recommended) |
+| `createSyntax(overrides)`        | Build `SyntaxConfig` with plain merge (low-level)       |
 | `DEFAULT_TAG_NAME`               | The built-in tag-name character rules                   |
 | `createTagNameConfig(overrides)` | Build a full `TagNameConfig` from partial overrides     |
 
@@ -1617,9 +1646,12 @@ tagMap.date = DateText;
 
 ### 1.0.1
 
+- Add `createEasySyntax(overrides)` — convenience builder that auto-derives compound tokens (`endTag`, `rawOpen`,
+  `blockOpen`, `rawClose`, `blockClose`) from `tagPrefix` and `tagClose`. Explicit overrides still take precedence.
+  `createSyntax` is retained as the low-level plain-merge alternative
 - Improve documentation readability — reduce info density in the opening sections, add recommended reading order,
   add decision guidance ("which API to use"), add ecosystem combination guide, rewrite Default Syntax section with
-  ASCII diagrams and token dependency notes
+  ASCII diagrams and token dependency table
 
 ### 1.0.0
 
