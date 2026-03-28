@@ -2,7 +2,7 @@ import type { DslContext, TextToken } from "./types.js";
 import { readEscapedSequence, resolveSyntax, unescapeInline } from "./escape.js";
 import { createToken } from "./createToken.js";
 
-const createTextToken = (value: string, ctx?: DslContext): TextToken =>
+export const createTextToken = (value: string, ctx?: DslContext): TextToken =>
   createToken({ type: "text", value }, undefined, ctx);
 
 export const extractText = (tokens?: TextToken[]): string => {
@@ -40,9 +40,10 @@ export const materializeTextTokens = (
 
 export interface PipeArgs {
   parts: TextToken[][];
-  text: (index: number) => string;
-  materializedTokens: (index: number) => TextToken[];
-  materializedTailTokens: (startIndex: number) => TextToken[];
+  has: (index: number) => boolean;
+  text: (index: number, fallback?: string) => string;
+  materializedTokens: (index: number, fallback?: TextToken[]) => TextToken[];
+  materializedTailTokens: (startIndex: number, fallback?: TextToken[]) => TextToken[];
 }
 
 export const splitTokensByPipe = (
@@ -101,13 +102,19 @@ export const parsePipeArgs = (
 ): PipeArgs => {
   const s = resolveSyntax(ctx);
   const parts = splitTokensByPipe(tokens, ctx);
+  const has = (index: number): boolean => index >= 0 && index < parts.length;
 
   return {
     parts,
-    text: (index) => unescapeInline(extractText(parts[index] ?? []), s).trim(),
-    materializedTokens: (index) => materializeTextTokens(parts[index] ?? [], ctx),
-    materializedTailTokens: (startIndex) =>
-      materializeTextTokens(parts.slice(startIndex).flat(), ctx),
+    has,
+    text: (index, fallback = "") =>
+      has(index) ? unescapeInline(extractText(parts[index] ?? []), s).trim() : fallback,
+    materializedTokens: (index, fallback = []) =>
+      has(index) ? materializeTextTokens(parts[index] ?? [], ctx) : fallback,
+    materializedTailTokens: (startIndex, fallback = []) =>
+      startIndex >= 0 && startIndex < parts.length
+        ? materializeTextTokens(parts.slice(startIndex).flat(), ctx)
+        : fallback,
   };
 };
 

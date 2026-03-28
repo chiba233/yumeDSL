@@ -1,5 +1,24 @@
 # Changelog
 
+### 1.0.5
+
+- New helper: `createPipeHandlers(definitions)`
+  - Unified pipe-aware handler builder for any combination of `inline`, `raw`, and `block`
+  - `inline` handlers receive parsed `PipeArgs` from inline tokens
+  - `raw` / `block` handlers receive parsed `PipeArgs` from `arg`, while still preserving the original `rawArg`
+- New utility: `createTextToken(value, ctx?)`
+  - Shorthand for creating `{ type: "text", value }` tokens with parse-local `createId` support
+- `PipeArgs` now includes convenience readers for custom handler code
+  - `has(index)`
+  - `text(index, fallback?)`
+  - `materializedTokens(index, fallback?)`
+  - `materializedTailTokens(startIndex, fallback?)`
+- `createPipeBlockHandlers` and `createPipeRawHandlers` are now thin shorthands over `createPipeHandlers`
+- Documentation refresh
+  - Promoted `createPipeHandlers` as the main pipe-aware helper
+  - Reorganized handler helper docs into recommended / shorthand / advanced sections
+  - Updated utility examples to use `createTextToken(...)` where appropriate
+
 ### 1.0.4
 
 - **Refactor:** Eliminate all remaining module-level implicit state reads from internal parse code

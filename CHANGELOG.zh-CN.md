@@ -1,5 +1,24 @@
 # 更新日志
 
+### 1.0.5
+
+- 新增 helper：`createPipeHandlers(definitions)`
+  - 统一的 pipe-aware handler builder，可按需声明 `inline` / `raw` / `block` 的任意组合
+  - `inline` handler 直接接收由 inline token 解析得到的 `PipeArgs`
+  - `raw` / `block` handler 接收由 `arg` 解析得到的 `PipeArgs`，同时仍保留原始 `rawArg`
+- 新增工具函数：`createTextToken(value, ctx?)`
+  - 用于创建带 parse-local `createId` 支持的 `{ type: "text", value }` token 简写
+- `PipeArgs` 现在补充了更顺手的读取方法，便于自定义 handler 编写
+  - `has(index)`
+  - `text(index, fallback?)`
+  - `materializedTokens(index, fallback?)`
+  - `materializedTailTokens(startIndex, fallback?)`
+- `createPipeBlockHandlers` 和 `createPipeRawHandlers` 现在是 `createPipeHandlers` 的薄封装简写
+- 文档整理
+  - 将 `createPipeHandlers` 提升为主推荐的 pipe-aware helper
+  - 将处理器辅助函数文档重组为 推荐 / 简写 / 进阶 三组
+  - 在合适的工具示例里改用 `createTextToken(...)`
+
 ### 1.0.4
 
 - **重构：** 消除内部解析代码中所有剩余的模块级隐式状态读取

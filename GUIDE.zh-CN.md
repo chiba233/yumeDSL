@@ -283,18 +283,18 @@ dsl.parse(text, {onError: (e) => console.warn(e)});
 
 **`createParser` 绑定了什么：**
 
-| 选项               | 预绑定后的效果                        |
-|------------------|--------------------------------|
-| `handlers`       | 标签定义 — 不需要每次调用都传入              |
-| `allowForms`     | 限制接受的标签形式（默认：全部启用）             |
-| `syntax`         | 自定义语法符号（如覆盖 `$$` 前缀等）          |
-| `tagName`        | 自定义标签名字符规则                     |
-| `depthLimit`     | 嵌套深度限制 — 很少需要逐次修改              |
-| `createId`       | 自定义 token id 生成器（仍可按次覆盖）       |
-| `blockTags`      | 需要 block 换行归一化的标签              |
-| `mode`           | 仅支持 `"render"`                    |
-| `onError`        | 默认错误处理器（仍可按次覆盖）                |
-| `trackPositions` | 为所有输出节点附加源码位置（仍可按次覆盖）          |
+| 选项               | 预绑定后的效果                  |
+|------------------|--------------------------|
+| `handlers`       | 标签定义 — 不需要每次调用都传入        |
+| `allowForms`     | 限制接受的标签形式（默认：全部启用）       |
+| `syntax`         | 自定义语法符号（如覆盖 `$$` 前缀等）    |
+| `tagName`        | 自定义标签名字符规则               |
+| `depthLimit`     | 嵌套深度限制 — 很少需要逐次修改        |
+| `createId`       | 自定义 token id 生成器（仍可按次覆盖） |
+| `blockTags`      | 需要 block 换行归一化的标签        |
+| `mode`           | 仅支持 `"render"`           |
+| `onError`        | 默认错误处理器（仍可按次覆盖）          |
+| `trackPositions` | 为所有输出节点附加源码位置（仍可按次覆盖）    |
 
 **不用 `createParser` 的话**，每次调用都需要传入完整选项：
 
@@ -388,15 +388,15 @@ interface StructuralParseOptions extends ParserBaseOptions {
 }
 ```
 
-| 参数                       | 类型                           | 说明                                          |
-|--------------------------|------------------------------|---------------------------------------------|
-| `text`                   | `string`                     | DSL 源码                                      |
+| 参数                       | 类型                           | 说明                                                            |
+|--------------------------|------------------------------|---------------------------------------------------------------|
+| `text`                   | `string`                     | DSL 源码                                                        |
 | `options.handlers`       | `Record<string, TagHandler>` | 标签识别与形态门控（规则与 `parseRichText` 完全一致）。省略则接受所有语法合法的标签和形态，不做语义门控。 |
-| `options.allowForms`     | `readonly TagForm[]`         | 限制接受的形态（需搭配 `handlers`）                     |
-| `options.depthLimit`     | `number`                     | 最大嵌套深度（默认 `50`）                             |
-| `options.syntax`         | `Partial<SyntaxInput>`       | 覆盖语法 token                                  |
-| `options.tagName`        | `Partial<TagNameConfig>`     | 覆盖标签名字符规则                                   |
-| `options.trackPositions` | `boolean`                    | 为每个节点附加 `position`（默认 `false`）              |
+| `options.allowForms`     | `readonly TagForm[]`         | 限制接受的形态（需搭配 `handlers`）                                       |
+| `options.depthLimit`     | `number`                     | 最大嵌套深度（默认 `50`）                                               |
+| `options.syntax`         | `Partial<SyntaxInput>`       | 覆盖语法 token                                                    |
+| `options.tagName`        | `Partial<TagNameConfig>`     | 覆盖标签名字符规则                                                     |
+| `options.trackPositions` | `boolean`                    | 为每个节点附加 `position`（默认 `false`）                                |
 
 传入 `handlers` 时，标签识别和形态门控与 `parseRichText` **完全一致**——使用相同的 `supportsInlineForm` 决策表和
 `filterHandlersByForms` 逻辑（共享代码，非镜像）。handler 函数本身不会被调用，只有 `inline` / `raw` / `block` 方法的存在性影响门控。
@@ -802,7 +802,41 @@ const x = 1;
 function createSimpleRawHandlers(names: readonly string[]): Record<string, TagHandler>;
 ```
 
+### `createPipeHandlers(definitions)`
+
+创建一组处理器，让 inline token 或 `arg` 字符串在进入回调前先被解析为 `PipeArgs`。
+
+适合一个标签可能同时支持 `inline` / `raw` / `block` 中任意组合，并且你不想按 form 分别写三套 pipe helper
+的场景。
+
+```ts
+import {createParser, createPipeHandlers} from "yume-dsl-rich-text";
+
+const dsl = createParser({
+    handlers: createPipeHandlers({
+        link: {
+            inline: (args) => ({
+                type: "link",
+                url: args.text(0),
+                value: args.materializedTailTokens(1),
+            }),
+        },
+        panel: {
+            block: (args, content, _ctx, rawArg) => ({
+                type: "panel",
+                arg: rawArg,
+                args: args.parts.map((_, i) => args.text(i)),
+                value: content,
+            }),
+        },
+    }),
+});
+```
+
 ### `createPipeBlockHandlers(names)`
+
+这是 block-only 的 `createPipeHandlers(...)` 简写。
+新代码优先使用 `createPipeHandlers(...)`，除非你就是想要更窄的 block-only 简写。
 
 创建 block 处理器，既保留原始 `arg`，也会按 pipe 拆出 `args`，并保留解析后的 block 内容：
 `{ type: tagName, arg, args, value: content }`。
@@ -824,6 +858,9 @@ function createPipeBlockHandlers(names: readonly string[]): Record<string, TagHa
 ```
 
 ### `createPipeRawHandlers(names)`
+
+这是 raw-only 的 `createPipeHandlers(...)` 简写。
+新代码优先使用 `createPipeHandlers(...)`，除非你就是想要更窄的 raw-only 简写。
 
 创建 raw 处理器，既保留原始 `arg`，也会按 pipe 拆出 `args`，并保留 raw 内容：
 `{ type: tagName, arg, args, value: content }`。
@@ -1159,15 +1196,28 @@ const tokens = dsl.parse(input);
 
 批量创建处理器的便利函数 — 大多数项目只需要这些。
 
-| 导出                                  | 说明                                |
-|-------------------------------------|-----------------------------------|
-| `createSimpleInlineHandlers(names)` | 批量创建简单标签的inline 处理器               |
-| `createSimpleBlockHandlers(names)`  | 批量创建简单标签的block 处理器                |
-| `createSimpleRawHandlers(names)`    | 批量创建简单标签的raw 处理器                  |
-| `createPipeBlockHandlers(names)`    | 创建同时暴露 `arg` 与 `args` 的 block 处理器 |
-| `createPipeRawHandlers(names)`      | 创建同时暴露 `arg` 与 `args` 的 raw 处理器   |
-| `createPassthroughTags(names)`      | 批量注册空处理器的标签名                      |
-| `declareMultilineTags(names)`       | 声明哪些标签需要多行换行符修剪                   |
+推荐
+
+| 导出                                  | 说明                                     |
+|-------------------------------------|----------------------------------------|
+| `createSimpleInlineHandlers(names)` | 批量创建简单标签的 inline 处理器                     |
+| `createSimpleBlockHandlers(names)`  | 批量创建简单标签的 block 处理器                      |
+| `createSimpleRawHandlers(names)`    | 批量创建简单标签的 raw 处理器                        |
+| `createPipeHandlers(definitions)`   | 推荐的 pipe-aware helper，统一处理 inline/raw/block |
+
+简写
+
+| 导出                               | 说明                                      |
+|----------------------------------|-----------------------------------------|
+| `createPipeBlockHandlers(names)` | `createPipeHandlers(...)` 的 block-only 简写 |
+| `createPipeRawHandlers(names)`   | `createPipeHandlers(...)` 的 raw-only 简写   |
+| `declareMultilineTags(names)`    | 声明哪些标签需要多行换行符修剪                        |
+
+进阶
+
+| 导出                         | 说明                    |
+|----------------------------|-----------------------|
+| `createPassthroughTags(names)` | 进阶用法：批量注册空处理器的标签名 |
 
 ### 处理器工具函数
 
@@ -1177,18 +1227,19 @@ const tokens = dsl.parse(input);
 `ctx?` 参数为向后兼容而保留可选。新代码应将其视为实际必填——传入 handler 回调收到的 `DslContext`，
 或自行构造一个。详见下方 [DslContext](#dslcontext)。
 
-| 导出                                    | 使用者                   | 说明                                      |
-|---------------------------------------|-----------------------|-----------------------------------------|
-| `parsePipeArgs(tokens, ctx?)`         | 带 `\|` 参数的自定义处理器      | 按管道分割 token 并访问解析后的部分                   |
-| `parsePipeTextArgs(text, ctx?)`       | 解析 raw 参数的自定义处理器      | 同上，但输入为纯文本字符串                           |
-| `parsePipeTextList(text, ctx?)`       | 只需 `string[]` 的自定义处理器 | 将管道分隔字符串直接拆分为 trim 后的 `string[]`        |
-| `splitTokensByPipe(tokens, ctx?)`     | 底层处理器代码               | 按 pipe 分割 token 的底层工具，不含辅助方法            |
-| `extractText(tokens)`                 | 需要纯文本值的处理器            | 将 token 树展平为单个字符串                       |
-| `materializeTextTokens(tokens, ctx?)` | 返回处理后子 token 的处理器     | 递归反转义 token 树中的文本 token                 |
-| `unescapeInline(str, ctx?)`           | 处理 raw 字符串的处理器        | 反转义单个字符串中的 DSL 转义序列                     |
-| `readEscapedSequence(text, i, ctx?)`  | 检查转义序列的处理器            | 读取位置 `i` 处的一个转义序列                       |
-| `createToken(draft, position?, ctx?)` | 手动构建 token 的处理器       | 为 `TokenDraft` 添加 `id`（和可选的 `position`） |
-| `resetTokenIdSeed()`                  | 测试代码                  | 重置 token id 计数器，用于确定性测试输出               |
+| 导出                                    | 使用者                   | 说明                                         |
+|---------------------------------------|-----------------------|--------------------------------------------|
+| `parsePipeArgs(tokens, ctx?)`         | 带 `\|` 参数的自定义处理器      | 按管道分割 token 并访问解析后的部分                      |
+| `parsePipeTextArgs(text, ctx?)`       | 解析 raw 参数的自定义处理器      | 同上，但输入为纯文本字符串                              |
+| `parsePipeTextList(text, ctx?)`       | 只需 `string[]` 的自定义处理器 | 将管道分隔字符串直接拆分为 trim 后的 `string[]`           |
+| `splitTokensByPipe(tokens, ctx?)`     | 底层处理器代码               | 按 pipe 分割 token 的底层工具，不含辅助方法               |
+| `extractText(tokens)`                 | 需要纯文本值的处理器            | 将 token 树展平为单个字符串                          |
+| `materializeTextTokens(tokens, ctx?)` | 返回处理后子 token 的处理器     | 递归反转义 token 树中的文本 token                    |
+| `unescapeInline(str, ctx?)`           | 处理 raw 字符串的处理器        | 反转义单个字符串中的 DSL 转义序列                        |
+| `readEscapedSequence(text, i, ctx?)`  | 检查转义序列的处理器            | 读取位置 `i` 处的一个转义序列                          |
+| `createTextToken(value, ctx?)`        | 创建纯文本叶子 token 的处理器    | 创建带 `id` 的 `{ type: "text", value }` token |
+| `createToken(draft, position?, ctx?)` | 手动构建 token 的处理器       | 为 `TokenDraft` 添加 `id`（和可选的 `position`）    |
+| `resetTokenIdSeed()`                  | 测试代码                  | 重置 token id 计数器，用于确定性测试输出                  |
 
 > 解析期间，token id 默认按单次 parse 局部递增（`rt-0`、`rt-1` ...）。
 > `createToken()` 只有在解析器外单独调用时才会使用模块级计数器，`resetTokenIdSeed()` 也主要用于这种测试场景。
@@ -1235,7 +1286,7 @@ link: {
 // 解析器外：手动构造 DslContext
 const ctx: DslContext = {syntax: createSyntax(), createId: (draft) => `demo-${draft.type}`};
 const args = parsePipeTextArgs("ts | Demo", ctx);
-const token = createToken({type: "text", value: "hello"}, undefined, ctx);
+const token = createTextToken("hello", ctx);
 ```
 
 这样可以让 handler、独立脚本和未来 2.0 用法全部收敛到同一套显式模型。
@@ -1289,18 +1340,20 @@ const token = createToken({type: "text", value: "hello"}, undefined, ctx);
 ```ts
 interface PipeArgs {
     parts: TextToken[][];
-    text: (index: number) => string;
-    materializedTokens: (index: number) => TextToken[];
-    materializedTailTokens: (startIndex: number) => TextToken[];
+    has: (index: number) => boolean;
+    text: (index: number, fallback?: string) => string;
+    materializedTokens: (index: number, fallback?: TextToken[]) => TextToken[];
+    materializedTailTokens: (startIndex: number, fallback?: TextToken[]) => TextToken[];
 }
 ```
 
-| 字段                          | 说明                         |
-|-----------------------------|----------------------------|
-| `parts`                     | 按 `\|` 分割的未处理的 token 数组    |
-| `text(i)`                   | 第 `i` 部分的纯文本，已反转义并去除首尾空格   |
-| `materializedTokens(i)`     | 第 `i` 部分已反转义的 token        |
-| `materializedTailTokens(i)` | 从索引 `i` 起所有部分合并成的 token 数组 |
+| 字段                                     | 说明                         |
+|----------------------------------------|----------------------------|
+| `parts`                                | 按 `\|` 分割的未处理的 token 数组    |
+| `has(i)`                               | 第 `i` 部分是否存在               |
+| `text(i, fallback?)`                   | 第 `i` 部分的纯文本，已反转义并去除首尾空格   |
+| `materializedTokens(i, fallback?)`     | 第 `i` 部分已反转义的 token        |
+| `materializedTailTokens(i, fallback?)` | 从索引 `i` 起所有部分合并成的 token 数组 |
 
 ### parsePipeTextList
 
@@ -1835,7 +1888,7 @@ tagMap.date = DateText;
 
 版本历史已拆分到独立文件：
 
--  [更新日志](./CHANGELOG.zh-CN.md)
+- [更新日志](./CHANGELOG.zh-CN.md)
 
 ---
 

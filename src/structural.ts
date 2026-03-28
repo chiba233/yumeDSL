@@ -19,7 +19,6 @@ import {
   findBlockClose,
   findRawClose,
   skipTagBoundary,
-  skipDegradedInline,
 } from "./scanner.js";
 import { buildPositionTracker, makePosition, type PositionTracker } from "./positions.js";
 

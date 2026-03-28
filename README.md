@@ -290,18 +290,18 @@ dsl.parse(text, {onError: (e) => console.warn(e)});
 
 **What `createParser` binds:**
 
-| Option           | What it does when pre-bound                                                |
-|------------------|----------------------------------------------------------------------------|
-| `handlers`       | Your tag definitions — no need to pass them on every call                  |
-| `allowForms`     | Restrict accepted tag forms (default: all forms enabled)                   |
-| `syntax`         | Custom syntax tokens (if you override `$$` prefix, etc.)                   |
-| `tagName`        | Custom tag-name character rules                                            |
-| `depthLimit`     | Nesting limit — rarely changes per call                                    |
-| `createId`       | Custom token id generator (can be overridden per call)                     |
-| `blockTags`      | Tags that receive block-level line-break normalization                     |
-| `mode`           | Only `"render"` is supported                                                |
-| `onError`        | Default error handler (can still be overridden per call)                   |
-| `trackPositions` | Attach source positions to all output nodes (can be overridden per call)   |
+| Option           | What it does when pre-bound                                              |
+|------------------|--------------------------------------------------------------------------|
+| `handlers`       | Your tag definitions — no need to pass them on every call                |
+| `allowForms`     | Restrict accepted tag forms (default: all forms enabled)                 |
+| `syntax`         | Custom syntax tokens (if you override `$$` prefix, etc.)                 |
+| `tagName`        | Custom tag-name character rules                                          |
+| `depthLimit`     | Nesting limit — rarely changes per call                                  |
+| `createId`       | Custom token id generator (can be overridden per call)                   |
+| `blockTags`      | Tags that receive block-level line-break normalization                   |
+| `mode`           | Only `"render"` is supported                                             |
+| `onError`        | Default error handler (can still be overridden per call)                 |
+| `trackPositions` | Attach source positions to all output nodes (can be overridden per call) |
 
 **Without `createParser`** you must pass the full options object on every call:
 
@@ -398,15 +398,15 @@ interface StructuralParseOptions extends ParserBaseOptions {
 }
 ```
 
-| Param                    | Type                         | Description                                                                         |
-|--------------------------|------------------------------|-------------------------------------------------------------------------------------|
-| `text`                   | `string`                     | DSL source                                                                          |
+| Param                    | Type                         | Description                                                                                                                               |
+|--------------------------|------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------|
+| `text`                   | `string`                     | DSL source                                                                                                                                |
 | `options.handlers`       | `Record<string, TagHandler>` | Tag recognition & form gating (same rules as `parseRichText`). Omit to accept all syntactically valid tags/forms without semantic gating. |
-| `options.allowForms`     | `readonly TagForm[]`         | Restrict accepted forms (requires `handlers`)                                       |
-| `options.depthLimit`     | `number`                     | Max nesting depth (default `50`)                                                    |
-| `options.syntax`         | `Partial<SyntaxInput>`       | Override syntax tokens                                                              |
-| `options.tagName`        | `Partial<TagNameConfig>`     | Override tag-name character rules                                                   |
-| `options.trackPositions` | `boolean`                    | Attach `position` to every node (default `false`)                                   |
+| `options.allowForms`     | `readonly TagForm[]`         | Restrict accepted forms (requires `handlers`)                                                                                             |
+| `options.depthLimit`     | `number`                     | Max nesting depth (default `50`)                                                                                                          |
+| `options.syntax`         | `Partial<SyntaxInput>`       | Override syntax tokens                                                                                                                    |
+| `options.tagName`        | `Partial<TagNameConfig>`     | Override tag-name character rules                                                                                                         |
+| `options.trackPositions` | `boolean`                    | Attach `position` to every node (default `false`)                                                                                         |
 
 When `handlers` is provided, tag recognition and form gating are **identical** to `parseRichText` — the same
 `supportsInlineForm` decision table and `filterHandlersByForms` logic are used (shared code, not mirrored).
@@ -824,7 +824,41 @@ const x = 1;
 function createSimpleRawHandlers(names: readonly string[]): Record<string, TagHandler>;
 ```
 
+### `createPipeHandlers(definitions)`
+
+Creates handlers whose inline tokens or `arg` strings are pre-parsed as `PipeArgs`.
+
+Use this when a tag may support any combination of `inline`, `raw`, and `block`, and you want one unified helper
+instead of separate pipe helpers per form.
+
+```ts
+import {createParser, createPipeHandlers} from "yume-dsl-rich-text";
+
+const dsl = createParser({
+    handlers: createPipeHandlers({
+        link: {
+            inline: (args) => ({
+                type: "link",
+                url: args.text(0),
+                value: args.materializedTailTokens(1),
+            }),
+        },
+        panel: {
+            block: (args, content, _ctx, rawArg) => ({
+                type: "panel",
+                arg: rawArg,
+                args: args.parts.map((_, i) => args.text(i)),
+                value: content,
+            }),
+        },
+    }),
+});
+```
+
 ### `createPipeBlockHandlers(names)`
+
+Thin shorthand for block-only `createPipeHandlers(...)`.
+For new code, prefer `createPipeHandlers(...)` unless you specifically want the narrow block-only shortcut.
 
 Creates block handlers that keep the original `arg`, split it by pipe into `args`, and preserve parsed block content:
 `{ type: tagName, arg, args, value: content }`.
@@ -846,6 +880,9 @@ function createPipeBlockHandlers(names: readonly string[]): Record<string, TagHa
 ```
 
 ### `createPipeRawHandlers(names)`
+
+Thin shorthand for raw-only `createPipeHandlers(...)`.
+For new code, prefer `createPipeHandlers(...)` unless you specifically want the narrow raw-only shortcut.
 
 Creates raw handlers that keep the original `arg`, split it by pipe into `args`, and preserve raw content:
 `{ type: tagName, arg, args, value: content }`.
@@ -1192,15 +1229,28 @@ documentation.
 
 Convenience functions for creating handlers in bulk — most projects only need these.
 
-| Export                              | Description                                                |
-|-------------------------------------|------------------------------------------------------------|
-| `createSimpleInlineHandlers(names)` | Create inline handlers for simple tags in bulk             |
-| `createSimpleBlockHandlers(names)`  | Create block-form handlers for simple tags in bulk         |
-| `createSimpleRawHandlers(names)`    | Create raw handlers for simple tags in bulk                |
-| `createPipeBlockHandlers(names)`    | Create block handlers that expose both `arg` and `args`    |
-| `createPipeRawHandlers(names)`      | Create raw handlers that expose both `arg` and `args`      |
-| `createPassthroughTags(names)`      | Register tag names with empty handlers in bulk             |
-| `declareMultilineTags(names)`       | Declare which tags need multiline line-break normalization |
+Recommended
+
+| Export                              | Description                                             |
+|-------------------------------------|---------------------------------------------------------|
+| `createSimpleInlineHandlers(names)` | Create inline handlers for simple tags in bulk          |
+| `createSimpleBlockHandlers(names)`  | Create block-form handlers for simple tags in bulk      |
+| `createSimpleRawHandlers(names)`    | Create raw handlers for simple tags in bulk             |
+| `createPipeHandlers(definitions)`   | Recommended pipe-aware helper for inline/raw/block tags |
+
+Shorthand
+
+| Export                           | Description                                         |
+|----------------------------------|-----------------------------------------------------|
+| `createPipeBlockHandlers(names)` | Block-only shorthand for `createPipeHandlers(...)`  |
+| `createPipeRawHandlers(names)`   | Raw-only shorthand for `createPipeHandlers(...)`    |
+| `declareMultilineTags(names)`    | Declare which tags need multiline normalization     |
+
+Advanced
+
+| Export                         | Description                                      |
+|--------------------------------|--------------------------------------------------|
+| `createPassthroughTags(names)` | Advanced shortcut for empty handler registration |
 
 ### Handler Utilities
 
@@ -1221,6 +1271,7 @@ See [DslContext](#dslcontext) below.
 | `materializeTextTokens(tokens, ctx?)` | Handlers returning processed child tokens  | Recursively unescape text tokens in a tree               |
 | `unescapeInline(str, ctx?)`           | Handlers processing raw strings            | Unescape DSL escape sequences in a single string         |
 | `readEscapedSequence(text, i, ctx?)`  | Handlers inspecting escape sequences       | Read one escape sequence at position `i`                 |
+| `createTextToken(value, ctx?)`        | Handlers creating plain text leaf tokens   | Create a `{ type: "text", value }` token with `id`       |
 | `createToken(draft, position?, ctx?)` | Handlers building tokens manually          | Add an `id` (and optional `position`) to a `TokenDraft`  |
 | `resetTokenIdSeed()`                  | Test code                                  | Reset the token id counter for deterministic test output |
 
@@ -1250,7 +1301,8 @@ What `ctx` actually is:
 
 - Inside a `TagHandler`, `ctx` is the second/third argument passed in by the parser for the current parse.
 - It carries the active syntax and token-id generator for that parse.
-- When a handler calls public utilities, pass the same `ctx` through so those utilities stay on the same parse-local configuration.
+- When a handler calls public utilities, pass the same `ctx` through so those utilities stay on the same parse-local
+  configuration.
 - Outside parsing, you can construct `DslContext` yourself and pass it explicitly.
 
 Use `DslContext` consistently:
@@ -1271,7 +1323,7 @@ link: {
 // Outside parsing: construct DslContext explicitly
 const ctx: DslContext = {syntax: createSyntax(), createId: (draft) => `demo-${draft.type}`};
 const args = parsePipeTextArgs("ts | Demo", ctx);
-const token = createToken({type: "text", value: "hello"}, undefined, ctx);
+const token = createTextToken("hello", ctx);
 ```
 
 This keeps handler code, standalone scripts, and future 2.0 usage on the same explicit model.
@@ -1325,18 +1377,20 @@ const token = createToken({type: "text", value: "hello"}, undefined, ctx);
 ```ts
 interface PipeArgs {
     parts: TextToken[][];
-    text: (index: number) => string;
-    materializedTokens: (index: number) => TextToken[];
-    materializedTailTokens: (startIndex: number) => TextToken[];
+    has: (index: number) => boolean;
+    text: (index: number, fallback?: string) => string;
+    materializedTokens: (index: number, fallback?: TextToken[]) => TextToken[];
+    materializedTailTokens: (startIndex: number, fallback?: TextToken[]) => TextToken[];
 }
 ```
 
-| Field                       | Description                                                  |
-|-----------------------------|--------------------------------------------------------------|
-| `parts`                     | Raw token arrays split by `\|`                               |
-| `text(i)`                   | Plain text of part `i`, unescaped and trimmed                |
-| `materializedTokens(i)`     | Unescaped tokens of part `i`                                 |
-| `materializedTailTokens(i)` | All parts from index `i` onward, merged into one token array |
+| Field                                  | Description                                                  |
+|----------------------------------------|--------------------------------------------------------------|
+| `parts`                                | Raw token arrays split by `\|`                               |
+| `has(i)`                               | Whether part `i` exists                                      |
+| `text(i, fallback?)`                   | Plain text of part `i`, unescaped and trimmed                |
+| `materializedTokens(i, fallback?)`     | Unescaped tokens of part `i`                                 |
+| `materializedTailTokens(i, fallback?)` | All parts from index `i` onward, merged into one token array |
 
 ### parsePipeTextList
 

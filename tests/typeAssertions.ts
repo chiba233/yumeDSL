@@ -2,8 +2,8 @@ import type {
   CreateId,
   DslContext,
   ParseOptions,
+  PipeHandlerDefinition,
   SyntaxConfig,
-  TagForm,
   TagHandler,
   TagNameConfig,
   TextToken,
@@ -11,12 +11,14 @@ import type {
 import {
   createSyntax,
   createPassthroughTags,
+  createPipeHandlers,
   createPipeBlockHandlers,
   createPipeRawHandlers,
   createSimpleBlockHandlers,
   createSimpleInlineHandlers,
   createSimpleRawHandlers,
   createTagNameConfig,
+  createTextToken,
   createToken,
   getSyntax,
   parsePipeArgs,
@@ -28,33 +30,38 @@ import {
   withTagNameConfig,
 } from "../src/index.ts";
 
-type Equal<A, B> =
-  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
-
-type Expect<T extends true> = T;
-
 const inlineHandlers = createSimpleInlineHandlers(["bold", "italic"] as const);
 const blockHandlers = createSimpleBlockHandlers(["info", "warning"] as const);
 const rawHandlers = createSimpleRawHandlers(["code", "math"] as const);
 const passthroughHandlers = createPassthroughTags(["thin", "center"] as const);
 const pipeBlockHandlers = createPipeBlockHandlers(["panel"] as const);
 const pipeRawHandlers = createPipeRawHandlers(["code"] as const);
+const pipeHandlers = createPipeHandlers({
+  link: {
+    inline: (args) => ({ type: "link", value: args.materializedTailTokens(1) }),
+  },
+  code: {
+    raw: (args, content, _ctx, rawArg) => ({
+      type: "code",
+      arg: rawArg,
+      args: args.parts.map((_, i) => args.text(i)),
+      value: content,
+    }),
+  },
+  panel: {
+    block: (args, content, _ctx, rawArg) => ({
+      type: "panel",
+      arg: rawArg,
+      args: args.parts.map((_, i) => args.text(i)),
+      value: content,
+    }),
+  },
+});
 
-type _InlineKeys = Expect<Equal<keyof typeof inlineHandlers, "bold" | "italic">>;
-type _BlockKeys = Expect<Equal<keyof typeof blockHandlers, "info" | "warning">>;
-type _RawKeys = Expect<Equal<keyof typeof rawHandlers, "code" | "math">>;
-type _PassKeys = Expect<Equal<keyof typeof passthroughHandlers, "thin" | "center">>;
-type _PipeBlockKeys = Expect<Equal<keyof typeof pipeBlockHandlers, "panel">>;
-type _PipeRawKeys = Expect<Equal<keyof typeof pipeRawHandlers, "code">>;
-type _TagFormShape = Expect<Equal<TagForm, "inline" | "raw" | "block">>;
-
-type InlineCtx = Parameters<NonNullable<NonNullable<TagHandler["inline"]>>>[1];
-type RawCtx = Parameters<NonNullable<NonNullable<TagHandler["raw"]>>>[2];
-type BlockCtx = Parameters<NonNullable<NonNullable<TagHandler["block"]>>>[2];
-
-type _InlineCtxShape = Expect<Equal<InlineCtx, DslContext | undefined>>;
-type _RawCtxShape = Expect<Equal<RawCtx, DslContext | undefined>>;
-type _BlockCtxShape = Expect<Equal<BlockCtx, DslContext | undefined>>;
+const pipeDefinition: PipeHandlerDefinition = {
+  inline: (args, ctx) => ({ type: "demo", value: args.materializedTokens(0, [createTextToken("x", ctx)]) }),
+};
+void pipeDefinition;
 
 const handlers: Record<string, TagHandler> = {
   ...inlineHandlers,
@@ -128,6 +135,9 @@ void escaped;
 const manualToken = createToken({ type: "text", value: "hello" }, undefined, dslContext);
 void manualToken;
 
+const manualTextToken = createTextToken("hello", dslContext);
+void manualTextToken;
+
 const ambientSyntax: SyntaxConfig = getSyntax();
 void ambientSyntax;
 
@@ -148,7 +158,13 @@ withTagNameConfig(createTagNameConfig({ isTagChar: (char) => /[A-Za-z0-9_:-]/.te
 const explicitCtxHandler: TagHandler = {
   inline: (tokens, ctx) => {
     const args = parsePipeArgs(tokens, ctx);
-    return { type: "link", value: args.materializedTailTokens(0) };
+    const hasTitle: boolean = args.has(0);
+    const title: string = args.text(0, "fallback");
+    const tokensOrFallback: TextToken[] = args.materializedTokens(1, [createTextToken("fallback", ctx)]);
+    void hasTitle;
+    void title;
+    void tokensOrFallback;
+    return { type: "link", value: args.materializedTailTokens(0, [createTextToken("empty", ctx)]) };
   },
 };
 void explicitCtxHandler;

@@ -38,6 +38,7 @@ const smokeTest = (mod: DistModule, label: string) => {
         assert.equal(typeof mod.parseRichText, "function");
         assert.equal(typeof mod.stripRichText, "function");
         assert.equal(typeof mod.extractText, "function");
+        assert.equal(typeof mod.createTextToken, "function");
         assert.equal(typeof mod.materializeTextTokens, "function");
         assert.equal(typeof mod.splitTokensByPipe, "function");
         assert.equal(typeof mod.parsePipeArgs, "function");
@@ -56,6 +57,7 @@ const smokeTest = (mod: DistModule, label: string) => {
         assert.equal(typeof mod.createSimpleInlineHandlers, "function");
         assert.equal(typeof mod.createSimpleBlockHandlers, "function");
         assert.equal(typeof mod.createSimpleRawHandlers, "function");
+        assert.equal(typeof mod.createPipeHandlers, "function");
         assert.equal(typeof mod.createPipeBlockHandlers, "function");
         assert.equal(typeof mod.createPipeRawHandlers, "function");
         assert.equal(typeof mod.createPassthroughTags, "function");
@@ -271,11 +273,18 @@ const smokeTest = (mod: DistModule, label: string) => {
         };
 
         const args = mod.parsePipeTextArgs("ts || Demo || Label", ctx);
+        assert.equal(args.has(0), true);
+        assert.equal(args.has(4), false);
         assert.deepEqual(args.parts.map((_: unknown, index: number) => args.text(index)), [
           "ts",
           "Demo",
           "Label",
         ]);
+        assert.equal(args.text(4, "fallback"), "fallback");
+        assert.deepEqual(
+          normalize(args.materializedTokens(4, [mod.createTextToken("fallback", ctx)])),
+          [{ type: "text", value: "fallback" }],
+        );
         assert.equal(mod.unescapeInline(String.raw`a ~|| b ~>>@@`, ctx), "a || b >>@@");
         assert.deepEqual(mod.readEscapedSequence(String.raw`~>>@@`, 0, ctx), [">>@@", 5]);
         const freshCtx = {
@@ -283,6 +292,7 @@ const smokeTest = (mod: DistModule, label: string) => {
           createId: (draft: { type: string }) => `fresh-${draft.type}`,
         };
         assert.equal(mod.createToken({ type: "text", value: "x" }, undefined, freshCtx).id, "fresh-text");
+        assert.equal(mod.createTextToken("x", freshCtx).id, "fresh-text");
       },
     },
     {
@@ -454,6 +464,51 @@ const smokeTest = (mod: DistModule, label: string) => {
           allowForms: ["raw", "block"],
         });
         assert.deepEqual(normalize(tokens), [{ type: "text", value: "$$unknown(x)$$" }]);
+      },
+    },
+    {
+      name: `[${label}] createPipeHandlers 导出联动`,
+      run: () => {
+        const handlers = mod.createPipeHandlers({
+          link: {
+            inline: (args: { text: (index: number) => string; materializedTailTokens: (index: number) => unknown[] }) => ({
+              type: "link",
+              url: args.text(0),
+              value: args.materializedTailTokens(1),
+            }),
+          },
+          panel: {
+            block: (
+              args: { parts: unknown[]; text: (index: number) => string },
+              content: unknown[],
+              _ctx: unknown,
+              rawArg?: string,
+            ) => ({
+              type: "panel",
+              arg: rawArg,
+              args: args.parts.map((_: unknown, i: number) => args.text(i)),
+              value: content,
+            }),
+          },
+        });
+        const tokens = mod.parseRichText(
+          "$$link(https://a.com | click)$$\n$$panel(a | b)*\nbody\n*end$$",
+          { handlers },
+        );
+        assert.deepEqual(normalize(tokens), [
+          {
+            type: "link",
+            url: "https://a.com",
+            value: [{ type: "text", value: "click" }],
+          },
+          { type: "text", value: "\n" },
+          {
+            type: "panel",
+            arg: "a | b",
+            args: ["a", "b"],
+            value: [{ type: "text", value: "body\n" }],
+          },
+        ]);
       },
     },
     {

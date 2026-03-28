@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   createParser,
   createPassthroughTags,
+  createPipeHandlers,
   createPipeBlockHandlers,
   createPipeRawHandlers,
   createSimpleBlockHandlers,
@@ -1236,6 +1237,62 @@ const cases: Array<{ name: string; run: () => void }> = [
       });
       assert.deepEqual(normalizeTokens(tokens), [
         { type: "text", value: "$$info(T)$$ $$code(ts)$$" },
+      ]);
+    },
+  },
+  {
+    name: "[Helpers] createPipeHandlers -> 应当支持 inline/raw/block 任意组合声明",
+    run: () => {
+      const handlers = createPipeHandlers({
+        link: {
+          inline: (args) => ({
+            type: "link",
+            url: args.text(0),
+            value: args.materializedTailTokens(1),
+          }),
+        },
+        code: {
+          raw: (args, content, _ctx, rawArg) => ({
+            type: "code",
+            arg: rawArg,
+            args: args.parts.map((_, i) => args.text(i)),
+            value: content,
+          }),
+        },
+        panel: {
+          block: (args, content, _ctx, rawArg) => ({
+            type: "panel",
+            arg: rawArg,
+            args: args.parts.map((_, i) => args.text(i)),
+            value: content,
+          }),
+        },
+      });
+
+      const tokens = parseRichText(
+        "$$link(https://a.com | click)$$\n$$code(ts | Demo)%\nconst x = 1\n%end$$\n$$panel(a | b | c)*\nbody\n*end$$",
+        { handlers },
+      );
+
+      assert.deepEqual(normalizeTokens(tokens), [
+        {
+          type: "link",
+          url: "https://a.com",
+          value: [{ type: "text", value: "click" }],
+        },
+        { type: "text", value: "\n" },
+        {
+          type: "code",
+          arg: "ts | Demo",
+          args: ["ts", "Demo"],
+          value: "const x = 1\n",
+        },
+        {
+          type: "panel",
+          arg: "a | b | c",
+          args: ["a", "b", "c"],
+          value: [{ type: "text", value: "body\n" }],
+        },
       ]);
     },
   },

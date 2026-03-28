@@ -1,5 +1,6 @@
 import type { BlockTagInput, DslContext, TagHandler, TextToken, TokenDraft } from "./types.js";
-import { materializeTextTokens, parsePipeTextList } from "./builders.js";
+import type { PipeArgs } from "./builders.js";
+import { materializeTextTokens, parsePipeArgs, parsePipeTextArgs } from "./builders.js";
 
 /**
  * Create passthrough tag handlers that simply register tag names
@@ -136,6 +137,63 @@ export const createSimpleRawHandlers = <const T extends readonly string[]>(
   return result;
 };
 
+export interface PipeHandlerDefinition {
+  inline?: (args: PipeArgs, ctx?: DslContext) => TokenDraft;
+  raw?: (args: PipeArgs, content: string, ctx?: DslContext, rawArg?: string) => TokenDraft;
+  block?: (args: PipeArgs, content: TextToken[], ctx?: DslContext, rawArg?: string) => TokenDraft;
+}
+
+/**
+ * Create handlers whose `arg` / inline tokens are pre-parsed as `PipeArgs`.
+ *
+ * Supports any combination of `inline`, `raw`, and `block` for each tag.
+ *
+ * @example
+ * const handlers = createPipeHandlers({
+ *   link: {
+ *     inline: (args) => ({ type: "link", url: args.text(0), value: args.materializedTailTokens(1) }),
+ *   },
+ *   panel: {
+ *     block: (args, content) => ({ type: "panel", args: args.parts.map((_, i) => args.text(i)), value: content }),
+ *   },
+ * });
+ */
+export const createPipeHandlers = <
+  const T extends Record<string, PipeHandlerDefinition>,
+>(
+  definitions: T,
+): { [K in keyof T]: TagHandler } => {
+  const result = {} as { [K in keyof T]: TagHandler };
+
+  const keys = Object.keys(definitions) as (keyof T)[];
+  for (const key of keys) {
+    const definition = definitions[key];
+    const handler: TagHandler = {};
+
+    if (definition.inline) {
+      handler.inline = (tokens: TextToken[], ctx?: DslContext): TokenDraft =>
+        definition.inline!(parsePipeArgs(tokens, ctx), ctx);
+    }
+
+    if (definition.raw) {
+      handler.raw = (arg: string | undefined, content: string, ctx?: DslContext): TokenDraft =>
+        definition.raw!(parsePipeTextArgs(arg ?? "", ctx), content, ctx, arg);
+    }
+
+    if (definition.block) {
+      handler.block = (
+        arg: string | undefined,
+        content: TextToken[],
+        ctx?: DslContext,
+      ): TokenDraft => definition.block!(parsePipeTextArgs(arg ?? "", ctx), content, ctx, arg);
+    }
+
+    result[key] = handler;
+  }
+
+  return result;
+};
+
 /**
  * Create block handlers that split the arg by pipe and expose both
  * the original arg and structured `args` array:
@@ -144,18 +202,18 @@ export const createSimpleRawHandlers = <const T extends readonly string[]>(
 export const createPipeBlockHandlers = <const T extends readonly string[]>(
   names: T,
 ): Record<T[number], TagHandler> => {
-  const result = {} as Record<T[number], TagHandler>;
+  const definitions = {} as Record<T[number], PipeHandlerDefinition>;
   for (const name of names) {
-    result[name as T[number]] = {
-      block: (arg: string | undefined, content: TextToken[], ctx?: DslContext): TokenDraft => ({
+    definitions[name as T[number]] = {
+      block: (args, content, _ctx, rawArg) => ({
         type: name,
-        arg,
-        args: arg === undefined ? [] : parsePipeTextList(arg, ctx),
+        arg: rawArg,
+        args: args.parts.map((_, i) => args.text(i)),
         value: content,
       }),
     };
   }
-  return result;
+  return createPipeHandlers(definitions);
 };
 
 /**
@@ -166,16 +224,16 @@ export const createPipeBlockHandlers = <const T extends readonly string[]>(
 export const createPipeRawHandlers = <const T extends readonly string[]>(
   names: T,
 ): Record<T[number], TagHandler> => {
-  const result = {} as Record<T[number], TagHandler>;
+  const definitions = {} as Record<T[number], PipeHandlerDefinition>;
   for (const name of names) {
-    result[name as T[number]] = {
-      raw: (arg: string | undefined, content: string, ctx?: DslContext): TokenDraft => ({
+    definitions[name as T[number]] = {
+      raw: (args, content, _ctx, rawArg) => ({
         type: name,
-        arg,
-        args: arg === undefined ? [] : parsePipeTextList(arg, ctx),
+        arg: rawArg,
+        args: args.parts.map((_, i) => args.text(i)),
         value: content,
       }),
     };
   }
-  return result;
+  return createPipeHandlers(definitions);
 };

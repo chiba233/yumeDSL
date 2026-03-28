@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   createParser,
   createSyntax,
+  createTextToken,
   createToken,
   materializeTextTokens,
   parsePipeArgs,
@@ -141,7 +142,16 @@ const cases = [
       };
 
       const args = parsePipeTextArgs("ts || Demo || Label", ctx);
+      assert.equal(args.has(0), true);
+      assert.equal(args.has(3), false);
       assert.deepEqual(args.parts.map((_, index) => args.text(index)), ["ts", "Demo", "Label"]);
+      assert.equal(args.text(5, "fallback"), "fallback");
+      assert.deepEqual(normalizeTokens(args.materializedTokens(5, [createTextToken("fallback", ctx)])), [
+        { type: "text", value: "fallback" },
+      ]);
+      assert.deepEqual(normalizeTokens(args.materializedTailTokens(5, [createTextToken("tail", ctx)])), [
+        { type: "text", value: "tail" },
+      ]);
       assert.equal(unescapeInline(String.raw`a ~|| b ~>>@@ c`, ctx), "a || b >>@@ c");
       assert.deepEqual(readEscapedSequence(String.raw`~>>@@`, 0, ctx), [">>@@", 5]);
 
@@ -151,6 +161,7 @@ const cases = [
       };
       const token = createToken({ type: "text", value: "hello" }, undefined, freshCtx);
       assert.equal(token.id, "fresh-text");
+      assert.equal(createTextToken("world", freshCtx).id, "fresh-text");
     },
   },
   {

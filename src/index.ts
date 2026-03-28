@@ -15,6 +15,7 @@ export {
   createSimpleInlineHandlers,
   createSimpleBlockHandlers,
   createSimpleRawHandlers,
+  createPipeHandlers,
   createPipeBlockHandlers,
   createPipeRawHandlers,
   declareMultilineTags,
@@ -22,6 +23,7 @@ export {
 
 // ── Handler utilities ──
 export {
+  createTextToken,
   extractText,
   materializeTextTokens,
   splitTokensByPipe,
@@ -84,3 +86,4 @@ export type {
 export type { StructuralNode, StructuralParseOptions } from "./types.js";
 
 export type { PipeArgs } from "./builders.js";
+export type { PipeHandlerDefinition } from "./handlerHelpers.js";
