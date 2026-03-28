@@ -1788,6 +1788,8 @@ tagMap.date = DateText;
     - `createToken` accepts an optional `createId` parameter for explicit threading
     - `parseStructural` threads `syntax` / `tagName` / `tracker` explicitly through `parseNodes` — no `withSyntax` / `withTagNameConfig` wrappers needed internally. Ambient `getSyntax()` / `getTagNameConfig()` are captured once at entry when no explicit overrides are provided
     - `parseRichText` still wraps with `withSyntax` / `withTagNameConfig` / `withCreateId` at entry for backward compatibility — user handlers calling public utilities (`parsePipeArgs`, `createToken`, `unescapeInline`, etc.) continue to work without changes
+- Public utilities with optional `syntax` parameter (`readEscapedSequence`, `readEscaped`, `unescapeInline`, `splitTokensByPipe`, `parsePipeArgs`, `parsePipeTextArgs`, `parsePipeTextList`, `materializeTextTokens`) now resolve syntax once at the top and pass the resolved value through the call chain, avoiding repeated `getSyntax()` fallback on each internal call
+- `parseStructural` reuses `emptyBuffer()` from `context.ts` for buffer initialization and reset
 - No public API changes; all existing exports and signatures remain backward compatible
 - Optional `syntax` / `createId` parameters on public utilities are additive (non-breaking)
 

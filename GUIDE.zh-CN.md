@@ -1746,6 +1746,8 @@ tagMap.date = DateText;
     - `parseStructural` 通过 `parseNodes` 显式透传 `syntax` / `tagName` / `tracker`——内部不再需要 `withSyntax` / `withTagNameConfig` 包裹。入口处在无显式覆盖时捕获当前 `getSyntax()` / `getTagNameConfig()` 的 ambient 值
     - `parseRichText` 入口仍用 `withSyntax` / `withTagNameConfig` / `withCreateId` 包裹以保持向后兼容——用户 handler 中调用公开工具函数（`parsePipeArgs`、`createToken`、`unescapeInline` 等）无需任何修改
 - 无公开 API 变更，所有现有导出和签名保持向后兼容
+- 带可选 `syntax` 参数的公开工具函数（`readEscapedSequence`、`readEscaped`、`unescapeInline`、`splitTokensByPipe`、`parsePipeArgs`、`parsePipeTextArgs`、`parsePipeTextList`、`materializeTextTokens`）现在在顶层一次性 resolve syntax，后续内部调用直接传递 resolved 值，避免链式调用中重复 fallback 到 `getSyntax()`
+- `parseStructural` 复用 `context.ts` 的 `emptyBuffer()` 进行 buffer 初始化和重置
 - 公开工具函数上的可选 `syntax` / `createId` 参数为新增（非破坏性）
 
 ### 1.0.3

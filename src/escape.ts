@@ -1,12 +1,14 @@
 import type { SyntaxConfig } from "./types.js";
 import { getSyntax } from "./syntax.js";
 
+const resolveSyntax = (syntax?: SyntaxConfig): SyntaxConfig => syntax ?? getSyntax();
+
 export const readEscapedSequence = (
   text: string,
   i: number,
   syntax?: SyntaxConfig,
 ): [string | null, number] => {
-  const { escapeChar, escapableTokens } = syntax ?? getSyntax();
+  const { escapeChar, escapableTokens } = resolveSyntax(syntax);
   if (!text.startsWith(escapeChar, i)) {
     return [null, i];
   }
@@ -20,12 +22,9 @@ export const readEscapedSequence = (
   return [null, i];
 };
 
-export const readEscaped = (
-  text: string,
-  i: number,
-  syntax?: SyntaxConfig,
-): [string, number] => {
-  const [escaped, next] = readEscapedSequence(text, i, syntax);
+export const readEscaped = (text: string, i: number, syntax?: SyntaxConfig): [string, number] => {
+  const resolvedSyntax = resolveSyntax(syntax);
+  const [escaped, next] = readEscapedSequence(text, i, resolvedSyntax);
   if (escaped !== null) {
     return [escaped, next];
   }
@@ -33,11 +32,12 @@ export const readEscaped = (
 };
 
 export const unescapeInline = (str: string, syntax?: SyntaxConfig): string => {
+  const resolvedSyntax = resolveSyntax(syntax);
   let result = "";
   let i = 0;
 
   while (i < str.length) {
-    const [chunk, next] = readEscaped(str, i, syntax);
+    const [chunk, next] = readEscaped(str, i, resolvedSyntax);
     result += chunk;
     i = next;
   }

@@ -1,16 +1,16 @@
 import type {
   BufferState,
-  SourceSpan,
   StructuralNode,
   StructuralParseOptions,
   SyntaxConfig,
   TagHandler,
   TagNameConfig,
 } from "./types.js";
-import { createSyntax, getSyntax, withSyntax } from "./syntax.js";
-import { createTagNameConfig, getTagNameConfig, withTagNameConfig } from "./chars.js";
+import { createSyntax, getSyntax } from "./syntax.js";
+import { createTagNameConfig, getTagNameConfig } from "./chars.js";
 import { readEscapedSequence } from "./escape.js";
 import { supportsInlineForm } from "./consumers.js";
+import { emptyBuffer } from "./context.js";
 import { filterHandlersByForms } from "./parse.js";
 import {
   readTagStartInfo,
@@ -104,18 +104,19 @@ const parseNodes = (
 
   const nodes: StructuralNode[] = [];
   let i = 0;
-  const buf: BufferState = { content: "", start: -1, sourceEnd: -1 };
+  const buf: BufferState = emptyBuffer();
 
   const flush = () => {
     if (!buf.content) return;
-    const position = buf.start >= 0
-      ? makePosition(tracker, baseOffset + buf.start, baseOffset + i)
-      : undefined;
+    const position =
+      buf.start >= 0 ? makePosition(tracker, baseOffset + buf.start, baseOffset + i) : undefined;
     const node: StructuralNode = { type: "text", value: buf.content };
     if (position) node.position = position;
     nodes.push(node);
-    buf.content = "";
-    buf.start = -1;
+    const reset = emptyBuffer();
+    buf.content = reset.content;
+    buf.start = reset.start;
+    buf.sourceEnd = reset.sourceEnd;
   };
 
   while (i < text.length) {
@@ -171,11 +172,14 @@ const parseNodes = (
     // ── Inline: $$tag(…)$$ ──
     if (closerInfo.closer === endTag) {
       // Form gating: check inline support
-      if (gating && !supportsInlineForm(
-        gating.handlers[info.tag],
-        gating.allowInline,
-        gating.registeredTags.has(info.tag),
-      )) {
+      if (
+        gating &&
+        !supportsInlineForm(
+          gating.handlers[info.tag],
+          gating.allowInline,
+          gating.registeredTags.has(info.tag),
+        )
+      ) {
         if (buf.start === -1) buf.start = i;
         buf.content += text[i];
         i++;
@@ -220,7 +224,18 @@ const parseNodes = (
       const hasComplexSupport = !!handler?.raw || !!handler?.block;
 
       if (!hasComplexSupport) {
-        const fb = tryInlineFallback(text, i, info, depth, depthLimit, gating, baseOffset, tracker, syntax, tagName);
+        const fb = tryInlineFallback(
+          text,
+          i,
+          info,
+          depth,
+          depthLimit,
+          gating,
+          baseOffset,
+          tracker,
+          syntax,
+          tagName,
+        );
         if (fb.nodes) {
           flush();
           fb.nodes.forEach((n) => nodes.push(n));

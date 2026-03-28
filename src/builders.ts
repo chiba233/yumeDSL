@@ -3,6 +3,8 @@ import { readEscapedSequence, unescapeInline } from "./escape.js";
 import { getSyntax } from "./syntax.js";
 import { createToken } from "./createToken.js";
 
+const resolveSyntax = (syntax?: SyntaxConfig): SyntaxConfig => syntax ?? getSyntax();
+
 const createTextToken = (value: string, explicitCreateId?: CreateId): TextToken =>
   createToken({ type: "text", value }, undefined, explicitCreateId);
 
@@ -21,14 +23,17 @@ export const extractText = (tokens?: TextToken[]): string => {
  * untouched — only `{ type: "text", value: string }` leaves are processed.
  */
 export const materializeTextTokens = (tokens: TextToken[], syntax?: SyntaxConfig): TextToken[] => {
+  const resolvedSyntax = resolveSyntax(syntax);
   return tokens.map((token) => {
     if (typeof token.value === "string") {
-      return token.type === "text" ? { ...token, value: unescapeInline(token.value, syntax) } : token;
+      return token.type === "text"
+        ? { ...token, value: unescapeInline(token.value, resolvedSyntax) }
+        : token;
     }
 
     return {
       ...token,
-      value: materializeTextTokens(token.value, syntax),
+      value: materializeTextTokens(token.value, resolvedSyntax),
     };
   });
 };
@@ -41,7 +46,7 @@ export interface PipeArgs {
 }
 
 export const splitTokensByPipe = (tokens: TextToken[], syntax?: SyntaxConfig): TextToken[][] => {
-  const s = syntax ?? getSyntax();
+  const s = resolveSyntax(syntax);
   const { escapeChar, tagDivider } = s;
   const parts: TextToken[][] = [[]];
 
@@ -88,14 +93,15 @@ export const splitTokensByPipe = (tokens: TextToken[], syntax?: SyntaxConfig): T
 };
 
 export const parsePipeArgs = (tokens: TextToken[], syntax?: SyntaxConfig): PipeArgs => {
-  const s = syntax ?? getSyntax();
+  const s = resolveSyntax(syntax);
   const parts = splitTokensByPipe(tokens, s);
 
   return {
     parts,
     text: (index) => unescapeInline(extractText(parts[index] ?? []), s).trim(),
     materializedTokens: (index) => materializeTextTokens(parts[index] ?? [], s),
-    materializedTailTokens: (startIndex) => materializeTextTokens(parts.slice(startIndex).flat(), s),
+    materializedTailTokens: (startIndex) =>
+      materializeTextTokens(parts.slice(startIndex).flat(), s),
   };
 };
 
