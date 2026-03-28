@@ -24,8 +24,8 @@ Turns text into a token tree — tag semantics, rendering, and UI integration ar
 - Inline / Raw / Block — three tag forms, one parser
 - Fully configurable syntax tokens and tag-name rules
 
-**Core API is stable.** Future updates will prioritize backward compatibility; breaking changes, if any, will land in
-major versions with explicit migration notes.
+**Core parsing API is stable.** Some utility and ambient-state APIs are transitional — see
+[Deprecated API](#deprecated-api). Breaking changes, if any, will land in major versions with explicit migration notes.
 
 ## Ecosystem
 
@@ -250,7 +250,7 @@ Prefix syntax tokens with `\` to produce them literally.
 
 ### `createParser(defaults)` — recommended entry point
 
-`createParser` binds your `ParseOptions` (handlers, syntax, tagName, mode, depthLimit, onError, trackPositions) into a
+`createParser` binds your `ParseOptions` (handlers, syntax, tagName, depthLimit, onError, trackPositions) into a
 reusable instance.
 This is the **recommended way** to use the parser — define your tag handlers once, then call `dsl.parse()` /
 `dsl.strip()` everywhere without repeating config.
@@ -298,7 +298,6 @@ dsl.parse(text, {onError: (e) => console.warn(e)});
 | `depthLimit`     | Nesting limit — rarely changes per call                                  |
 | `createId`       | Custom token id generator (can be overridden per call)                   |
 | `blockTags`      | Tags that receive block-level line-break normalization                   |
-| `mode`           | Only `"render"` is supported                                             |
 | `onError`        | Default error handler (can still be overridden per call)                 |
 | `trackPositions` | Attach source positions to all output nodes (can be overridden per call) |
 
@@ -328,7 +327,7 @@ interface Parser {
 ```
 
 `structural` shares `handlers`, `allowForms`, `syntax`, `tagName`, `depthLimit`, and `trackPositions`
-from `defaults` — semantic-only options (`mode`, `blockTags`, `onError`, `createId`) are
+from `defaults` — semantic-only options (`blockTags`, `onError`, `createId`) are
 naturally excluded because `StructuralParseOptions` does not extend them.
 
 ### `parseRichText` / `stripRichText`
@@ -341,7 +340,7 @@ function parseRichText(text: string, options?: ParseOptions): TextToken[];
 function stripRichText(text: string, options?: ParseOptions): string;
 ```
 
-`ParseOptions` includes `handlers`, `allowForms`, `syntax`, `tagName`, `depthLimit`, `createId`, `blockTags`, `mode`,
+`ParseOptions` includes `handlers`, `allowForms`, `syntax`, `tagName`, `depthLimit`, `createId`, `blockTags`,
 `onError`, and `trackPositions`. See [ParseOptions](#parseoptions) for full details.
 
 Application code should generally use `createParser`; reach for the bare functions only in one-off utility scripts
@@ -387,7 +386,7 @@ interface ParserBaseOptions {
 interface ParseOptions extends ParserBaseOptions {
     createId?,
     blockTags?,
-    mode?,
+    mode?,             // deprecated
     onError?,          // semantic-only
     trackPositions?    // shared with StructuralParseOptions
 }
@@ -828,7 +827,7 @@ interface ParserBaseOptions {
 interface ParseOptions extends ParserBaseOptions {
     createId?: (token: TokenDraft) => string;
     blockTags?: readonly BlockTagInput[];
-    mode?: "render";
+    mode?: "render";    // deprecated
     onError?: (error: ParseError) => void;
     trackPositions?: boolean;
 }
@@ -851,7 +850,7 @@ interface StructuralParseOptions extends ParserBaseOptions {
 - `createId`: override token id generation for this parse
 - `blockTags`: tags treated as block-level for line-break normalization — accepts plain strings or `{ tag, forms }`
   objects for per-form control
-- `mode`: only `"render"` is supported. Use `parseStructural` for syntax-highlighting use cases
+- `mode`: deprecated — see [Deprecated API](#deprecated-api)
 - `onError`: callback for parse errors
 - `trackPositions`: attach source position info (`position`) to every `TextToken` (default `false`).
   See [Source Position Tracking](#source-position-tracking)
