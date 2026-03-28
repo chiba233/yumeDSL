@@ -1,9 +1,9 @@
-import type { ParseContext, ParseStackNode, SourceSpan, TextToken } from "./types.js";
+import type { BufferState, ParseContext, ParseStackNode, SourceSpan, TextToken } from "./types.js";
 import { createToken } from "./createToken.js";
 import { emitError } from "./errors.js";
 import { makePosition } from "./positions.js";
 
-export const emptyBuffer = (): { content: string; start: number; sourceEnd: number } => ({
+export const emptyBuffer = (): BufferState => ({
   content: "",
   start: -1,
   sourceEnd: -1,
