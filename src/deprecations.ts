@@ -9,7 +9,7 @@ const shouldWarn = (): boolean => {
   return true;
 };
 
-/** Emit a deprecation warning once per key. Suppressed in production and test environments. */
+/** Emit a deprecation warning once per key. Suppressed when `NODE_ENV=production`. */
 export const warnDeprecated = (key: string, message: string) => {
   if (warned.has(key)) return;
   warned.add(key);
