@@ -465,8 +465,12 @@ The default tokens and where they appear:
 
 ```text
 Inline:   $$tag(content)$$
-               ↑         ↑
-          tagOpen(    endTag)$$
+               ↑       ↑
+          tagOpen(  endTag)$$
+
+Nested:   $$tag(fn(x) text)$$
+                  ↑ ↑
+          tagOpen(  tagClose)   ← depth tracking keeps inner parens balanced
 
 With arg: $$tag(arg | content)$$
                     ↑

@@ -453,8 +453,12 @@ const tokens = parseRichText("@@bold(hello)@@", {
 
 ```text
 Inline:   $$tag(content)$$
-               ↑         ↑
-          tagOpen(    endTag)$$
+               ↑       ↑
+          tagOpen(  endTag)$$
+
+嵌套括号： $$tag(fn(x) text)$$
+                  ↑ ↑
+          tagOpen(  tagClose)   ← 深度追踪保持内层括号平衡
 
 带参数：   $$tag(arg | content)$$
                     ↑
