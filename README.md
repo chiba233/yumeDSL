@@ -495,7 +495,7 @@ Escape:   \)  \\  \|
 import {DEFAULT_SYNTAX} from "yume-dsl-rich-text";
 // DEFAULT_SYNTAX.tagPrefix   === "$$"        // tag start marker
 // DEFAULT_SYNTAX.tagOpen     === "("         // opens the tag argument/content
-// DEFAULT_SYNTAX.tagClose    === ")"         // unused standalone; part of compound tokens below
+// DEFAULT_SYNTAX.tagClose    === ")"         // paired with tagOpen for nested-paren depth matching in args
 // DEFAULT_SYNTAX.tagDivider  === "|"         // separates params inside (…)
 // DEFAULT_SYNTAX.endTag      === ")$$"       // closes an inline tag
 // DEFAULT_SYNTAX.rawOpen     === ")%"        // switches from args to raw content

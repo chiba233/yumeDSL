@@ -483,7 +483,7 @@ Block:    $$tag(arg)*
 import {DEFAULT_SYNTAX} from "yume-dsl-rich-text";
 // DEFAULT_SYNTAX.tagPrefix   === "$$"        // 标签起始标记
 // DEFAULT_SYNTAX.tagOpen     === "("         // 打开标签参数/内容
-// DEFAULT_SYNTAX.tagClose    === ")"         // 单独不使用；作为下面复合符号的组成部分
+// DEFAULT_SYNTAX.tagClose    === ")"         // 与 tagOpen 配对，用于参数区嵌套括号深度匹配
 // DEFAULT_SYNTAX.tagDivider  === "|"         // 在 (…) 内分隔参数
 // DEFAULT_SYNTAX.endTag      === ")$$"       // 关闭 inline 标签
 // DEFAULT_SYNTAX.rawOpen     === ")%"        // 从参数切换到 raw 内容
