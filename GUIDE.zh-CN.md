@@ -1253,6 +1253,77 @@ const token = createToken({type: "text", value: "hello"}, undefined, ctx);
 **未来 major 版本：** 工具函数会逐步收紧到显式 `DslContext`。建议现在开始在 handler 回调之外（如独立脚本或测试中）调用工具函数时传入
 `DslContext`。handler 内部的隐式回退在 major 版本变更前将继续工作。
 
+### 迁移指南
+
+**现有代码现在必须修改吗？**
+
+不需要。
+
+- 现有 handler 和工具函数调用在本版本里仍然可以不改继续工作。
+- 省略 `ctx` 仍然受支持，这一版保留它 purely 是为了向后兼容。
+- 新代码现在就应采用 `DslContext`，这样未来 major 的迁移会变得很小而且机械。
+
+**受影响的 API**
+
+这次迁移影响的是 handler 到 utility 的调用链，不是整个库一起变更：
+
+- `TagHandler`
+- `parsePipeArgs`
+- `parsePipeTextArgs`
+- `parsePipeTextList`
+- `splitTokensByPipe`
+- `materializeTextTokens`
+- `unescapeInline`
+- `readEscapedSequence`
+- `createToken`
+
+**Before / After**
+
+```ts
+// Before：仍然兼容
+link: {
+    inline: (tokens) => {
+        const args = parsePipeArgs(tokens);
+        return {type: "link", url: args.text(0), value: args.materializedTailTokens(1)};
+    },
+}
+
+// After：推荐写法
+link: {
+    inline: (tokens, ctx) => {
+        const args = parsePipeArgs(tokens, ctx);
+        return {type: "link", url: args.text(0), value: args.materializedTailTokens(1)};
+    },
+}
+```
+
+```ts
+// Before：独立工具调用依赖 ambient 默认值
+const args = parsePipeTextArgs("ts | Demo");
+const token = createToken({type: "text", value: "hello"});
+
+// After：显式传入 DslContext
+const ctx: DslContext = {syntax: createSyntax(), createId: (draft) => `demo-${draft.type}`};
+const args = parsePipeTextArgs("ts | Demo", ctx);
+const token = createToken({type: "text", value: "hello"}, undefined, ctx);
+```
+
+**推荐迁移顺序**
+
+1. 先把自定义 `TagHandler` 签名改成接收 `ctx`。
+2. 再把 handler 内调用的公开 utility 全部透传同一个 `ctx`。
+3. 最后把独立脚本 / 测试中的 utility 调用改成手动构造并传入 `DslContext`。
+4. 旧代码里暂时还能工作的隐式调用，可以等自然触达时再迁。
+
+**未来 major 的收紧边界**
+
+计划中的收紧范围是明确的：
+
+- 公开 utility 会继续朝显式 `DslContext` 收紧。
+- handler 示例和 helper 组合都应默认认为 `ctx` 会被接收并继续透传。
+- 旧的隐式路径（`withSyntax` / `withCreateId` 的 ambient fallback，以及省略 `ctx`）预期只作为 major 版本到来前的兼容桥接层保留。
+- `createToken(..., ctx?)` 也许会比其他 API 更久地保留裸 `CreateId` 简写，但新代码不应再依赖这种写法。
+
 ### PipeArgs
 
 `parsePipeArgs` 和 `parsePipeTextArgs` 返回 `PipeArgs` 对象：
@@ -1804,204 +1875,10 @@ tagMap.date = DateText;
 
 ## 更新日志
 
-### 1.0.4
+版本历史已拆分到独立文件：
 
-- **重构：** 消除内部解析代码中所有剩余的模块级隐式状态读取
-    - `ParseContext` 直接携带 `syntax`、`tagName`、`createId`——内部函数从中读取，不再调用 `getSyntax()` /
-      `getTagNameConfig()` / 依赖 `activeCreateId`
-    - 所有 scanner 函数（`findTagArgClose`、`readTagStartInfo`、`findInlineClose`、`findBlockClose`、`findRawClose`、
-      `getTagCloserType`、`skipTagBoundary`、`skipDegradedInline`）接收显式 `syntax` / `tagName` 参数
-    - `parseStructural` 通过 `parseNodes` 显式透传 `syntax` / `tagName` / `tracker`——内部不再需要 `withSyntax` /
-      `withTagNameConfig` 包裹。入口处在无显式覆盖时捕获当前 `getSyntax()` / `getTagNameConfig()` 的 ambient 值
-    - `parseRichText` 入口仍用 `withSyntax` / `withTagNameConfig` / `withCreateId` 包裹以保持向后兼容——用户 handler
-      中调用公开工具函数（`parsePipeArgs`、`createToken`、`unescapeInline` 等）无需任何修改
-- 新增类型：`DslContext { syntax, createId? }` — 公开工具函数的轻量上下文
-    - 所有公开工具函数（`readEscapedSequence`、`readEscaped`、`unescapeInline`、`splitTokensByPipe`、`parsePipeArgs`、
-      `parsePipeTextArgs`、`parsePipeTextList`、`materializeTextTokens`、`createToken`）现在接受可选
-      `ctx?: DslContext | SyntaxConfig` 参数
-    - 传 `DslContext` 可显式提供完整上下文；只需要 syntax 时也兼容直接传 `SyntaxConfig`
-    - `createToken(..., ctx?)` 还继续兼容直接传裸 `CreateId` 函数，以保持向后兼容
-    - 省略时回退到模块级默认值（`getSyntax()` / `activeCreateId`）——现有代码无需修改
-    - **未来 major 版本会逐步收紧到显式 `DslContext`** — 建议现在开始采用 `DslContext` 以提前准备迁移
-- `parseStructural` 复用 `context.ts` 的 `emptyBuffer()` 进行 buffer 初始化和重置
-- 所有现有导出和签名保持向后兼容；`DslContext` 及可选 `ctx` 参数为新增（非破坏性）
-
-### 1.0.3
-
-- **重构：** 位置追踪器从模块级隐式状态改为显式参数透传
-    - `ParseContext` 直接携带 `tracker: PositionTracker | null`
-    - `parseStructural` 通过 `parseNodes` 显式传递 tracker——无隐藏全局状态
-    - `emitError` / `getErrorContext` 改为接收 tracker 参数，不再读模块状态
-    - `complex.ts` 显式接收 tracker；内层解析偏移调整使用 `offsetTracker`（替代 `withBaseOffset` + `withPositionTracker`）
-- **重构：** Buffer 累积状态合并为 `BufferState` 对象
-    - `ParseContext.buffer` / `bufferStart` / `bufferSourceEnd` 合并为 `ParseContext.buf: BufferState`
-    - `emptyBuffer()` 工厂函数用于初始化和重置
-- **重构：** Block 内容归一化 + 偏移映射封装为 `prepareBlockContent`
-    - 返回 `{ content, baseOffset }`——调用方不再手动拼接 `normalizeBlockTagContent` + `leadingTrim` + `contentStart`
-- 无公开 API 变更，全部为内部改动
-
-### 1.0.2
-
-- 新增可选源码位置追踪（`trackPositions: true`），同时支持 `parseRichText` 和 `parseStructural`
-    - 新类型：`SourcePosition`、`SourceSpan`
-    - `TextToken.position?` 和 `StructuralNode.position?` — 仅在启用时出现
-    - 预计算行偏移表 + O(log n) 二分查找行列号
-    - 关闭时（默认）开销可忽略——不分配行表、不产生 position 对象
-    - `parseRichText` 的 block/raw token span 包含尾部换行归一化；`parseStructural` 保持原始语法 span
-    - 嵌套 block 子内容位置通过基准偏移调整映射回原始源码
-    - 启用位置追踪时，错误报告复用行偏移表
-- `normalizeBlockTagContent` 现在返回 `{ content, leadingTrim }` 而非纯字符串（内部变更，非公开 API）
-
-### 1.0.1
-
-- 新增 `createEasySyntax(overrides)` — 从 `tagPrefix` 和 `tagClose` 自动推导复合符号（`endTag`、`rawOpen`、
-  `blockOpen`、`rawClose`、`blockClose`）的便利函数。显式覆盖仍优先。`createSyntax` 保留为底层纯 merge 版本
-- 提升文档可读性——精简首页信息密度、新增推荐阅读顺序、新增 API 选型建议、新增生态组合指南、
-  重写 Default Syntax 章节（ASCII 语法示意图 + 符号联动表）
-
-### 1.0.0
-
-- **行为变更：** 从 `ParseOptions.mode` 中移除 `"highlight"` 值——不再接受该值。
-  三处内部 highlight 模式分支（跳过 block 内容裁剪、跳过尾部换行消费、跳过 raw 内容反转义）已全部删除。
-  语法高亮场景请使用 `parseStructural`
-- 将 `parseStructural` 重新定位为与 `parseRichText` 共享同一套语言配置的一等结构化解析 API，而非高亮辅助工具
-- 将自定义语法提升为核心特性——更新了介绍、设计理念、特性和适用场景章节
-- 取消导出 `supportsInlineForm` 和 `filterHandlersByForms`（仅内部使用，0.1.18–0.1.19 changelog 中误称已导出，
-  实际从未从 `index.ts` 重导出）
-
-### 0.1.20
-
-- 擦AI生成文档的屁股
-
-### 0.1.18 - 0.1.19
-
-- 新增 `parseStructural(text, options?)` — 在输出树中保留标签形态（inline / raw / block）的结构化解析器，返回
-  `StructuralNode[]`
-    - 与 `parseRichText` 共享 `ParserBaseOptions`——传入 `handlers` 时标签识别和形态门控完全一致
-    - 省略 `handlers` 则全接受（高亮模式）
-    - 未传 override 时继承外部 `withSyntax` / `withTagNameConfig` 闭包上下文，可自由组合
-- 抽取 `ParserBaseOptions` — `ParseOptions` 和 `StructuralParseOptions` 的共享基类
-  （`handlers`、`allowForms`、`depthLimit`、`syntax`、`tagName`）
-- `createParser` 返回值新增 `parser.structural()` 方法——与 `parse()` / `strip()` 共享基础配置
-- 从内部模块导出 `supportsInlineForm`、`filterHandlersByForms`（structural 解析器共用，单一来源）
-- 导出 `readEscapedSequence`、`withSyntax`、`getSyntax`、`withTagNameConfig`
-- 导出 `ParserBaseOptions`、`StructuralNode`、`StructuralParseOptions` 类型
-- 生态表新增 `yume-dsl-shiki-highlight`
-
-### 0.1.15 – 0.1.17
-
-- 新增[在线演示](https://qwwq.org/blog/dsl-fallback-museum) — 展示 Shiki 代码高亮插件、合法插件用法、故意书写错误的标记及错误报告
-- 优化 npm 包体积，排除非必要文档（缩小约 30%）
-- 新增 Vue 3 渲染指南，提供开箱即用的递归渲染组件示例
-- 新增社区文档：`CONTRIBUTING.md`、`SECURITY.md`、Issue 模板、PR 模板
-- 新增 `CONTRIBUTING.zh-CN.md` 中文贡献指南
-
-### 0.1.14
-
-- 更新readme和添加黄金测试。
-
-### 0.1.13
-
-- 重组 `index.ts` 导出分组：配置、处理器辅助函数、处理器工具函数、类型子分组
-- 重组 README「工具函数导出」章节为 配置 / 处理器辅助函数 / 处理器工具函数 子表格
-- 将所有 `tagName` 文档集中到「自定义标签名字符规则」章节
-- 修复 IDEA 中 dist smoke test 的 TS7016 错误（改用包名自引用 + `paths` 映射）
-
-### 0.1.12
-
-- `ParseOptions` 新增 `tagName`，允许用户自定义 `isTagStartChar` / `isTagChar`
-- 新增 `TagNameConfig`、`DEFAULT_TAG_NAME`、`createTagNameConfig`
-- README 补充 `parseRichText` 和 `createParser` 下的自定义标签名规则示例
-- `declareMultilineTags` 新增按形式控制的细粒度声明 — 条目可使用 `{ tag, forms }` 对象将换行符修剪限定到特定多行形式
-  （`"raw"` / `"block"`）
-- 纯字符串条目完全向后兼容（同时修剪 raw 和 block 形式）
-- 新增导出类型 `MultilineForm`、`BlockTagInput`、`BlockTagLookup`
-- 内部：将 `Set<string>` 块标签查询替换为按形式感知的 `BlockTagLookup`；`deriveBlockTags` 现在按 handler 方法各自注册对应形式，
-  自动推导更精确
-
-### 0.1.11
-
-- 默认将解析器生成的 token id 改为单次 parse 局部递增（每次解析从 `rt-0` 开始）
-- 新增 `createId` 选项，允许按单次 parse / parser 覆盖 token id 生成策略
-
-### 0.1.10
-
-- 新增 `parsePipeTextList(text)` 工具函数 — 将管道分隔的参数字符串直接拆分为 `string[]`，无需中间 token 分配
-- 重构 `createPipeBlockHandlers()` / `createPipeRawHandlers()`，内部改用 `parsePipeTextList`
-- 为 inline 形式门控函数（`supportsInlineForm`）添加决策表注释，防止后续修改引入回归
-- 为 `materializeTextTokens` 添加 JSDoc，明确其仅对 text 类型叶节点做反转义
-
-### 0.1.9
-
-- 移除 source map 文件以减小发布包体积
-- 修复 `allowForms`：当禁用 `"inline"` 时，仍保留 `raw` / `block` handler 的标签不再错误接受 inline 语法
-- 修复 `allowForms`：当禁用 `"inline"` 时，未注册的 `$$unknown(...)$$` 也会按原文保留
-- 修复 `createSimpleBlockHandlers()` / `createSimpleRawHandlers()`：block / raw helper 不再隐式接受 inline 语法
-- 修复自定义 syntax 对多字符 `tagOpen` / `tagClose` / `tagDivider` 的解析问题
-- 修复 `allowForms: ["inline"]`：已注册但被 form 过滤掉的 block/raw-only 标签会按原文保留，不再被当成 unknown inline 标签
-- 为 `onError` 增加保护，用户回调抛错时不再中断解析
-- 补全自定义 syntax 的可转义 token，`endTag` / `rawOpen` / `blockOpen` 现在也能按字面量转义
-- 新增 `createPipeBlockHandlers()` / `createPipeRawHandlers()` helper，用于结构化 pipe 参数拆分
-- 补充 `allowForms` 与新 helper 的回归测试
-- 补充自定义 syntax 边界测试、类型编译检查与更强的 fuzz 覆盖
-- 微调 README，对多行 block/raw helper 与降级行为的说明更直观
-
-### 0.1.8
-
-- 新增 `ParseOptions.allowForms` 选项 — 限制解析器接受的标签形式（`"inline"`、`"raw"`、`"block"`），被禁用的形式优雅降级
-- 新增 `createSimpleInlineHandlers(names)` 辅助函数 — 批量注册简单 inline 标签，无需编写重复的处理器对象
-- 新增 `declareMultilineTags(names)` 辅助函数 — 声明哪些标签需要多行换行符修剪（`blockTags`）
-- 新增 `createSimpleBlockHandlers(names)` 辅助函数 — 批量注册简单 block 标签
-- 新增 `createSimpleRawHandlers(names)` 辅助函数 — 批量注册简单 raw 标签
-- 新增 `createPassthroughTags(names)` 辅助函数 — 批量注册空处理器的标签名（进阶用法）
-- 所有辅助函数均通过 `const` 泛型保留字面量 key 类型 — `createSimpleInlineHandlers(["bold", "italic"])` 推导为
-  `Record<"bold" | "italic", TagHandler>`
-- 导出 `TagForm` 类型
-
-### 0.1.7
-
-- 为 `TextToken` 添加索引签名（`[key: string]: unknown`）— 处理器返回的额外字段现在无需类型断言即可在类型系统中可见
-- 移除 `createToken` 中不必要的 `as TextToken` 断言
-- 在 tsconfig 中启用 `allowImportingTsExtensions` — 项目现在可以干净通过 `tsc --noEmit`
-- 更新 README：文档化 `TextToken` 索引签名，推荐使用 `extends TextToken` 实现强类型
-
-### 0.1.6
-
-- 仅更新 Markdown。
-
-### 0.1.5
-
-- 添加 `createParser()` 工厂函数，支持预绑定选项
-- 导出 `Parser` 接口
-
-### 0.1.4
-
-- 将 `ParseError.code` 从 `string` 收窄为 `ErrorCode` 联合类型
-- 导出 `ErrorCode` 类型
-- 优化 `extractText` — 用 `for...of` 循环替代 `.map().join("")`
-- 优化 `getErrorContext` — 用单遍行计数器替代 `slice` + `split`
-- 修复 `findMalformedWholeLineTokenCandidate` 中重复的 `trimStart()` 调用
-
-### 0.1.3
-
-- 全面重写 README，包含完整 API 文档
-- 添加 LICENSE 文件
-- 添加 CI 发布工作流（npm 和 GitHub Packages）
-- 添加发布前 README 验证步骤
-
-### 0.1.1
-
-- 修复：确保解析错误正确上报
-- 添加 golden 测试套件（60 个用例）和 dist 冒烟测试（36 个用例）
-- 添加 CJS + ESM 双格式构建
-
-### 0.1.0
-
-- 首次发布
-- 支持 inline、raw 和 block 标签形式的递归 DSL 解析器
-- 可插拔的标签处理器，支持优雅降级
-- 可配置语法符号
-- 工具函数：`parsePipeArgs`、`extractText`、`materializeTextTokens` 等
+- English: [CHANGELOG.md](https://github.com/chiba233/yumeDSL/blob/main/yume-dsl-rich-text/CHANGELOG.md)
+- 中文: [CHANGELOG.zh-CN.md](https://github.com/chiba233/yumeDSL/blob/main/yume-dsl-rich-text/CHANGELOG.zh-CN.md)
 
 ---
 
