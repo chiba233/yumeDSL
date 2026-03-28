@@ -245,7 +245,7 @@ const x = 1;
 
 ### `createParser(defaults)` — 推荐入口
 
-`createParser` 将你的 `ParseOptions`（handlers、syntax、tagName、mode、depthLimit、onError）绑定为一个可复用实例。
+`createParser` 将你的 `ParseOptions`（handlers、syntax、tagName、mode、depthLimit、onError、trackPositions）绑定为一个可复用实例。
 这是**推荐的使用方式** — 定义一次标签处理器，然后在各处调用 `dsl.parse()` / `dsl.strip()`，无需重复传入配置。
 
 ```ts
@@ -282,14 +282,15 @@ dsl.parse(text, {onError: (e) => console.warn(e)});
 
 **`createParser` 绑定了什么：**
 
-| 选项           | 预绑定后的效果                        |
-|--------------|--------------------------------|
-| `handlers`   | 标签定义 — 不需要每次调用都传入              |
-| `syntax`     | 自定义语法符号（如覆盖 `$$` 前缀等）          |
-| `tagName`    | 自定义标签名字符规则                     |
-| `mode`       | 已弃用 — 保留向后兼容，行为始终等同 `"render"` |
-| `depthLimit` | 嵌套深度限制 — 很少需要逐次修改              |
-| `onError`    | 默认错误处理器（仍可按次覆盖）                |
+| 选项               | 预绑定后的效果                        |
+|------------------|--------------------------------|
+| `handlers`       | 标签定义 — 不需要每次调用都传入              |
+| `syntax`         | 自定义语法符号（如覆盖 `$$` 前缀等）          |
+| `tagName`        | 自定义标签名字符规则                     |
+| `mode`           | 已弃用 — 保留向后兼容，行为始终等同 `"render"` |
+| `depthLimit`     | 嵌套深度限制 — 很少需要逐次修改              |
+| `onError`        | 默认错误处理器（仍可按次覆盖）                |
+| `trackPositions` | 为所有输出节点附加源码位置（仍可按次覆盖）          |
 
 **不用 `createParser` 的话**，每次调用都需要传入完整选项：
 
@@ -316,8 +317,8 @@ interface Parser {
 }
 ```
 
-`structural` 共享 `defaults` 中的 `handlers`、`allowForms`、`syntax`、`tagName`、`depthLimit`——语义专属选项（`mode`、
-`blockTags`、`onError`、`createId`）被自然排除，因为 `StructuralParseOptions` 不继承它们。
+`structural` 共享 `defaults` 中的 `handlers`、`allowForms`、`syntax`、`tagName`、`depthLimit`、`trackPositions`——
+语义专属选项（`mode`、`blockTags`、`onError`、`createId`）被自然排除，因为 `StructuralParseOptions` 不继承它们。
 
 ### `parseRichText` / `stripRichText`
 
@@ -329,6 +330,9 @@ function parseRichText(text: string, options?: ParseOptions): TextToken[];
 function stripRichText(text: string, options?: ParseOptions): string;
 ```
 
+`ParseOptions` 包含 `handlers`、`allowForms`、`syntax`、`tagName`、`depthLimit`、`createId`、`blockTags`、`mode`、
+`onError`、`trackPositions`。详见 [ParseOptions](#parseoptions)。
+
 应用层通常优先使用 `createParser`；只有工具函数式的一次性调用才适合直接用 `parseRichText()`。
 
 ### `parseStructural` — 结构化解析
@@ -336,8 +340,8 @@ function stripRichText(text: string, options?: ParseOptions): string;
 `parseStructural` 用于**语法高亮、lint 和结构分析**——任何需要知道*使用了哪种标签形态*而不只是语义结果的场景。
 在输出树中保留标签形态（inline / raw / block）。
 
-它与 `parseRichText` 共享同一套语言配置（`handlers`、`allowForms`、`syntax`、`tagName`、`depthLimit`），
-因此你不需要维护两套不同的 DSL 规则。
+它与 `parseRichText` 共享同一套语言配置（`handlers`、`allowForms`、`syntax`、`tagName`、`depthLimit`、
+`trackPositions`），因此你不需要维护两套不同的 DSL 规则。
 
 ```ts
 import {parseStructural} from "yume-dsl-rich-text";
@@ -1214,7 +1218,7 @@ parsePipeTextList("ts | Demo | Label");
 ## 源码位置追踪
 
 传入 `trackPositions: true` 可为每个输出节点附加 `position`（源码范围）。默认关闭——关闭时不构建行表，不产生
-`position` 字段，零开销。
+`position` 字段。
 
 ```ts
 import { parseRichText, type SourceSpan } from "yume-dsl-rich-text";
@@ -1281,8 +1285,8 @@ block 内容可能存在等于被裁剪的前导换行长度的偏移差（`\n` 
 
 `trackPositions` 为 `false`（默认）时：
 - 不分配行偏移表
-- 任何地方都不计算 `position`
-- 唯一开销是每个 token 创建点一次 `null` 检查——开销可忽略
+- 不产生 `position` 对象
+- 剩余开销仅限于解析管线中少量 null 检查分支——实践中可忽略
 
 启用时，入口处一次性构建行偏移表（O(n) 扫描），每次位置解析使用 O(log n) 二分查找。
 
@@ -1702,7 +1706,7 @@ tagMap.date = DateText;
     - 新类型：`SourcePosition`、`SourceSpan`
     - `TextToken.position?` 和 `StructuralNode.position?` — 仅在启用时出现
     - 预计算行偏移表 + O(log n) 二分查找行列号
-    - 关闭时（默认）零开销——无分配、无计算
+    - 关闭时（默认）开销可忽略——不分配行表、不产生 position 对象
     - block/raw 标签 `position` 覆盖完整消费范围（含尾部换行归一化）
     - 嵌套 block 子内容位置通过基准偏移调整映射回原始源码
     - 启用位置追踪时，错误报告复用行偏移表

@@ -250,8 +250,8 @@ Prefix syntax tokens with `\` to produce them literally.
 
 ### `createParser(defaults)` — recommended entry point
 
-`createParser` binds your `ParseOptions` (handlers, syntax, tagName, mode, depthLimit, onError) into a reusable
-instance.
+`createParser` binds your `ParseOptions` (handlers, syntax, tagName, mode, depthLimit, onError, trackPositions) into a
+reusable instance.
 This is the **recommended way** to use the parser — define your tag handlers once, then call `dsl.parse()` /
 `dsl.strip()` everywhere without repeating config.
 
@@ -289,14 +289,15 @@ dsl.parse(text, {onError: (e) => console.warn(e)});
 
 **What `createParser` binds:**
 
-| Option       | What it does when pre-bound                                                |
-|--------------|----------------------------------------------------------------------------|
-| `handlers`   | Your tag definitions — no need to pass them on every call                  |
-| `syntax`     | Custom syntax tokens (if you override `$$` prefix, etc.)                   |
-| `tagName`    | Custom tag-name character rules                                            |
-| `mode`       | Deprecated — kept for backward compatibility, always behaves as `"render"` |
-| `depthLimit` | Nesting limit — rarely changes per call                                    |
-| `onError`    | Default error handler (can still be overridden per call)                   |
+| Option           | What it does when pre-bound                                                |
+|------------------|----------------------------------------------------------------------------|
+| `handlers`       | Your tag definitions — no need to pass them on every call                  |
+| `syntax`         | Custom syntax tokens (if you override `$$` prefix, etc.)                   |
+| `tagName`        | Custom tag-name character rules                                            |
+| `mode`           | Deprecated — kept for backward compatibility, always behaves as `"render"` |
+| `depthLimit`     | Nesting limit — rarely changes per call                                    |
+| `onError`        | Default error handler (can still be overridden per call)                   |
+| `trackPositions` | Attach source positions to all output nodes (can be overridden per call)   |
 
 **Without `createParser`** you must pass the full options object on every call:
 
@@ -323,7 +324,7 @@ interface Parser {
 }
 ```
 
-`structural` shares the same `handlers`, `allowForms`, `syntax`, `tagName`, and `depthLimit`
+`structural` shares `handlers`, `allowForms`, `syntax`, `tagName`, `depthLimit`, and `trackPositions`
 from `defaults` — semantic-only options (`mode`, `blockTags`, `onError`, `createId`) are
 naturally excluded because `StructuralParseOptions` does not extend them.
 
@@ -337,6 +338,9 @@ function parseRichText(text: string, options?: ParseOptions): TextToken[];
 function stripRichText(text: string, options?: ParseOptions): string;
 ```
 
+`ParseOptions` includes `handlers`, `allowForms`, `syntax`, `tagName`, `depthLimit`, `createId`, `blockTags`, `mode`,
+`onError`, and `trackPositions`. See [ParseOptions](#parseoptions) for full details.
+
 Application code should generally use `createParser`; reach for the bare functions only in one-off utility scripts
 or when you need full per-call control.
 
@@ -346,8 +350,8 @@ or when you need full per-call control.
 to know *which tag form* was used, not just the semantic result. It preserves the tag form (inline / raw / block)
 in the output tree.
 
-It shares the same language configuration (`handlers`, `allowForms`, `syntax`, `tagName`, `depthLimit`) as
-`parseRichText`, so you don't maintain two separate sets of DSL rules.
+It shares the same language configuration (`handlers`, `allowForms`, `syntax`, `tagName`, `depthLimit`,
+`trackPositions`) as `parseRichText`, so you don't maintain two separate sets of DSL rules.
 
 ```ts
 import {parseStructural} from "yume-dsl-rich-text";
@@ -1248,7 +1252,7 @@ This is what `createPipeBlockHandlers` and `createPipeRawHandlers` use internall
 ## Source Position Tracking
 
 Pass `trackPositions: true` to attach a `position` (source span) to every output node. Disabled by default — when off,
-no line table is built and no `position` fields appear. Zero overhead.
+no line table is built and no `position` fields appear.
 
 ```ts
 import { parseRichText, type SourceSpan } from "yume-dsl-rich-text";
@@ -1317,8 +1321,8 @@ equal to the stripped leading line break (1 for `\n`, 2 for `\r\n`).
 
 When `trackPositions` is `false` (default):
 - No line-offset table is allocated
-- No `position` computation occurs at any point
-- The only overhead is a single `null` check per token creation site — effectively zero cost
+- No `position` objects are produced
+- Remaining overhead is limited to a few null-check branches in the parse pipeline — negligible in practice
 
 When enabled, a line-offset table is built once (O(n) scan), and each position resolution uses O(log n) binary search.
 
@@ -1740,7 +1744,7 @@ tagMap.date = DateText;
     - New types: `SourcePosition`, `SourceSpan`
     - `TextToken.position?` and `StructuralNode.position?` — present only when enabled
     - Pre-computed line-offset table with O(log n) binary search for line/column resolution
-    - Zero overhead when disabled (default) — no allocation, no computation
+    - Negligible overhead when disabled (default) — no table allocation, no position objects produced
     - Block/raw tag `position` covers the full consumed span including trailing line-break normalization
     - Nested block content positions map back to the original source via base-offset adjustment
     - Error reporting reuses the line-offset table when position tracking is active
