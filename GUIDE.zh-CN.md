@@ -383,15 +383,15 @@ interface StructuralParseOptions extends ParserBaseOptions {
 }
 ```
 
-| 参数                         | 类型                           | 说明                                          |
-|----------------------------|------------------------------|---------------------------------------------|
-| `text`                     | `string`                     | DSL 源码                                      |
-| `options.handlers`         | `Record<string, TagHandler>` | 标签识别与形态门控（规则与 `parseRichText` 完全一致）。省略则全接受。 |
-| `options.allowForms`       | `readonly TagForm[]`         | 限制接受的形态（需搭配 `handlers`）                     |
-| `options.depthLimit`       | `number`                     | 最大嵌套深度（默认 `50`）                             |
-| `options.syntax`           | `Partial<SyntaxInput>`       | 覆盖语法 token                                  |
-| `options.tagName`          | `Partial<TagNameConfig>`     | 覆盖标签名字符规则                                   |
-| `options.trackPositions`   | `boolean`                    | 为每个节点附加 `position`（默认 `false`）                |
+| 参数                       | 类型                           | 说明                                          |
+|--------------------------|------------------------------|---------------------------------------------|
+| `text`                   | `string`                     | DSL 源码                                      |
+| `options.handlers`       | `Record<string, TagHandler>` | 标签识别与形态门控（规则与 `parseRichText` 完全一致）。省略则全接受。 |
+| `options.allowForms`     | `readonly TagForm[]`         | 限制接受的形态（需搭配 `handlers`）                     |
+| `options.depthLimit`     | `number`                     | 最大嵌套深度（默认 `50`）                             |
+| `options.syntax`         | `Partial<SyntaxInput>`       | 覆盖语法 token                                  |
+| `options.tagName`        | `Partial<TagNameConfig>`     | 覆盖标签名字符规则                                   |
+| `options.trackPositions` | `boolean`                    | 为每个节点附加 `position`（默认 `false`）              |
 
 传入 `handlers` 时，标签识别和形态门控与 `parseRichText` **完全一致**——使用相同的 `supportsInlineForm` 决策表和
 `filterHandlersByForms` 逻辑（共享代码，非镜像）。handler 函数本身不会被调用，只有 `inline` / `raw` / `block` 方法的存在性影响门控。
@@ -423,16 +423,16 @@ withSyntax(customSyntax, () => {
 
 与 `parseRichText` 的差异（特性，非缺陷）：
 
-|          | `parseRichText`                             | `parseStructural`                           |
-|----------|---------------------------------------------|---------------------------------------------|
-| 标签识别     | 共享（`ParserBaseOptions`）                      | 共享（`ParserBaseOptions`）                      |
-| 形态门控     | 共享                                          | 共享                                          |
-| 换行归一化    | 始终裁剪（render 模式）                              | 始终保留                                        |
-| 管道符 `\|` | 文本的一部分                                      | 参数区产出 `separator`；正文中为纯文本                    |
-| 错误上报     | `onError` 回调                                | 静默降级                                        |
-| 转义处理     | 根级反转义                                       | 结构化 `escape` 节点                              |
+|          | `parseRichText`                                  | `parseStructural`                                    |
+|----------|--------------------------------------------------|------------------------------------------------------|
+| 标签识别     | 共享（`ParserBaseOptions`）                          | 共享（`ParserBaseOptions`）                              |
+| 形态门控     | 共享                                               | 共享                                                   |
+| 换行归一化    | 始终裁剪（render 模式）                                  | 始终保留                                                 |
+| 管道符 `\|` | 文本的一部分                                           | 参数区产出 `separator`；正文中为纯文本                            |
+| 错误上报     | `onError` 回调                                     | 静默降级                                                 |
+| 转义处理     | 根级反转义                                            | 结构化 `escape` 节点                                      |
 | 位置追踪     | `trackPositions` → `TextToken.position`（归一化后的偏移） | `trackPositions` → `StructuralNode.position`（原始语法偏移） |
-| 输出类型     | `TextToken[]`                               | `StructuralNode[]`                          |
+| 输出类型     | `TextToken[]`                                    | `StructuralNode[]`                                   |
 
 **怎么选？** 目标是*渲染内容*，用 `parseRichText`；目标是*分析源码结构*，用 `parseStructural`。
 
@@ -1221,10 +1221,10 @@ parsePipeTextList("ts | Demo | Label");
 `position` 字段。
 
 ```ts
-import { parseRichText, type SourceSpan } from "yume-dsl-rich-text";
+import {parseRichText, type SourceSpan} from "yume-dsl-rich-text";
 
 const tokens = parseRichText("hello $$bold(world)$$", {
-    handlers: { bold: { inline: (t) => ({ type: "bold", value: t }) } },
+    handlers: {bold: {inline: (t) => ({type: "bold", value: t})}},
     trackPositions: true,
 });
 
@@ -1244,9 +1244,9 @@ const tokens = parseRichText("hello $$bold(world)$$", {
 `parseStructural` 同样支持：
 
 ```ts
-import { parseStructural } from "yume-dsl-rich-text";
+import {parseStructural} from "yume-dsl-rich-text";
 
-const nodes = parseStructural("$$bold(hi)$$", { trackPositions: true });
+const nodes = parseStructural("$$bold(hi)$$", {trackPositions: true});
 // nodes[0].position → { start: { offset: 0, ... }, end: { offset: 12, ... } }
 ```
 
@@ -1274,8 +1274,8 @@ interface SourceSpan {
 
 ### `parseRichText` 与 `parseStructural` 的语义差异
 
-| 方面 | `parseRichText` | `parseStructural` |
-|------|----------------|-------------------|
+| 方面          | `parseRichText`                            | `parseStructural`            |
+|-------------|--------------------------------------------|------------------------------|
 | block 子节点偏移 | 经前导换行归一化调整——内部 `position` 通过归一化后的内容映射回原始源码 | 原始语法位置——不做归一化调整，子节点从内容分隔符处开始 |
 
 两个 API 使用相同的 `SourceSpan` 类型，但子节点位置反映各自的处理模型。如果在同一输入上对比两个 API 的子节点位置，
@@ -1284,11 +1284,36 @@ block 内容可能存在等于被裁剪的前导换行长度的偏移差（`\n` 
 ### 性能
 
 `trackPositions` 为 `false`（默认）时：
+
 - 不分配行偏移表
 - 不产生 `position` 对象
 - 剩余开销仅限于解析管线中少量 null 检查分支——实践中可忽略
 
 启用时，入口处一次性构建行偏移表（O(n) 扫描），每次位置解析使用 O(log n) 二分查找。
+
+**基准吞吐**（~48 KB DSL 输入，单线程 microbenchmark）：
+
+| API                | 单次耗时    |
+|--------------------|---------|
+| `parseRichText`    | ~360 ms |
+| `stripRichText`    | ~358 ms |
+| `parseStructural`  | ~7.1 ms |
+
+`stripRichText` 内部先调 `parseRichText` 再调 `extractText`，因此耗时基本相同。
+`parseStructural` 跳过 handler、token 构建和 materialization——同一输入下约比 `parseRichText` 快 **50 倍**。
+
+**`trackPositions` 开销**（同一输入）：
+
+| API                | 关闭      | 开启      | 开销   |
+|--------------------|---------|---------|------|
+| `parseRichText`    | 360 ms  | 359 ms  | ~0%  |
+| `stripRichText`    | 358 ms  | 360 ms  | ~0%  |
+| `parseStructural`  | 7.1 ms  | 7.6 ms  | ~7%  |
+
+`parseRichText` / `stripRichText` 单 token 处理更重（handler 调用、递归、materialization），位置追踪的占比被稀释。
+`parseStructural` 本身很轻，生成 `position` 对象和解析偏移的相对成本更明显——但仍非灾难级。
+
+*测试环境：鲲鹏 920 24C / 32 GB（2x16 GB DDR4-2666）。本地 microbenchmark——量级可信，具体数字因平台而异。*
 
 ---
 

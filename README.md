@@ -393,15 +393,15 @@ interface StructuralParseOptions extends ParserBaseOptions {
 }
 ```
 
-| Param                      | Type                         | Description                                                                         |
-|----------------------------|------------------------------|-------------------------------------------------------------------------------------|
-| `text`                     | `string`                     | DSL source                                                                          |
-| `options.handlers`         | `Record<string, TagHandler>` | Tag recognition & form gating (same rules as `parseRichText`). Omit for accept-all. |
-| `options.allowForms`       | `readonly TagForm[]`         | Restrict accepted forms (requires `handlers`)                                       |
-| `options.depthLimit`       | `number`                     | Max nesting depth (default `50`)                                                    |
-| `options.syntax`           | `Partial<SyntaxInput>`       | Override syntax tokens                                                              |
-| `options.tagName`          | `Partial<TagNameConfig>`     | Override tag-name character rules                                                   |
-| `options.trackPositions`   | `boolean`                    | Attach `position` to every node (default `false`)                                   |
+| Param                    | Type                         | Description                                                                         |
+|--------------------------|------------------------------|-------------------------------------------------------------------------------------|
+| `text`                   | `string`                     | DSL source                                                                          |
+| `options.handlers`       | `Record<string, TagHandler>` | Tag recognition & form gating (same rules as `parseRichText`). Omit for accept-all. |
+| `options.allowForms`     | `readonly TagForm[]`         | Restrict accepted forms (requires `handlers`)                                       |
+| `options.depthLimit`     | `number`                     | Max nesting depth (default `50`)                                                    |
+| `options.syntax`         | `Partial<SyntaxInput>`       | Override syntax tokens                                                              |
+| `options.tagName`        | `Partial<TagNameConfig>`     | Override tag-name character rules                                                   |
+| `options.trackPositions` | `boolean`                    | Attach `position` to every node (default `false`)                                   |
 
 When `handlers` is provided, tag recognition and form gating are **identical** to `parseRichText` — the same
 `supportsInlineForm` decision table and `filterHandlersByForms` logic are used (shared code, not mirrored).
@@ -434,16 +434,16 @@ All variants carry an optional `position?: SourceSpan` when `trackPositions` is 
 
 Differences from `parseRichText` (features, not bugs):
 
-|                          | `parseRichText`                                        | `parseStructural`                        |
-|--------------------------|--------------------------------------------------------|------------------------------------------|
-| Tag recognition          | Same (shared `ParserBaseOptions`)                      | Same (shared `ParserBaseOptions`)        |
-| Form gating              | Same                                                   | Same                                     |
-| Line-break normalization | Always strips (render mode)                            | Always preserves                         |
-| Pipe `\|`                | Part of text                                           | `separator` node in args; text elsewhere |
-| Error reporting          | `onError` callback                                     | Silent degradation                       |
-| Escape handling          | Unescaped at root level                                | Structural `escape` nodes                |
+|                          | `parseRichText`                                             | `parseStructural`                                                |
+|--------------------------|-------------------------------------------------------------|------------------------------------------------------------------|
+| Tag recognition          | Same (shared `ParserBaseOptions`)                           | Same (shared `ParserBaseOptions`)                                |
+| Form gating              | Same                                                        | Same                                                             |
+| Line-break normalization | Always strips (render mode)                                 | Always preserves                                                 |
+| Pipe `\|`                | Part of text                                                | `separator` node in args; text elsewhere                         |
+| Error reporting          | `onError` callback                                          | Silent degradation                                               |
+| Escape handling          | Unescaped at root level                                     | Structural `escape` nodes                                        |
 | Position tracking        | `trackPositions` on `TextToken.position` (normalized spans) | `trackPositions` on `StructuralNode.position` (raw syntax spans) |
-| Output type              | `TextToken[]`                                          | `StructuralNode[]`                       |
+| Output type              | `TextToken[]`                                               | `StructuralNode[]`                                               |
 
 **Which one do I use?** If your goal is *rendering content*, use `parseRichText`.
 If your goal is *analyzing source structure*, use `parseStructural`.
@@ -550,9 +550,9 @@ function createEasySyntax(overrides?: Partial<SyntaxInput>): SyntaxConfig
 Change the base tokens, compound tokens stay in sync automatically.
 Accepts any subset of `SyntaxInput` — base tokens drive derivation, explicit compound overrides take precedence.
 
-| Base tokens (you set)                                           | Compound tokens (auto-derived)                     |
-|-----------------------------------------------------------------|----------------------------------------------------|
-| `tagPrefix`, `tagOpen`, `tagClose`, `tagDivider`, `escapeChar`  | `endTag`, `rawOpen`, `blockOpen`, `rawClose`, `blockClose` |
+| Base tokens (you set)                                          | Compound tokens (auto-derived)                             |
+|----------------------------------------------------------------|------------------------------------------------------------|
+| `tagPrefix`, `tagOpen`, `tagClose`, `tagDivider`, `escapeChar` | `endTag`, `rawOpen`, `blockOpen`, `rawClose`, `blockClose` |
 
 Derivation rules:
 
@@ -613,10 +613,10 @@ function createTagNameConfig(overrides?: Partial<TagNameConfig>): TagNameConfig
 Controls which characters the parser accepts in tag names. Provide only the functions you want to change — the rest
 falls back to `DEFAULT_TAG_NAME`.
 
-| Function         | Default                       | Role                   | Example match          |
-|------------------|-------------------------------|------------------------|------------------------|
-| `isTagStartChar` | `a-z`, `A-Z`, `_`             | First character        | `$$bold(` — `b`        |
-| `isTagChar`      | `a-z`, `A-Z`, `0-9`, `_`, `-` | Remaining characters   | `$$my-tag(` — `y-tag`  |
+| Function         | Default                       | Role                 | Example match         |
+|------------------|-------------------------------|----------------------|-----------------------|
+| `isTagStartChar` | `a-z`, `A-Z`, `_`             | First character      | `$$bold(` — `b`       |
+| `isTagChar`      | `a-z`, `A-Z`, `0-9`, `_`, `-` | Remaining characters | `$$my-tag(` — `y-tag` |
 
 By default, `$$ui:button(...)$$` would fail because `:` is not in `isTagChar`. To allow it:
 
@@ -625,7 +625,7 @@ import {createParser, createTagNameConfig} from "yume-dsl-rich-text";
 
 const dsl = createParser({
     handlers: {
-        "ui:button": { inline: (value) => ({type: "ui:button", value}) },
+        "ui:button": {inline: (value) => ({type: "ui:button", value})},
     },
     // Only override isTagChar — isTagStartChar keeps the default.
     // Keep the normal tag characters, and additionally allow ":" after the first character.
@@ -641,7 +641,7 @@ You can also pass a plain partial object directly to `tagName` — `createTagNam
 
 ```ts
 parseRichText("$$1tag(hello)$$", {
-    handlers: { "1tag": { inline: (v) => ({type: "1tag", value: v}) } },
+    handlers: {"1tag": {inline: (v) => ({type: "1tag", value: v})}},
     tagName: {
         isTagStartChar: (char) => /[A-Za-z0-9_]/.test(char),  // allow digit start
         isTagChar: (char) => /[A-Za-z0-9_-]/.test(char) || char === ":",  // keep normal chars, also allow ":"
@@ -928,7 +928,8 @@ interface StructuralParseOptions extends ParserBaseOptions {
   objects for per-form control
 - `mode`: only `"render"` is supported. Use `parseStructural` for syntax-highlighting use cases
 - `onError`: callback for parse errors
-- `trackPositions`: attach source position info (`position`) to every `TextToken` (default `false`). See [Source Position Tracking](#source-position-tracking)
+- `trackPositions`: attach source position info (`position`) to every `TextToken` (default `false`).
+  See [Source Position Tracking](#source-position-tracking)
 
 ### allowForms
 
@@ -1255,10 +1256,10 @@ Pass `trackPositions: true` to attach a `position` (source span) to every output
 no line table is built and no `position` fields appear.
 
 ```ts
-import { parseRichText, type SourceSpan } from "yume-dsl-rich-text";
+import {parseRichText, type SourceSpan} from "yume-dsl-rich-text";
 
 const tokens = parseRichText("hello $$bold(world)$$", {
-    handlers: { bold: { inline: (t) => ({ type: "bold", value: t }) } },
+    handlers: {bold: {inline: (t) => ({type: "bold", value: t})}},
     trackPositions: true,
 });
 
@@ -1278,9 +1279,9 @@ const tokens = parseRichText("hello $$bold(world)$$", {
 `parseStructural` supports the same option:
 
 ```ts
-import { parseStructural } from "yume-dsl-rich-text";
+import {parseStructural} from "yume-dsl-rich-text";
 
-const nodes = parseStructural("$$bold(hi)$$", { trackPositions: true });
+const nodes = parseStructural("$$bold(hi)$$", {trackPositions: true});
 // nodes[0].position → { start: { offset: 0, ... }, end: { offset: 12, ... } }
 ```
 
@@ -1309,8 +1310,8 @@ For example, in `$$info()*\nhello\n*end$$\nnext`, the `info` token's `position.e
 
 ### Semantic differences between `parseRichText` and `parseStructural`
 
-| Aspect | `parseRichText` | `parseStructural` |
-|--------|----------------|-------------------|
+| Aspect                | `parseRichText`                                                                                                                  | `parseStructural`                                                                           |
+|-----------------------|----------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------|
 | Block children offset | Adjusted for leading line-break normalization — inner `position` maps back to the original source through the normalized content | Raw syntax positions — no normalization adjustment, children start at the content delimiter |
 
 Both APIs use the same `SourceSpan` type, but the inner child positions reflect their respective processing models.
@@ -1320,11 +1321,39 @@ equal to the stripped leading line break (1 for `\n`, 2 for `\r\n`).
 ### Performance
 
 When `trackPositions` is `false` (default):
+
 - No line-offset table is allocated
 - No `position` objects are produced
 - Remaining overhead is limited to a few null-check branches in the parse pipeline — negligible in practice
 
 When enabled, a line-offset table is built once (O(n) scan), and each position resolution uses O(log n) binary search.
+
+**Baseline throughput** (~48 KB DSL input, single-threaded microbenchmark):
+
+| API               | Time / call |
+|-------------------|-------------|
+| `parseRichText`   | ~360 ms     |
+| `stripRichText`   | ~358 ms     |
+| `parseStructural` | ~7.1 ms     |
+
+`stripRichText` internally calls `parseRichText` then `extractText`, so its cost is essentially the same.
+`parseStructural` skips handlers, token construction, and materialization — roughly **50x faster** than `parseRichText`
+on the same input.
+
+**`trackPositions` overhead** (same input):
+
+| API               | Without | With   | Overhead |
+|-------------------|---------|--------|----------|
+| `parseRichText`   | 360 ms  | 359 ms | ~0%      |
+| `stripRichText`   | 358 ms  | 360 ms | ~0%      |
+| `parseStructural` | 7.1 ms  | 7.6 ms | ~7%      |
+
+`parseRichText` / `stripRichText` have heavier per-token work (handlers, recursion, materialization), so position
+tracking is a rounding error. `parseStructural` is inherently lighter, making the relative cost of producing `position`
+objects and resolving offsets more visible — but still not catastrophic.
+
+*Measured on Kunpeng 920 24C / 32 GB (2x16 GB DDR4-2666). Local microbenchmark — magnitude is reliable; exact figures
+will vary by platform.*
 
 ---
 
