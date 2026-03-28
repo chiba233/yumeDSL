@@ -1,5 +1,5 @@
 import type { ErrorCode, ParseError } from "./types.js";
-import type { PositionTracker } from "./positions.js";
+import type { PositionTracker } from "./types.ts";
 
 const ERROR_MESSAGES: Record<ErrorCode, string> = {
   DEPTH_LIMIT: "Nesting too deep",
