@@ -1,15 +1,18 @@
-import type { TagHead, TagStartInfo } from "./types.js";
-import { getLineEnd, getTagNameConfig, isWholeLineToken } from "./chars.js";
-import { getSyntax } from "./syntax.js";
+import type { SyntaxConfig, TagHead, TagNameConfig, TagStartInfo } from "./types.js";
+import { getLineEnd, isWholeLineToken } from "./chars.js";
 import { readEscapedSequence } from "./escape.js";
 
-export const findTagArgClose = (text: string, start: number): number => {
-  const { tagOpen, tagClose } = getSyntax();
+export const findTagArgClose = (
+  text: string,
+  start: number,
+  syntax: SyntaxConfig,
+): number => {
+  const { tagOpen, tagClose } = syntax;
   let pos = start;
   let depth = 1;
 
   while (pos < text.length) {
-    const [escaped, next] = readEscapedSequence(text, pos);
+    const [escaped, next] = readEscapedSequence(text, pos, syntax);
     if (escaped !== null) {
       pos = next;
       continue;
@@ -32,9 +35,14 @@ export const findTagArgClose = (text: string, start: number): number => {
   return -1;
 };
 
-const readTagHeadAt = (text: string, pos: number): TagHead | null => {
-  const { tagPrefix, tagOpen } = getSyntax();
-  const { isTagChar, isTagStartChar } = getTagNameConfig();
+const readTagHeadAt = (
+  text: string,
+  pos: number,
+  syntax: SyntaxConfig,
+  tagName: TagNameConfig,
+): TagHead | null => {
+  const { tagPrefix, tagOpen } = syntax;
+  const { isTagChar, isTagStartChar } = tagName;
   if (!text.startsWith(tagPrefix, pos)) return null;
 
   const tagStart = pos + tagPrefix.length;
@@ -64,19 +72,21 @@ const scanInlineBoundary = (
   start: number,
   returnCloseStart: boolean,
   fallbackToTextEnd: boolean,
+  syntax: SyntaxConfig,
+  tagName: TagNameConfig,
 ): number => {
-  const { endTag } = getSyntax();
+  const { endTag } = syntax;
   let pos = start;
   let depth = 1;
 
   while (pos < text.length) {
-    const [escaped, next] = readEscapedSequence(text, pos);
+    const [escaped, next] = readEscapedSequence(text, pos, syntax);
     if (escaped !== null) {
       pos = next;
       continue;
     }
 
-    const head = readTagHeadAt(text, pos);
+    const head = readTagHeadAt(text, pos, syntax, tagName);
     if (head) {
       depth++;
       pos = head.argStart;
@@ -104,9 +114,10 @@ const scanInlineBoundary = (
 export const getTagCloserType = (
   text: string,
   tagOpenIndex: number,
+  syntax: SyntaxConfig,
 ): { closer: string; argClose: number } | null => {
-  const { blockOpen, blockClose, rawOpen, rawClose, endTag } = getSyntax();
-  const argClose = findTagArgClose(text, tagOpenIndex);
+  const { blockOpen, blockClose, rawOpen, rawClose, endTag } = syntax;
+  const argClose = findTagArgClose(text, tagOpenIndex, syntax);
   if (argClose === -1) return null;
 
   if (text.startsWith(blockOpen, argClose)) {
@@ -120,17 +131,27 @@ export const getTagCloserType = (
   return { closer: endTag, argClose };
 };
 
-export const findInlineClose = (text: string, start: number): number => {
-  return scanInlineBoundary(text, start, true, false);
+export const findInlineClose = (
+  text: string,
+  start: number,
+  syntax: SyntaxConfig,
+  tagName: TagNameConfig,
+): number => {
+  return scanInlineBoundary(text, start, true, false, syntax, tagName);
 };
 
-export const findBlockClose = (text: string, start: number): number => {
-  const { blockClose, rawClose, rawOpen, blockOpen, endTag } = getSyntax();
+export const findBlockClose = (
+  text: string,
+  start: number,
+  syntax: SyntaxConfig,
+  tagName: TagNameConfig,
+): number => {
+  const { blockClose, rawClose, rawOpen, blockOpen, endTag } = syntax;
   let pos = start;
   let depth = 1;
 
   while (pos < text.length) {
-    const [escaped, next] = readEscapedSequence(text, pos);
+    const [escaped, next] = readEscapedSequence(text, pos, syntax);
     if (escaped !== null) {
       pos = next;
       continue;
@@ -143,13 +164,13 @@ export const findBlockClose = (text: string, start: number): number => {
       continue;
     }
 
-    const head = readTagHeadAt(text, pos);
+    const head = readTagHeadAt(text, pos, syntax, tagName);
     if (head) {
-      const tagInfo = getTagCloserType(text, head.argStart);
+      const tagInfo = getTagCloserType(text, head.argStart, syntax);
 
       if (tagInfo?.closer === rawClose) {
         const rawStart = tagInfo.argClose + rawOpen.length;
-        const rawEnd = findRawClose(text, rawStart);
+        const rawEnd = findRawClose(text, rawStart, syntax);
         if (rawEnd === -1) return -1;
         pos = rawEnd + rawClose.length;
         continue;
@@ -162,7 +183,7 @@ export const findBlockClose = (text: string, start: number): number => {
       }
 
       if (tagInfo?.closer === endTag) {
-        const inlineEnd = findInlineClose(text, head.argStart);
+        const inlineEnd = findInlineClose(text, head.argStart, syntax, tagName);
         if (inlineEnd === -1) {
           pos = head.argStart;
           continue;
@@ -178,8 +199,8 @@ export const findBlockClose = (text: string, start: number): number => {
   return -1;
 };
 
-export const findRawClose = (text: string, start: number): number => {
-  const { rawClose } = getSyntax();
+export const findRawClose = (text: string, start: number, syntax: SyntaxConfig): number => {
+  const { rawClose } = syntax;
   let pos = start;
 
   while (pos < text.length) {
@@ -223,8 +244,13 @@ export const findMalformedWholeLineTokenCandidate = (
   return null;
 };
 
-export const skipDegradedInline = (text: string, start: number): number => {
-  return scanInlineBoundary(text, start, false, true);
+export const skipDegradedInline = (
+  text: string,
+  start: number,
+  syntax: SyntaxConfig,
+  tagName: TagNameConfig,
+): number => {
+  return scanInlineBoundary(text, start, false, true, syntax, tagName);
 };
 
 /**
@@ -235,32 +261,39 @@ export const skipDegradedInline = (text: string, start: number): number => {
 export const skipTagBoundary = (
   text: string,
   info: NonNullable<ReturnType<typeof readTagStartInfo>>,
+  syntax: SyntaxConfig,
+  tagName: TagNameConfig,
 ): number => {
-  const { tagOpen, endTag, rawOpen, rawClose, blockOpen, blockClose } = getSyntax();
+  const { tagOpen, endTag, rawOpen, rawClose, blockOpen, blockClose } = syntax;
 
-  const closerInfo = getTagCloserType(text, info.tagNameEnd + tagOpen.length);
+  const closerInfo = getTagCloserType(text, info.tagNameEnd + tagOpen.length, syntax);
   if (!closerInfo) return info.inlineContentStart;
 
   if (closerInfo.closer === endTag) {
-    const closeStart = findInlineClose(text, info.inlineContentStart);
+    const closeStart = findInlineClose(text, info.inlineContentStart, syntax, tagName);
     return closeStart === -1
-      ? skipDegradedInline(text, info.inlineContentStart)
+      ? skipDegradedInline(text, info.inlineContentStart, syntax, tagName)
       : closeStart + endTag.length;
   }
 
   if (closerInfo.closer === rawClose) {
     const contentStart = closerInfo.argClose + rawOpen.length;
-    const closeStart = findRawClose(text, contentStart);
+    const closeStart = findRawClose(text, contentStart, syntax);
     return closeStart === -1 ? contentStart : closeStart + rawClose.length;
   }
 
   const contentStart = closerInfo.argClose + blockOpen.length;
-  const closeStart = findBlockClose(text, contentStart);
+  const closeStart = findBlockClose(text, contentStart, syntax, tagName);
   return closeStart === -1 ? contentStart : closeStart + blockClose.length;
 };
 
-export const readTagStartInfo = (text: string, i: number): TagStartInfo | null => {
-  const head = readTagHeadAt(text, i);
+export const readTagStartInfo = (
+  text: string,
+  i: number,
+  syntax: SyntaxConfig,
+  tagName: TagNameConfig,
+): TagStartInfo | null => {
+  const head = readTagHeadAt(text, i, syntax, tagName);
   if (!head) return null;
 
   return {

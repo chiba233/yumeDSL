@@ -1778,6 +1778,19 @@ tagMap.date = DateText;
 
 ## Changelog
 
+### 1.0.4
+
+- **Refactor:** Eliminate all remaining module-level implicit state reads from internal parse code
+    - `ParseContext` now carries `syntax`, `tagName`, and `createId` directly — internal functions read these instead of calling `getSyntax()` / `getTagNameConfig()` / relying on `activeCreateId`
+    - All scanner functions (`findTagArgClose`, `readTagStartInfo`, `findInlineClose`, `findBlockClose`, `findRawClose`, `getTagCloserType`, `skipTagBoundary`, `skipDegradedInline`) receive explicit `syntax` / `tagName` parameters
+    - Escape functions (`readEscapedSequence`, `readEscaped`, `unescapeInline`) accept an optional `syntax` parameter — when omitted, fall back to `getSyntax()` for backward compatibility
+    - Builder utilities (`splitTokensByPipe`, `parsePipeArgs`, `parsePipeTextArgs`, `parsePipeTextList`, `materializeTextTokens`) accept an optional `syntax` parameter
+    - `createToken` accepts an optional `createId` parameter for explicit threading
+    - `parseStructural` threads `syntax` / `tagName` / `tracker` explicitly through `parseNodes` — no `withSyntax` / `withTagNameConfig` wrappers needed internally. Ambient `getSyntax()` / `getTagNameConfig()` are captured once at entry when no explicit overrides are provided
+    - `parseRichText` still wraps with `withSyntax` / `withTagNameConfig` / `withCreateId` at entry for backward compatibility — user handlers calling public utilities (`parsePipeArgs`, `createToken`, `unescapeInline`, etc.) continue to work without changes
+- No public API changes; all existing exports and signatures remain backward compatible
+- Optional `syntax` / `createId` parameters on public utilities are additive (non-breaking)
+
 ### 1.0.3
 
 - **Refactor:** Position tracker moved from module-level implicit state to explicit parameter threading

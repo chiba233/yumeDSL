@@ -1,8 +1,11 @@
 import type {
   BlockTagLookup,
   ComplexTagParseResult,
+  CreateId,
   ParseMode,
+  SyntaxConfig,
   TagHandler,
+  TagNameConfig,
   TextToken,
 } from "./types.js";
 import {
@@ -11,7 +14,6 @@ import {
   findRawClose,
   findTagArgClose,
 } from "./scanner.js";
-import { getSyntax } from "./syntax.js";
 import {
   consumeBlockTagTrailingLineBreak,
   normalizeBlockTagContent,
@@ -31,6 +33,9 @@ export const tryParseComplexTag = (
   handlers: Record<string, TagHandler>,
   blockTagSet: BlockTagLookup,
   tracker: PositionTracker | null,
+  syntax: SyntaxConfig,
+  tagName: TagNameConfig,
+  createId: CreateId,
   parseInlineContent: (
     text: string,
     depthLimit: number,
@@ -43,12 +48,12 @@ export const tryParseComplexTag = (
     return { handled: false, nextIndex: argStart };
   }
 
-  const argClose = findTagArgClose(text, argStart);
+  const argClose = findTagArgClose(text, argStart, syntax);
   if (argClose === -1) {
     return { handled: false, nextIndex: argStart };
   }
 
-  const { blockOpen, blockClose, rawOpen, rawClose, escapeChar } = getSyntax();
+  const { blockOpen, blockClose, rawOpen, rawClose, escapeChar } = syntax;
 
   const isBlock = text.startsWith(blockOpen, argClose);
   const isRaw = text.startsWith(rawOpen, argClose);
@@ -63,7 +68,7 @@ export const tryParseComplexTag = (
 
   if (isBlock) {
     const contentStart = argClose + blockOpen.length;
-    const end = findBlockClose(text, contentStart);
+    const end = findBlockClose(text, contentStart, syntax, tagName);
 
     if (end === -1) {
       const malformedCloseCandidate = findMalformedWholeLineTokenCandidate(
@@ -128,13 +133,14 @@ export const tryParseComplexTag = (
           parseInlineContent(prepared.content, Math.max(depthLimit - 1, 0), { mode }, innerTracker),
         ),
         position,
+        createId,
       ),
     };
   }
 
   // ── Raw ──
   const contentStart = argClose + rawOpen.length;
-  const end = findRawClose(text, contentStart);
+  const end = findRawClose(text, contentStart, syntax);
 
   if (end === -1) {
     const malformedCloseCandidate = findMalformedWholeLineTokenCandidate(
@@ -195,6 +201,6 @@ export const tryParseComplexTag = (
   return {
     handled: true,
     nextIndex,
-    token: createToken(handler.raw(arg, content), position),
+    token: createToken(handler.raw(arg, content), position, createId),
   };
 };

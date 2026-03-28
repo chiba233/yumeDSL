@@ -1,9 +1,10 @@
-import type { TextToken } from "./types.js";
+import type { CreateId, SyntaxConfig, TextToken } from "./types.js";
 import { readEscapedSequence, unescapeInline } from "./escape.js";
 import { getSyntax } from "./syntax.js";
 import { createToken } from "./createToken.js";
 
-const createTextToken = (value: string): TextToken => createToken({ type: "text", value });
+const createTextToken = (value: string, explicitCreateId?: CreateId): TextToken =>
+  createToken({ type: "text", value }, undefined, explicitCreateId);
 
 export const extractText = (tokens?: TextToken[]): string => {
   if (!tokens?.length) return "";
@@ -19,15 +20,15 @@ export const extractText = (tokens?: TextToken[]): string => {
  * Non-text tokens and their string values (e.g. `raw-code` content) are left
  * untouched — only `{ type: "text", value: string }` leaves are processed.
  */
-export const materializeTextTokens = (tokens: TextToken[]): TextToken[] => {
+export const materializeTextTokens = (tokens: TextToken[], syntax?: SyntaxConfig): TextToken[] => {
   return tokens.map((token) => {
     if (typeof token.value === "string") {
-      return token.type === "text" ? { ...token, value: unescapeInline(token.value) } : token;
+      return token.type === "text" ? { ...token, value: unescapeInline(token.value, syntax) } : token;
     }
 
     return {
       ...token,
-      value: materializeTextTokens(token.value),
+      value: materializeTextTokens(token.value, syntax),
     };
   });
 };
@@ -39,8 +40,9 @@ export interface PipeArgs {
   materializedTailTokens: (startIndex: number) => TextToken[];
 }
 
-export const splitTokensByPipe = (tokens: TextToken[]): TextToken[][] => {
-  const { escapeChar, tagDivider } = getSyntax();
+export const splitTokensByPipe = (tokens: TextToken[], syntax?: SyntaxConfig): TextToken[][] => {
+  const s = syntax ?? getSyntax();
+  const { escapeChar, tagDivider } = s;
   const parts: TextToken[][] = [[]];
 
   for (const token of tokens) {
@@ -61,7 +63,7 @@ export const splitTokensByPipe = (tokens: TextToken[]): TextToken[][] => {
     };
 
     while (i < val.length) {
-      const [escaped, next] = readEscapedSequence(val, i);
+      const [escaped, next] = readEscapedSequence(val, i, s);
       if (escaped !== null) {
         buffer += escapeChar + escaped;
         i = next;
@@ -85,18 +87,20 @@ export const splitTokensByPipe = (tokens: TextToken[]): TextToken[][] => {
   return parts;
 };
 
-export const parsePipeArgs = (tokens: TextToken[]): PipeArgs => {
-  const parts = splitTokensByPipe(tokens);
+export const parsePipeArgs = (tokens: TextToken[], syntax?: SyntaxConfig): PipeArgs => {
+  const s = syntax ?? getSyntax();
+  const parts = splitTokensByPipe(tokens, s);
 
   return {
     parts,
-    text: (index) => unescapeInline(extractText(parts[index] ?? [])).trim(),
-    materializedTokens: (index) => materializeTextTokens(parts[index] ?? []),
-    materializedTailTokens: (startIndex) => materializeTextTokens(parts.slice(startIndex).flat()),
+    text: (index) => unescapeInline(extractText(parts[index] ?? []), s).trim(),
+    materializedTokens: (index) => materializeTextTokens(parts[index] ?? [], s),
+    materializedTailTokens: (startIndex) => materializeTextTokens(parts.slice(startIndex).flat(), s),
   };
 };
 
-export const parsePipeTextArgs = (text: string): PipeArgs => parsePipeArgs([createTextToken(text)]);
+export const parsePipeTextArgs = (text: string, syntax?: SyntaxConfig): PipeArgs =>
+  parsePipeArgs([createTextToken(text)], syntax);
 
 /**
  * Split a plain-text pipe-delimited arg string into trimmed string segments.
@@ -106,7 +110,7 @@ export const parsePipeTextArgs = (text: string): PipeArgs => parsePipeArgs([crea
  * @example
  * parsePipeTextList("ts | Demo | Label")  // → ["ts", "Demo", "Label"]
  */
-export const parsePipeTextList = (text: string): string[] => {
-  const parsed = parsePipeTextArgs(text);
+export const parsePipeTextList = (text: string, syntax?: SyntaxConfig): string[] => {
+  const parsed = parsePipeTextArgs(text, syntax);
   return parsed.parts.map((_, i) => parsed.text(i));
 };

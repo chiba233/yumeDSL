@@ -204,6 +204,9 @@ export interface ParseContext {
   handlers: Record<string, TagHandler>;
   blockTagSet: BlockTagLookup;
   tracker: PositionTracker | null;
+  syntax: SyntaxConfig;
+  tagName: TagNameConfig;
+  createId: CreateId;
   root: TextToken[];
   stack: ParseStackNode[];
   buf: BufferState;

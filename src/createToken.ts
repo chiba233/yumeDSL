@@ -3,8 +3,13 @@ import type { CreateId, SourceSpan, TextToken, TokenDraft } from "./types.js";
 let tokenIdSeed = 0;
 let activeCreateId: CreateId | null = null;
 
-export const createToken = (token: TokenDraft, position?: SourceSpan): TextToken => {
-  const id = activeCreateId ? activeCreateId(token) : `rt-${tokenIdSeed++}`;
+export const createToken = (
+  token: TokenDraft,
+  position?: SourceSpan,
+  explicitCreateId?: CreateId,
+): TextToken => {
+  const idFn = explicitCreateId ?? activeCreateId;
+  const id = idFn ? idFn(token) : `rt-${tokenIdSeed++}`;
   const result: TextToken = { ...token, id };
   if (position) result.position = position;
   return result;

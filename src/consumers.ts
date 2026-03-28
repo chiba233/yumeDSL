@@ -1,5 +1,4 @@
 import type { ParseContext, PositionTracker, TagStartInfo, TextToken } from "./types.js";
-import { getSyntax } from "./syntax.js";
 import { readEscaped, unescapeInline } from "./escape.js";
 import { materializeTextTokens } from "./builders.js";
 import { emitError } from "./errors.js";
@@ -46,7 +45,8 @@ export const supportsInlineForm = (
 export const tryConsumeDepthLimitedTag = (ctx: ParseContext, info: TagStartInfo): boolean => {
   if (ctx.stack.length < ctx.depthLimit) return false;
 
-  const { endTag, blockClose, blockOpen, rawClose, rawOpen } = getSyntax();
+  const { syntax, tagName } = ctx;
+  const { endTag, blockClose, blockOpen, rawClose, rawOpen } = syntax;
 
   if (ctx.stack.length === ctx.depthLimit) {
     emitError(
@@ -59,7 +59,7 @@ export const tryConsumeDepthLimitedTag = (ctx: ParseContext, info: TagStartInfo)
     );
   }
 
-  const tagInfo = getTagCloserType(ctx.text, info.inlineContentStart);
+  const tagInfo = getTagCloserType(ctx.text, info.inlineContentStart, syntax);
 
   if (!tagInfo) {
     appendToBuffer(ctx, ctx.text.slice(ctx.i, info.inlineContentStart), ctx.i);
@@ -68,9 +68,9 @@ export const tryConsumeDepthLimitedTag = (ctx: ParseContext, info: TagStartInfo)
   }
 
   if (tagInfo.closer === endTag) {
-    const end = findInlineClose(ctx.text, info.inlineContentStart);
+    const end = findInlineClose(ctx.text, info.inlineContentStart, syntax, tagName);
     if (end === -1) {
-      const degradedEnd = skipDegradedInline(ctx.text, info.inlineContentStart);
+      const degradedEnd = skipDegradedInline(ctx.text, info.inlineContentStart, syntax, tagName);
       appendToBuffer(ctx, ctx.text.slice(ctx.i, degradedEnd), ctx.i);
       ctx.i = degradedEnd;
       return true;
@@ -83,7 +83,7 @@ export const tryConsumeDepthLimitedTag = (ctx: ParseContext, info: TagStartInfo)
 
   if (tagInfo.closer === blockClose) {
     const contentStart = tagInfo.argClose + blockOpen.length;
-    const end = findBlockClose(ctx.text, contentStart);
+    const end = findBlockClose(ctx.text, contentStart, syntax, tagName);
 
     if (end === -1) {
       appendToBuffer(ctx, ctx.text.slice(ctx.i, contentStart), ctx.i);
@@ -98,7 +98,7 @@ export const tryConsumeDepthLimitedTag = (ctx: ParseContext, info: TagStartInfo)
 
   if (tagInfo.closer === rawClose) {
     const contentStart = tagInfo.argClose + rawOpen.length;
-    const end = findRawClose(ctx.text, contentStart);
+    const end = findRawClose(ctx.text, contentStart, syntax);
 
     if (end === -1) {
       appendToBuffer(ctx, ctx.text.slice(ctx.i, contentStart), ctx.i);
@@ -143,6 +143,9 @@ export const tryConsumeComplexTag = (
     ctx.handlers,
     ctx.blockTagSet,
     ctx.tracker,
+    ctx.syntax,
+    ctx.tagName,
+    ctx.createId,
     parseInlineContent,
   );
 
@@ -209,27 +212,27 @@ export const tryConsumeTagStart = (
     innerTracker?: PositionTracker | null,
   ) => TextToken[],
 ): boolean => {
-  const info = readTagStartInfo(ctx.text, ctx.i);
+  const info = readTagStartInfo(ctx.text, ctx.i, ctx.syntax, ctx.tagName);
   if (!info) return false;
 
   flushBuffer(ctx);
 
   if (tryConsumeDepthLimitedTag(ctx, info)) return true;
 
-  const inlineEnd = findInlineClose(ctx.text, info.inlineContentStart);
+  const inlineEnd = findInlineClose(ctx.text, info.inlineContentStart, ctx.syntax, ctx.tagName);
 
   if (tryConsumeComplexTag(ctx, info, inlineEnd, parseInlineContent)) return true;
   return tryConsumeInlineTag(ctx, info, inlineEnd);
 };
 
 export const finalizeClosedNode = (ctx: ParseContext, node: ParseContext["stack"][0]) => {
-  const { endTag } = getSyntax();
-  const materializedTokens = materializeTextTokens(node.tokens);
+  const { endTag } = ctx.syntax;
+  const materializedTokens = materializeTextTokens(node.tokens, ctx.syntax);
 
   if (!node.richType) {
     materializedTokens.forEach((t) => {
       if (t.type === "text" && typeof t.value === "string") {
-        pushTextToCurrent(ctx, unescapeInline(t.value), t.position);
+        pushTextToCurrent(ctx, unescapeInline(t.value, ctx.syntax), t.position);
       } else {
         getCurrentTokens(ctx).push(t);
       }
@@ -243,16 +246,16 @@ export const finalizeClosedNode = (ctx: ParseContext, node: ParseContext["stack"
 
   getCurrentTokens(ctx).push(
     handler?.inline
-      ? createToken(handler.inline(node.tokens), position)
+      ? createToken(handler.inline(node.tokens), position, ctx.createId)
       : createToken({
           type: node.richType,
           value: materializedTokens,
-        }, position),
+        }, position, ctx.createId),
   );
 };
 
 export const tryConsumeTagClose = (ctx: ParseContext): boolean => {
-  const { endTag } = getSyntax();
+  const { endTag } = ctx.syntax;
   if (!ctx.text.startsWith(endTag, ctx.i)) return false;
 
   if (ctx.stack.length === 0) {
@@ -281,12 +284,12 @@ export const tryConsumeTagClose = (ctx: ParseContext): boolean => {
 };
 
 export const tryConsumeEscape = (ctx: ParseContext): boolean => {
-  const { escapeChar } = getSyntax();
+  const { escapeChar } = ctx.syntax;
   if (ctx.text[ctx.i] !== escapeChar || ctx.i + 1 >= ctx.text.length) {
     return false;
   }
 
-  const [char, next] = readEscaped(ctx.text, ctx.i);
+  const [char, next] = readEscaped(ctx.text, ctx.i, ctx.syntax);
   appendToBuffer(ctx, ctx.stack.length > 0 ? ctx.text.slice(ctx.i, next) : char, ctx.i, next);
   ctx.i = next;
   return true;

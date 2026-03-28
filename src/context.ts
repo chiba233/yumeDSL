@@ -25,7 +25,7 @@ export const pushTextToCurrent = (ctx: ParseContext, str: string, position?: Sou
       last.position = { start: last.position.start, end: position.end };
     }
   } else {
-    tokens.push(createToken({ type: "text", value: str }, position));
+    tokens.push(createToken({ type: "text", value: str }, position, ctx.createId));
   }
 };
 

@@ -104,6 +104,9 @@ const internalParse = (
   handlers: Record<string, import("./types").TagHandler>,
   blockTagSet: BlockTagLookup,
   tracker: PositionTracker | null,
+  syntax: import("./types").SyntaxConfig,
+  tagName: import("./types").TagNameConfig,
+  createId: import("./types").CreateId,
 ): TextToken[] => {
   if (!text) return [];
 
@@ -117,6 +120,9 @@ const internalParse = (
     handlers,
     blockTagSet,
     tracker,
+    syntax,
+    tagName,
+    createId,
     root: [],
     stack: [],
     buf: emptyBuffer(),
@@ -139,6 +145,9 @@ const internalParse = (
       handlers,
       blockTagSet,
       innerTracker !== undefined ? innerTracker : tracker,
+      syntax,
+      tagName,
+      createId,
     );
   };
 
@@ -174,6 +183,9 @@ export const parseRichText = (text: string, options: ParseOptions = {}): TextTok
   const createId = options.createId ?? (() => `rt-${seed++}`);
   const tracker = options.trackPositions ? buildPositionTracker(text) : null;
 
+  // with* wrappers kept for backward compatibility: user handlers may call
+  // public utilities (parsePipeArgs, createToken, unescapeInline, etc.) that
+  // fall back to module-level state when no explicit config is passed.
   return withSyntax(syntax, () =>
     withTagNameConfig(tagName, () =>
       withCreateId(createId, () =>
@@ -187,6 +199,9 @@ export const parseRichText = (text: string, options: ParseOptions = {}): TextTok
           handlers,
           blockTagSet,
           tracker,
+          syntax,
+          tagName,
+          createId,
         ),
       ),
     ),

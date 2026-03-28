@@ -1,6 +1,14 @@
-import type { SourceSpan, StructuralNode, StructuralParseOptions, TagHandler } from "./types.js";
+import type {
+  BufferState,
+  SourceSpan,
+  StructuralNode,
+  StructuralParseOptions,
+  SyntaxConfig,
+  TagHandler,
+  TagNameConfig,
+} from "./types.js";
 import { createSyntax, getSyntax, withSyntax } from "./syntax.js";
-import { createTagNameConfig, withTagNameConfig } from "./chars.js";
+import { createTagNameConfig, getTagNameConfig, withTagNameConfig } from "./chars.js";
 import { readEscapedSequence } from "./escape.js";
 import { supportsInlineForm } from "./consumers.js";
 import { filterHandlersByForms } from "./parse.js";
@@ -27,15 +35,6 @@ interface GatingContext {
 
 /**
  * Try to degrade a tag through the inline fallback path.
- *
- * This mirrors the main parser's behavior when `tryConsumeComplexTag` returns
- * `{ handled: false }` and falls through to `tryConsumeInlineTag`:
- * - If inline form is supported, attempt `findInlineClose`.
- * - If close found → parse as inline, return the nodes and new index.
- * - If close not found → degrade opening.
- * - If inline form not supported → degrade single char.
- *
- * Returns `null` when the caller should do `buffer += text[i]; i++`.
  */
 const tryInlineFallback = (
   text: string,
@@ -46,8 +45,10 @@ const tryInlineFallback = (
   gating: GatingContext,
   baseOffset: number,
   tracker: PositionTracker | null,
+  syntax: SyntaxConfig,
+  tagName: TagNameConfig,
 ): { nodes: StructuralNode[] | null; nextI: number; bufferAppend: string } => {
-  const { endTag } = getSyntax();
+  const { endTag } = syntax;
   const handler = gating.handlers[info.tag];
   const isRegistered = gating.registeredTags.has(info.tag);
 
@@ -55,7 +56,7 @@ const tryInlineFallback = (
     return { nodes: null, nextI: i + 1, bufferAppend: text[i] };
   }
 
-  const closeStart = findInlineClose(text, info.inlineContentStart);
+  const closeStart = findInlineClose(text, info.inlineContentStart, syntax, tagName);
   if (closeStart === -1) {
     return {
       nodes: null,
@@ -72,23 +73,16 @@ const tryInlineFallback = (
     true,
     baseOffset + info.inlineContentStart,
     tracker,
+    syntax,
+    tagName,
   );
   const nextI = closeStart + endTag.length;
   const position = makePosition(tracker, baseOffset + i, baseOffset + nextI);
   return {
     nodes: [
       position
-        ? {
-            type: "inline" as const,
-            tag: info.tag,
-            children,
-            position,
-          }
-        : {
-            type: "inline" as const,
-            tag: info.tag,
-            children,
-          },
+        ? { type: "inline" as const, tag: info.tag, children, position }
+        : { type: "inline" as const, tag: info.tag, children },
     ],
     nextI,
     bufferAppend: "",
@@ -103,29 +97,30 @@ const parseNodes = (
   insideArgs: boolean,
   baseOffset: number,
   tracker: PositionTracker | null,
+  syntax: SyntaxConfig,
+  tagName: TagNameConfig,
 ): StructuralNode[] => {
-  const { tagDivider, tagOpen, endTag, rawOpen, rawClose, blockOpen, blockClose } = getSyntax();
+  const { tagDivider, tagOpen, endTag, rawOpen, rawClose, blockOpen, blockClose } = syntax;
 
   const nodes: StructuralNode[] = [];
   let i = 0;
-  let buffer = "";
-  let bufferStart = -1;
+  const buf: BufferState = { content: "", start: -1, sourceEnd: -1 };
 
   const flush = () => {
-    if (!buffer) return;
-    const position = bufferStart >= 0
-      ? makePosition(tracker, baseOffset + bufferStart, baseOffset + i)
+    if (!buf.content) return;
+    const position = buf.start >= 0
+      ? makePosition(tracker, baseOffset + buf.start, baseOffset + i)
       : undefined;
-    const node: StructuralNode = { type: "text", value: buffer };
+    const node: StructuralNode = { type: "text", value: buf.content };
     if (position) node.position = position;
     nodes.push(node);
-    buffer = "";
-    bufferStart = -1;
+    buf.content = "";
+    buf.start = -1;
   };
 
   while (i < text.length) {
     // ── Escape sequence ──
-    const [escaped, next] = readEscapedSequence(text, i);
+    const [escaped, next] = readEscapedSequence(text, i, syntax);
     if (escaped !== null) {
       flush();
       const position = makePosition(tracker, baseOffset + i, baseOffset + next);
@@ -148,27 +143,27 @@ const parseNodes = (
     }
 
     // ── Tag start ──
-    const info = readTagStartInfo(text, i);
+    const info = readTagStartInfo(text, i, syntax, tagName);
     if (!info) {
-      if (bufferStart === -1) bufferStart = i;
-      buffer += text[i];
+      if (buf.start === -1) buf.start = i;
+      buf.content += text[i];
       i++;
       continue;
     }
 
     // ── Depth limit → skip entire tag ──
     if (depth >= depthLimit) {
-      const degradedEnd = skipTagBoundary(text, info);
-      if (bufferStart === -1) bufferStart = i;
-      buffer += text.slice(i, degradedEnd);
+      const degradedEnd = skipTagBoundary(text, info, syntax, tagName);
+      if (buf.start === -1) buf.start = i;
+      buf.content += text.slice(i, degradedEnd);
       i = degradedEnd;
       continue;
     }
 
-    const closerInfo = getTagCloserType(text, info.tagNameEnd + tagOpen.length);
+    const closerInfo = getTagCloserType(text, info.tagNameEnd + tagOpen.length, syntax);
     if (!closerInfo) {
-      if (bufferStart === -1) bufferStart = i;
-      buffer += text.slice(i, info.inlineContentStart);
+      if (buf.start === -1) buf.start = i;
+      buf.content += text.slice(i, info.inlineContentStart);
       i = info.inlineContentStart;
       continue;
     }
@@ -181,16 +176,16 @@ const parseNodes = (
         gating.allowInline,
         gating.registeredTags.has(info.tag),
       )) {
-        if (bufferStart === -1) bufferStart = i;
-        buffer += text[i];
+        if (buf.start === -1) buf.start = i;
+        buf.content += text[i];
         i++;
         continue;
       }
 
-      const closeStart = findInlineClose(text, info.inlineContentStart);
+      const closeStart = findInlineClose(text, info.inlineContentStart, syntax, tagName);
       if (closeStart === -1) {
-        if (bufferStart === -1) bufferStart = i;
-        buffer += text.slice(i, info.inlineContentStart);
+        if (buf.start === -1) buf.start = i;
+        buf.content += text.slice(i, info.inlineContentStart);
         i = info.inlineContentStart;
         continue;
       }
@@ -208,6 +203,8 @@ const parseNodes = (
           true,
           baseOffset + info.inlineContentStart,
           tracker,
+          syntax,
+          tagName,
         ),
       };
       if (position) node.position = position;
@@ -218,20 +215,18 @@ const parseNodes = (
 
     // ── Complex form (raw or block syntax) ──
 
-    // Form gating: if handler has no complex support → inline fallback
-    // Mirrors: tryConsumeComplexTag returning { handled: false } → tryConsumeInlineTag
     if (gating) {
       const handler = gating.handlers[info.tag];
       const hasComplexSupport = !!handler?.raw || !!handler?.block;
 
       if (!hasComplexSupport) {
-        const fb = tryInlineFallback(text, i, info, depth, depthLimit, gating, baseOffset, tracker);
+        const fb = tryInlineFallback(text, i, info, depth, depthLimit, gating, baseOffset, tracker, syntax, tagName);
         if (fb.nodes) {
           flush();
           fb.nodes.forEach((n) => nodes.push(n));
         } else {
-          if (bufferStart === -1) bufferStart = i;
-          buffer += fb.bufferAppend;
+          if (buf.start === -1) buf.start = i;
+          buf.content += fb.bufferAppend;
         }
         i = fb.nextI;
         continue;
@@ -241,19 +236,17 @@ const parseNodes = (
     // ── Raw: $$tag(args)% content %end$$ ──
     if (closerInfo.closer === rawClose) {
       const contentStart = closerInfo.argClose + rawOpen.length;
-      const closeStart = findRawClose(text, contentStart);
+      const closeStart = findRawClose(text, contentStart, syntax);
       if (closeStart === -1) {
-        if (bufferStart === -1) bufferStart = i;
-        buffer += text.slice(i, contentStart);
+        if (buf.start === -1) buf.start = i;
+        buf.content += text.slice(i, contentStart);
         i = contentStart;
         continue;
       }
 
-      // Form gating: handler has complex support but not raw specifically
-      // Mirrors: tryParseComplexTag `if (!handler.raw) { fallbackText }`
       if (gating && !gating.handlers[info.tag]?.raw) {
-        if (bufferStart === -1) bufferStart = i;
-        buffer += text.slice(i, closeStart + rawClose.length);
+        if (buf.start === -1) buf.start = i;
+        buf.content += text.slice(i, closeStart + rawClose.length);
         i = closeStart + rawClose.length;
         continue;
       }
@@ -272,6 +265,8 @@ const parseNodes = (
           true,
           baseOffset + info.inlineContentStart,
           tracker,
+          syntax,
+          tagName,
         ),
         content: text.slice(contentStart, closeStart),
       };
@@ -283,19 +278,17 @@ const parseNodes = (
 
     // ── Block: $$tag(args)* content *end$$ ──
     const contentStart = closerInfo.argClose + blockOpen.length;
-    const closeStart = findBlockClose(text, contentStart);
+    const closeStart = findBlockClose(text, contentStart, syntax, tagName);
     if (closeStart === -1) {
-      if (bufferStart === -1) bufferStart = i;
-      buffer += text.slice(i, contentStart);
+      if (buf.start === -1) buf.start = i;
+      buf.content += text.slice(i, contentStart);
       i = contentStart;
       continue;
     }
 
-    // Form gating: handler has complex support but not block specifically
-    // Mirrors: tryParseComplexTag `if (!handler.block) { fallbackText }`
     if (gating && !gating.handlers[info.tag]?.block) {
-      if (bufferStart === -1) bufferStart = i;
-      buffer += text.slice(i, closeStart + blockClose.length);
+      if (buf.start === -1) buf.start = i;
+      buf.content += text.slice(i, closeStart + blockClose.length);
       i = closeStart + blockClose.length;
       continue;
     }
@@ -314,8 +307,20 @@ const parseNodes = (
         true,
         baseOffset + info.inlineContentStart,
         tracker,
+        syntax,
+        tagName,
       ),
-      children: parseNodes(text.slice(contentStart, closeStart), depth + 1, depthLimit, gating, false, baseOffset + contentStart, tracker),
+      children: parseNodes(
+        text.slice(contentStart, closeStart),
+        depth + 1,
+        depthLimit,
+        gating,
+        false,
+        baseOffset + contentStart,
+        tracker,
+        syntax,
+        tagName,
+      ),
     };
     if (position) node.position = position;
     nodes.push(node);
@@ -348,6 +353,9 @@ export const parseStructural = (
   if (!text) return [];
 
   const depthLimit = options?.depthLimit ?? 50;
+  // Capture ambient context if no explicit override — supports withSyntax/withTagNameConfig wrapping
+  const syntax = options?.syntax ? createSyntax(options.syntax) : getSyntax();
+  const tagName = options?.tagName ? createTagNameConfig(options.tagName) : getTagNameConfig();
 
   // ── Build gating context (mirrors parseRichText entry) ──
   let gating: GatingContext | null = null;
@@ -363,20 +371,5 @@ export const parseStructural = (
 
   const tracker = options?.trackPositions ? buildPositionTracker(text) : null;
 
-  // ── Build run function with optional context closures ──
-  let run: () => StructuralNode[] = () => parseNodes(text, 0, depthLimit, gating, false, 0, tracker);
-
-  if (options?.tagName) {
-    const inner = run;
-    const tagName = createTagNameConfig(options.tagName);
-    run = () => withTagNameConfig(tagName, inner);
-  }
-
-  if (options?.syntax) {
-    const inner = run;
-    const syntax = createSyntax(options.syntax);
-    run = () => withSyntax(syntax, inner);
-  }
-
-  return run();
+  return parseNodes(text, 0, depthLimit, gating, false, 0, tracker, syntax, tagName);
 };

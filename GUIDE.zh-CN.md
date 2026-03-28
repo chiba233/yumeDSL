@@ -1735,6 +1735,19 @@ tagMap.date = DateText;
 
 ## 更新日志
 
+### 1.0.4
+
+- **重构：** 消除内部解析代码中所有剩余的模块级隐式状态读取
+    - `ParseContext` 直接携带 `syntax`、`tagName`、`createId`——内部函数从中读取，不再调用 `getSyntax()` / `getTagNameConfig()` / 依赖 `activeCreateId`
+    - 所有 scanner 函数（`findTagArgClose`、`readTagStartInfo`、`findInlineClose`、`findBlockClose`、`findRawClose`、`getTagCloserType`、`skipTagBoundary`、`skipDegradedInline`）接收显式 `syntax` / `tagName` 参数
+    - 转义函数（`readEscapedSequence`、`readEscaped`、`unescapeInline`）接受可选 `syntax` 参数——省略时回退到 `getSyntax()` 以保持向后兼容
+    - 构建器工具（`splitTokensByPipe`、`parsePipeArgs`、`parsePipeTextArgs`、`parsePipeTextList`、`materializeTextTokens`）接受可选 `syntax` 参数
+    - `createToken` 接受可选 `createId` 参数用于显式透传
+    - `parseStructural` 通过 `parseNodes` 显式透传 `syntax` / `tagName` / `tracker`——内部不再需要 `withSyntax` / `withTagNameConfig` 包裹。入口处在无显式覆盖时捕获当前 `getSyntax()` / `getTagNameConfig()` 的 ambient 值
+    - `parseRichText` 入口仍用 `withSyntax` / `withTagNameConfig` / `withCreateId` 包裹以保持向后兼容——用户 handler 中调用公开工具函数（`parsePipeArgs`、`createToken`、`unescapeInline` 等）无需任何修改
+- 无公开 API 变更，所有现有导出和签名保持向后兼容
+- 公开工具函数上的可选 `syntax` / `createId` 参数为新增（非破坏性）
+
 ### 1.0.3
 
 - **重构：** 位置追踪器从模块级隐式状态改为显式参数透传
