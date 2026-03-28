@@ -1,7 +1,7 @@
 {
   "name": "yume-dsl-rich-text",
   "version": "0.1.20",
-  "description": "Rich-text DSL parser, single-pass recursive, no regex, pluggable tag handlers, markdown alternative",
+  "description": "Single-pass recursive rich-text DSL parser without regex, with pluggable tag handlers. Markdown alternative.",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -28,8 +28,8 @@
     "prepublishOnly": "npm run build"
   },
   "keywords": [
-    "dsl",
     "rich-text",
+    "dsl",
     "parser",
     "custom-markup",
     "single-pass",
@@ -37,7 +37,9 @@
     "pluggable",
     "no-regex",
     "markdown-alternative",
-    "blog-engine"
+    "blog-engine",
+    "tokenizer",
+    "ast"
   ],
   "author": "Hoshino Yumeka",
   "license": "MIT",
