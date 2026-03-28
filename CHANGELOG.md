@@ -22,6 +22,17 @@
   - When omitted, fall back to module-level defaults (`getSyntax()` / `activeCreateId`) — existing code continues to
     work unchanged
   - A future major version will tighten this toward explicit `DslContext`
+- `TagHandler` callback signatures now receive an optional `ctx?: DslContext` as the last parameter
+  - `inline?: (tokens, ctx?) => TokenDraft`
+  - `raw?: (arg, content, ctx?) => TokenDraft`
+  - `block?: (arg, content, ctx?) => TokenDraft`
+  - The parser passes `DslContext` when calling handlers — existing handlers that don't accept `ctx` are unaffected
+    (JS safely ignores extra arguments)
+  - Handlers that opt in can pass `ctx` through to utility functions, eliminating all implicit global state dependency
+- Built-in handler helpers now propagate `ctx` through the full call chain
+  - `createSimpleInlineHandlers` → `materializeTextTokens(tokens, ctx)`
+  - `createPipeBlockHandlers` → `parsePipeTextList(arg, ctx)`
+  - `createPipeRawHandlers` → `parsePipeTextList(arg, ctx)`
 - `parseStructural` reuses `emptyBuffer()` from `context.ts` for buffer initialization and reset
 - All existing exports and signatures remain backward compatible; `DslContext` and optional `ctx` parameters are
   additive (non-breaking)

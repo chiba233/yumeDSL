@@ -19,6 +19,16 @@
   - `createToken(..., ctx?)` 还继续兼容直接传裸 `CreateId` 函数，以保持向后兼容
   - 省略时回退到模块级默认值（`getSyntax()` / `activeCreateId`）——现有代码无需修改
   - **未来 major 版本会逐步收紧到显式 `DslContext`** — 建议现在开始采用 `DslContext` 以提前准备迁移
+- `TagHandler` 回调签名新增可选末尾参数 `ctx?: DslContext`
+  - `inline?: (tokens, ctx?) => TokenDraft`
+  - `raw?: (arg, content, ctx?) => TokenDraft`
+  - `block?: (arg, content, ctx?) => TokenDraft`
+  - 解析器调用 handler 时传入 `DslContext`——不接收 `ctx` 的现有 handler 不受影响（JS 安全忽略多余参数）
+  - 选择接收 `ctx` 的 handler 可将其透传给工具函数，完全消除对隐式全局状态的依赖
+- 内置 handler 便利函数现在在完整调用链中透传 `ctx`
+  - `createSimpleInlineHandlers` → `materializeTextTokens(tokens, ctx)`
+  - `createPipeBlockHandlers` → `parsePipeTextList(arg, ctx)`
+  - `createPipeRawHandlers` → `parsePipeTextList(arg, ctx)`
 - `parseStructural` 复用 `context.ts` 的 `emptyBuffer()` 进行 buffer 初始化和重置
 - 所有现有导出和签名保持向后兼容；`DslContext` 及可选 `ctx` 参数为新增（非破坏性）
 
