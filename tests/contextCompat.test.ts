@@ -1,0 +1,301 @@
+import assert from "node:assert/strict";
+import {
+  createParser,
+  createSyntax,
+  createToken,
+  materializeTextTokens,
+  parsePipeArgs,
+  parsePipeTextArgs,
+  parsePipeTextList,
+  parseRichText,
+  parseStructural,
+  readEscapedSequence,
+  unescapeInline,
+  withSyntax,
+} from "../src/index.ts";
+import type { DslContext, StructuralNode, TagHandler, TextToken } from "../src/types.ts";
+import { runGoldenCases } from "./testHarness.ts";
+
+const normalizeTokens = (tokens: TextToken[]): unknown[] =>
+  tokens.map((token) => {
+    const { id: _id, value, position: _position, ...rest } = token;
+    return {
+      ...rest,
+      value: typeof value === "string" ? value : normalizeTokens(value),
+    };
+  });
+
+const normalizeStructuralNodes = (nodes: StructuralNode[]): unknown[] =>
+  nodes.map((node) => {
+    switch (node.type) {
+      case "text":
+        return { type: "text", value: node.value };
+      case "escape":
+        return { type: "escape", raw: node.raw };
+      case "separator":
+        return { type: "separator" };
+      case "inline":
+        return {
+          type: "inline",
+          tag: node.tag,
+          children: normalizeStructuralNodes(node.children),
+        };
+      case "raw":
+        return {
+          type: "raw",
+          tag: node.tag,
+          args: normalizeStructuralNodes(node.args),
+          content: node.content,
+        };
+      case "block":
+        return {
+          type: "block",
+          tag: node.tag,
+          args: normalizeStructuralNodes(node.args),
+          children: normalizeStructuralNodes(node.children),
+        };
+    }
+  });
+
+const compatSyntax = createSyntax({
+  tagPrefix: "@@",
+  tagOpen: "<<",
+  tagClose: ">>",
+  tagDivider: "||",
+  endTag: ">>@@",
+  rawOpen: ">>%",
+  blockOpen: ">>*",
+  rawClose: "%end@@",
+  blockClose: "*end@@",
+  escapeChar: "~",
+});
+
+const explicitHandlers: Record<string, TagHandler> = {
+  link: {
+    inline: (tokens, ctx) => {
+      const args = parsePipeArgs(tokens, ctx);
+      return {
+        type: "link",
+        url: args.text(0),
+        value: args.materializedTailTokens(1),
+      };
+    },
+  },
+  note: {
+    raw: (arg, content, ctx) => {
+      const args = parsePipeTextArgs(arg ?? "", ctx);
+      return {
+        type: "note",
+        title: args.text(0),
+        value: [createToken({ type: "text", value: unescapeInline(content, ctx) }, undefined, ctx)],
+      };
+    },
+  },
+  box: {
+    block: (arg, content, ctx) => ({
+      type: "box",
+      title: parsePipeTextList(arg ?? "", ctx)[0] ?? "",
+      value: materializeTextTokens(content, ctx),
+    }),
+  },
+};
+
+const legacyHandlers: Record<string, TagHandler> = {
+  link: {
+    inline: (tokens) => {
+      const args = parsePipeArgs(tokens);
+      return {
+        type: "link",
+        url: args.text(0),
+        value: args.materializedTailTokens(1),
+      };
+    },
+  },
+  note: {
+    raw: (arg, content) => {
+      const args = parsePipeTextArgs(arg ?? "");
+      return {
+        type: "note",
+        title: args.text(0),
+        value: [createToken({ type: "text", value: unescapeInline(content) })],
+      };
+    },
+  },
+  box: {
+    block: (arg, content) => ({
+      type: "box",
+      title: parsePipeTextList(arg ?? "")[0] ?? "",
+      value: materializeTextTokens(content),
+    }),
+  },
+};
+
+const cases = [
+  {
+    name: "[Compat/Explicit] 显式 DslContext utility 调用 -> 应当按自定义 syntax 与 createId 生效",
+    run: () => {
+      let seed = 0;
+      const ctx: DslContext = {
+        syntax: compatSyntax,
+        createId: (draft) => `ctx-${draft.type}-${seed++}`,
+      };
+
+      const args = parsePipeTextArgs("ts || Demo || Label", ctx);
+      assert.deepEqual(args.parts.map((_, index) => args.text(index)), ["ts", "Demo", "Label"]);
+      assert.equal(unescapeInline(String.raw`a ~|| b ~>>@@ c`, ctx), "a || b >>@@ c");
+      assert.deepEqual(readEscapedSequence(String.raw`~>>@@`, 0, ctx), [">>@@", 5]);
+
+      const freshCtx: DslContext = {
+        syntax: compatSyntax,
+        createId: (draft) => `fresh-${draft.type}`,
+      };
+      const token = createToken({ type: "text", value: "hello" }, undefined, freshCtx);
+      assert.equal(token.id, "fresh-text");
+    },
+  },
+  {
+    name: "[Compat/Explicit] handler 显式透传 ctx -> inline/raw/block 三种路径都应正确工作",
+    run: () => {
+      const tokens = parseRichText(
+        "@@link<<https://a.com || click me>>@@\n@@note<<Demo>>%\nA ~|| B\n%end@@\n@@box<<Title>>*\nA @@link<<https://b.com || go>>@@\n*end@@",
+        {
+          handlers: explicitHandlers,
+          syntax: compatSyntax,
+          createId: (draft) => `exp-${draft.type}`,
+        },
+      );
+
+      assert.deepEqual(normalizeTokens(tokens), [
+        {
+          type: "link",
+          url: "https://a.com",
+          value: [{ type: "text", value: "click me" }],
+        },
+        { type: "text", value: "\n" },
+        {
+          type: "note",
+          title: "Demo",
+          value: [{ type: "text", value: "A || B\n" }],
+        },
+        {
+          type: "box",
+          title: "Title",
+          value: [
+            { type: "text", value: "A " },
+            {
+              type: "link",
+              url: "https://b.com",
+              value: [{ type: "text", value: "go" }],
+            },
+            { type: "text", value: "\n" },
+          ],
+        },
+      ]);
+    },
+  },
+  {
+    name: "[Compat/Legacy] handler 省略 ctx -> compat wrapper 仍应提供正确 syntax/createId",
+    run: () => {
+      const tokens = parseRichText(
+        "@@link<<https://a.com || click me>>@@\n@@note<<Demo>>%\nA ~|| B\n%end@@\n@@box<<Title>>*\nA @@link<<https://b.com || go>>@@\n*end@@",
+        {
+          handlers: legacyHandlers,
+          syntax: compatSyntax,
+          createId: (draft) => `legacy-${draft.type}`,
+        },
+      );
+
+      assert.deepEqual(normalizeTokens(tokens), [
+        {
+          type: "link",
+          url: "https://a.com",
+          value: [{ type: "text", value: "click me" }],
+        },
+        { type: "text", value: "\n" },
+        {
+          type: "note",
+          title: "Demo",
+          value: [{ type: "text", value: "A || B\n" }],
+        },
+        {
+          type: "box",
+          title: "Title",
+          value: [
+            { type: "text", value: "A " },
+            {
+              type: "link",
+              url: "https://b.com",
+              value: [{ type: "text", value: "go" }],
+            },
+            { type: "text", value: "\n" },
+          ],
+        },
+      ]);
+      assert.equal(tokens[0].id, "legacy-link");
+      const noteText = Array.isArray(tokens[2]?.value) ? tokens[2].value[0] : null;
+      assert.equal(noteText && typeof noteText.value === "string" ? noteText.id : null, "legacy-text");
+    },
+  },
+  {
+    name: "[Compat/Legacy] withSyntax ambient fallback -> syntax-only utility 与 structural 仍应工作",
+    run: () => {
+      withSyntax(compatSyntax, () => {
+        assert.deepEqual(parsePipeTextList("a || b || c"), ["a", "b", "c"]);
+        assert.equal(unescapeInline(String.raw`x ~|| y`), "x || y");
+        assert.deepEqual(readEscapedSequence(String.raw`~>>@@`, 0), [">>@@", 5]);
+        assert.deepEqual(
+          normalizeStructuralNodes(parseStructural("@@link<<a || b>>@@")),
+          [
+            {
+              type: "inline",
+              tag: "link",
+              children: [
+                { type: "text", value: "a " },
+                { type: "separator" },
+                { type: "text", value: " b" },
+              ],
+            },
+          ],
+        );
+      });
+    },
+  },
+  {
+    name: "[Compat/Parser] createParser -> parse/structural 都应覆盖显式与隐式路径",
+    run: () => {
+      const parser = createParser({
+        handlers: explicitHandlers,
+        syntax: compatSyntax,
+        createId: (draft) => `parser-${draft.type}`,
+      });
+
+      assert.deepEqual(
+        normalizeTokens(parser.parse("@@link<<https://a.com || click>>@@")),
+        [
+          {
+            type: "link",
+            url: "https://a.com",
+            value: [{ type: "text", value: "click" }],
+          },
+        ],
+      );
+
+      assert.deepEqual(
+        normalizeStructuralNodes(parser.structural("@@link<<a || b>>@@")),
+        [
+          {
+            type: "inline",
+            tag: "link",
+            children: [
+              { type: "text", value: "a " },
+              { type: "separator" },
+              { type: "text", value: " b" },
+            ],
+          },
+        ],
+      );
+    },
+  },
+];
+
+await runGoldenCases("Context Compat", " Context compat case", cases);

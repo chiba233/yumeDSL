@@ -167,7 +167,7 @@ const plain = dsl.strip("Hello $$bold(world)$$!");
 3. [createParser](#createparserdefaults--推荐入口) — 主入口
 4. [处理器辅助函数](#处理器辅助函数) — 批量注册标签，减少模板代码
 5. [编写标签处理器](#编写标签处理器) — 自定义处理器逻辑
-6. [parseStructural](#parsestructural--结构化解析) — 仅当你需要高亮 / lint / 结构分析时
+6. [parseStructural](#parsestructural--结构化解析) — 用于结构消费场景（高亮、lint、编辑器、源码检查）
 
 ---
 
@@ -341,7 +341,7 @@ function stripRichText(text: string, options?: ParseOptions): string;
 
 ### `parseStructural` — 结构化解析
 
-`parseStructural` 用于**语法高亮、lint 和结构分析**——任何需要知道*使用了哪种标签形态*而不只是语义结果的场景。
+`parseStructural` 用于**结构消费场景**——高亮、lint、编辑器、源码检查，或任何需要知道*使用了哪种标签形态*而不只是语义结果的场景。
 在输出树中保留标签形态（inline / raw / block）。
 
 它与 `parseRichText` 共享同一套语言配置（`handlers`、`allowForms`、`syntax`、`tagName`、`depthLimit`、
@@ -391,7 +391,7 @@ interface StructuralParseOptions extends ParserBaseOptions {
 | 参数                       | 类型                           | 说明                                          |
 |--------------------------|------------------------------|---------------------------------------------|
 | `text`                   | `string`                     | DSL 源码                                      |
-| `options.handlers`       | `Record<string, TagHandler>` | 标签识别与形态门控（规则与 `parseRichText` 完全一致）。省略则全接受。 |
+| `options.handlers`       | `Record<string, TagHandler>` | 标签识别与形态门控（规则与 `parseRichText` 完全一致）。省略则接受所有语法合法的标签和形态，不做语义门控。 |
 | `options.allowForms`     | `readonly TagForm[]`         | 限制接受的形态（需搭配 `handlers`）                     |
 | `options.depthLimit`     | `number`                     | 最大嵌套深度（默认 `50`）                             |
 | `options.syntax`         | `Partial<SyntaxInput>`       | 覆盖语法 token                                  |
@@ -403,13 +403,14 @@ interface StructuralParseOptions extends ParserBaseOptions {
 
 省略 `handlers` 时，所有合法标签和所有形态均被接受。
 
-**闭包上下文继承：** 未传 `syntax` / `tagName` 覆盖时，`parseStructural` 继承外部 `withSyntax` / `withTagNameConfig`
-上下文，可在自定义解析管线中自由组合：
+**Ambient 捕获：** 未传 `syntax` / `tagName` 覆盖时，`parseStructural` 在入口处一次性捕获当前
+`getSyntax()` / `getTagNameConfig()` 的值，并在解析过程中显式透传。因此可以在 `withSyntax` /
+`withTagNameConfig` 包裹中使用：
 
 ```ts
 withSyntax(customSyntax, () => {
-    parseStructural(text);  // 使用 customSyntax
-    parseStructural(text2); // 同样使用 customSyntax
+    parseStructural(text);  // 入口捕获 customSyntax
+    parseStructural(text2); // 同样在入口捕获 customSyntax
 });
 ```
 
@@ -590,8 +591,9 @@ interface SyntaxConfig extends SyntaxInput {
 ```
 
 > 注意：
-> 自定义 syntax 在解析期间通过模块级活动状态生效。
-> 对普通同步调用是安全的；如果多个并发异步请求共享同一个模块实例，需要自行做好隔离。
+> 内部解析管线通过显式参数传递 parser 状态。`parseRichText` 保留模块级 ambient 包裹（`withSyntax` / `withCreateId`）
+> 仅用于 handler 工具函数调用的向后兼容。对普通同步调用是安全的；如果多个并发异步请求共享同一个模块实例，
+> 需要自行做好隔离——或者显式传 `DslContext` 以消除 ambient 依赖。
 
 ---
 
@@ -1172,8 +1174,8 @@ const tokens = dsl.parse(input);
 编写自定义 `TagHandler` 时使用的底层工具。
 如果你只使用上面的辅助函数，则不需要这些。
 
-公开工具函数调用应显式传入 `ctx: DslContext`。
-把它视为新代码和即将到来的 2.0 API contract。详见下方 [DslContext](#dslcontext)。
+`ctx?` 参数为向后兼容而保留可选。新代码应将其视为实际必填——传入 handler 回调收到的 `DslContext`，
+或自行构造一个。详见下方 [DslContext](#dslcontext)。
 
 | 导出                                    | 使用者                   | 说明                                      |
 |---------------------------------------|-----------------------|-----------------------------------------|

@@ -44,10 +44,15 @@ const smokeTest = (mod: DistModule, label: string) => {
         assert.equal(typeof mod.parsePipeTextArgs, "function");
         assert.equal(typeof mod.parsePipeTextList, "function");
         assert.equal(typeof mod.unescapeInline, "function");
+        assert.equal(typeof mod.readEscapedSequence, "function");
         assert.equal(typeof mod.createToken, "function");
         assert.equal(typeof mod.resetTokenIdSeed, "function");
         assert.equal(typeof mod.createSyntax, "function");
         assert.equal(typeof mod.createTagNameConfig, "function");
+        assert.equal(typeof mod.parseStructural, "function");
+        assert.equal(typeof mod.withSyntax, "function");
+        assert.equal(typeof mod.getSyntax, "function");
+        assert.equal(typeof mod.withTagNameConfig, "function");
         assert.equal(typeof mod.createSimpleInlineHandlers, "function");
         assert.equal(typeof mod.createSimpleBlockHandlers, "function");
         assert.equal(typeof mod.createSimpleRawHandlers, "function");
@@ -242,6 +247,119 @@ const smokeTest = (mod: DistModule, label: string) => {
         assert.equal(t.type, "test");
         assert.equal(t.value, "v");
         assert.equal(typeof t.id, "string");
+      },
+    },
+    {
+      name: `[${label}] 显式 DslContext utility 路径`,
+      run: () => {
+        let seed = 0;
+        const syntax = mod.createSyntax({
+          tagPrefix: "@@",
+          tagOpen: "<<",
+          tagClose: ">>",
+          tagDivider: "||",
+          endTag: ">>@@",
+          rawOpen: ">>%",
+          blockOpen: ">>*",
+          rawClose: "%end@@",
+          blockClose: "*end@@",
+          escapeChar: "~",
+        });
+        const ctx = {
+          syntax,
+          createId: (draft: { type: string }) => `dist-${draft.type}-${seed++}`,
+        };
+
+        const args = mod.parsePipeTextArgs("ts || Demo || Label", ctx);
+        assert.deepEqual(args.parts.map((_: unknown, index: number) => args.text(index)), [
+          "ts",
+          "Demo",
+          "Label",
+        ]);
+        assert.equal(mod.unescapeInline(String.raw`a ~|| b ~>>@@`, ctx), "a || b >>@@");
+        assert.deepEqual(mod.readEscapedSequence(String.raw`~>>@@`, 0, ctx), [">>@@", 5]);
+        const freshCtx = {
+          syntax,
+          createId: (draft: { type: string }) => `fresh-${draft.type}`,
+        };
+        assert.equal(mod.createToken({ type: "text", value: "x" }, undefined, freshCtx).id, "fresh-text");
+      },
+    },
+    {
+      name: `[${label}] legacy compat handler 路径`,
+      run: () => {
+        const tokens = mod.parseRichText("@@link<<https://a.com || click>>@@", {
+          syntax: {
+            tagPrefix: "@@",
+            tagOpen: "<<",
+            tagClose: ">>",
+            tagDivider: "||",
+            endTag: ">>@@",
+            rawOpen: ">>%",
+            blockOpen: ">>*",
+            rawClose: "%end@@",
+            blockClose: "*end@@",
+            escapeChar: "~",
+          },
+          createId: () => "legacy-id",
+          handlers: {
+            link: {
+              inline: (tokens: { type: string; value: string | unknown[] }[]) => {
+                const args = mod.parsePipeArgs(tokens);
+                return {
+                  type: "link",
+                  url: args.text(0),
+                  value: args.materializedTailTokens(1),
+                };
+              },
+            },
+          },
+        });
+        assert.deepEqual(normalize(tokens), [
+          {
+            type: "link",
+            url: "https://a.com",
+            value: [{ type: "text", value: "click" }],
+          },
+        ]);
+        assert.equal(tokens[0].id, "legacy-id");
+      },
+    },
+    {
+      name: `[${label}] withSyntax + parseStructural legacy 闭包路径`,
+      run: () => {
+        const syntax = mod.createSyntax({
+          tagPrefix: "@@",
+          tagOpen: "<<",
+          tagClose: ">>",
+          tagDivider: "||",
+          endTag: ">>@@",
+          rawOpen: ">>%",
+          blockOpen: ">>*",
+          rawClose: "%end@@",
+          blockClose: "*end@@",
+          escapeChar: "~",
+        });
+        mod.withSyntax(syntax, () => {
+          assert.deepEqual(
+            mod.parsePipeTextList("a || b || c"),
+            ["a", "b", "c"],
+          );
+          assert.deepEqual(
+            mod.parseStructural("@@link<<a || b>>@@"),
+            [
+              {
+                type: "inline",
+                tag: "link",
+                children: [
+                  { type: "text", value: "a " },
+                  { type: "separator" },
+                  { type: "text", value: " b" },
+                ],
+              },
+            ],
+          );
+        });
       },
     },
     {

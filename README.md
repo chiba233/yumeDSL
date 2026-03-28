@@ -171,8 +171,8 @@ First-time users:
 3. [createParser](#createparserdefaults--recommended-entry-point) — the main entry point
 4. [Handler Helpers](#handler-helpers) — bulk-register tags without boilerplate
 5. [Writing Tag Handlers](#writing-tag-handlers) — custom handler logic
-6. [parseStructural](#parsestructural--structural-parse) — only when you need highlighting / linting / structural
-   analysis
+6. [parseStructural](#parsestructural--structural-parse) — for structural consumers (highlighting, linting, editors,
+   source inspection)
 
 ---
 
@@ -350,9 +350,9 @@ or when you need full per-call control.
 
 ### `parseStructural` — structural parse
 
-`parseStructural` is for **syntax highlighting, linting, and structural analysis** — any scenario where you need
-to know *which tag form* was used, not just the semantic result. It preserves the tag form (inline / raw / block)
-in the output tree.
+`parseStructural` is for **structural consumers** — highlighting, linting, editors, source inspection, or any
+scenario where you need to know *which tag form* was used, not just the semantic result. It preserves the tag form
+(inline / raw / block) explicitly in the output tree.
 
 It shares the same language configuration (`handlers`, `allowForms`, `syntax`, `tagName`, `depthLimit`,
 `trackPositions`) as `parseRichText`, so you don't maintain two separate sets of DSL rules.
@@ -401,7 +401,7 @@ interface StructuralParseOptions extends ParserBaseOptions {
 | Param                    | Type                         | Description                                                                         |
 |--------------------------|------------------------------|-------------------------------------------------------------------------------------|
 | `text`                   | `string`                     | DSL source                                                                          |
-| `options.handlers`       | `Record<string, TagHandler>` | Tag recognition & form gating (same rules as `parseRichText`). Omit for accept-all. |
+| `options.handlers`       | `Record<string, TagHandler>` | Tag recognition & form gating (same rules as `parseRichText`). Omit to accept all syntactically valid tags/forms without semantic gating. |
 | `options.allowForms`     | `readonly TagForm[]`         | Restrict accepted forms (requires `handlers`)                                       |
 | `options.depthLimit`     | `number`                     | Max nesting depth (default `50`)                                                    |
 | `options.syntax`         | `Partial<SyntaxInput>`       | Override syntax tokens                                                              |
@@ -414,13 +414,14 @@ Handler functions themselves are never called; only the presence of `inline` / `
 
 When `handlers` is omitted, all syntactically valid tags in all forms are accepted.
 
-**Context inheritance:** when called without `syntax` / `tagName` overrides, `parseStructural` inherits
-the active `withSyntax` / `withTagNameConfig` context. This makes it composable inside custom parse pipelines:
+**Ambient capture:** when called without `syntax` / `tagName` overrides, `parseStructural` captures the
+current `getSyntax()` / `getTagNameConfig()` values once at entry and threads them explicitly through the
+parse. This makes it composable inside `withSyntax` / `withTagNameConfig` wrappers:
 
 ```ts
 withSyntax(customSyntax, () => {
-    parseStructural(text);  // uses customSyntax
-    parseStructural(text2); // also uses customSyntax
+    parseStructural(text);  // captures customSyntax at entry
+    parseStructural(text2); // also captures customSyntax at entry
 });
 ```
 
@@ -603,9 +604,10 @@ interface SyntaxConfig extends SyntaxInput {
 ```
 
 > Note:
-> Syntax overrides are applied through module-local active state during parsing.
+> Internally, parser state is passed explicitly through the parse pipeline. `parseRichText` preserves module-local
+> ambient wrapping (`withSyntax` / `withCreateId`) for backward compatibility in handler utility calls.
 > This is safe for normal synchronous calls, but if you share one module instance across concurrent async request flows,
-> isolate parser work carefully.
+> isolate parser work carefully — or pass `DslContext` explicitly to eliminate ambient dependency.
 
 ---
 
@@ -1205,8 +1207,9 @@ Convenience functions for creating handlers in bulk — most projects only need 
 Lower-level tools for writing custom `TagHandler` implementations.
 You will not need these if you only use the handler helpers above.
 
-Public utility calls should use an explicit `ctx: DslContext`.
-Treat that as the contract for new code and for the upcoming 2.0 API surface. See [DslContext](#dslcontext) below.
+The `ctx?` parameter exists for backward compatibility. New code should treat it as required in practice —
+pass the `DslContext` received from the handler callback or construct one explicitly.
+See [DslContext](#dslcontext) below.
 
 | Export                                | Who uses it                                | Description                                              |
 |---------------------------------------|--------------------------------------------|----------------------------------------------------------|
