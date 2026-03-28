@@ -1,4 +1,5 @@
 import type { TagNameConfig } from "./types.js";
+import { isInternalCaller, warnDeprecated } from "./deprecations.js";
 
 const defaultIsTagStartChar = (c: string) =>
   (c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || c === "_";
@@ -38,6 +39,9 @@ let activeTagName: TagNameConfig = createTagNameConfig();
 export const getTagNameConfig = (): TagNameConfig => activeTagName;
 
 export const withTagNameConfig = <T>(config: TagNameConfig, fn: () => T): T => {
+  if (!isInternalCaller()) {
+    warnDeprecated("withTagNameConfig", "withTagNameConfig() is deprecated. Pass tagName via ParseOptions instead.");
+  }
   const prev = activeTagName;
   activeTagName = config;
   try {

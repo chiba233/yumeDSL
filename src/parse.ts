@@ -15,6 +15,7 @@ import { createTagNameConfig, withTagNameConfig } from "./chars.js";
 import { tryConsumeEscape, tryConsumeTagClose, tryConsumeTagStart } from "./consumers.js";
 import { emptyBuffer, appendToBuffer, finalizeUnclosedTags, flushBuffer } from "./context.js";
 import { withCreateId } from "./createToken.js";
+import { withInternalCaller } from "./deprecations.js";
 import { parseStructural } from "./structural.js";
 import { createSyntax, withSyntax } from "./syntax.js";
 import { buildPositionTracker, type PositionTracker } from "./positions.js";
@@ -186,7 +187,8 @@ export const parseRichText = (text: string, options: ParseOptions = {}): TextTok
   // with* wrappers kept for backward compatibility: user handlers may call
   // public utilities (parsePipeArgs, createToken, unescapeInline, etc.) that
   // fall back to module-level state when no explicit config is passed.
-  return withSyntax(syntax, () =>
+  // withInternalCaller suppresses deprecation warnings for these internal calls.
+  return withInternalCaller(() => withSyntax(syntax, () =>
     withTagNameConfig(tagName, () =>
       withCreateId(createId, () =>
         internalParse(
@@ -205,7 +207,7 @@ export const parseRichText = (text: string, options: ParseOptions = {}): TextTok
         ),
       ),
     ),
-  );
+  ));
 };
 
 export const stripRichText = (text: string, options: ParseOptions = {}): string => {

@@ -1,4 +1,5 @@
 import type { CreateId, DslContext, SourceSpan, TextToken, TokenDraft } from "./types.js";
+import { isInternalCaller, warnDeprecated } from "./deprecations.js";
 
 let tokenIdSeed = 0;
 let activeCreateId: CreateId | null = null;
@@ -22,10 +23,14 @@ export const createToken = (
 };
 
 export const resetTokenIdSeed = () => {
+  warnDeprecated("resetTokenIdSeed", "resetTokenIdSeed() is deprecated. Use DslContext.createId instead.");
   tokenIdSeed = 0;
 };
 
 export const withCreateId = <T>(createId: CreateId, fn: () => T): T => {
+  if (!isInternalCaller()) {
+    warnDeprecated("withCreateId", "withCreateId() is deprecated. Pass createId via DslContext instead.");
+  }
   const prev = activeCreateId;
   activeCreateId = createId;
   try {

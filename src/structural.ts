@@ -6,8 +6,9 @@ import type {
   TagHandler,
   TagNameConfig,
 } from "./types.js";
-import { createSyntax, getSyntax } from "./syntax.js";
-import { createTagNameConfig, getTagNameConfig } from "./chars.js";
+import { createSyntax, getDefaultSyntaxInstance, getSyntax } from "./syntax.js";
+import { createTagNameConfig, DEFAULT_TAG_NAME, getTagNameConfig } from "./chars.js";
+import { warnDeprecated, withInternalCaller } from "./deprecations.js";
 import { readEscapedSequence } from "./escape.js";
 import { supportsInlineForm } from "./consumers.js";
 import { emptyBuffer } from "./context.js";
@@ -357,8 +358,9 @@ const parseNodes = (
  *
  * When `handlers` is omitted, **all** tags in **all** forms are accepted.
  *
- * Respects the active syntax set via {@link withSyntax}; defaults to
- * {@link DEFAULT_SYNTAX}.
+ * When `syntax` / `tagName` are omitted, defaults to {@link DEFAULT_SYNTAX} /
+ * {@link DEFAULT_TAG_NAME}. Legacy `withSyntax` / `withTagNameConfig` ambient
+ * wrapping is detected and used as a fallback with a deprecation warning.
  */
 export const parseStructural = (
   text: string,
@@ -367,9 +369,32 @@ export const parseStructural = (
   if (!text) return [];
 
   const depthLimit = options?.depthLimit ?? 50;
-  // Capture ambient context if no explicit override — supports withSyntax/withTagNameConfig wrapping
-  const syntax = options?.syntax ? createSyntax(options.syntax) : getSyntax();
-  const tagName = options?.tagName ? createTagNameConfig(options.tagName) : getTagNameConfig();
+
+  let syntax: SyntaxConfig;
+  if (options?.syntax) {
+    syntax = createSyntax(options.syntax);
+  } else {
+    syntax = withInternalCaller(() => getSyntax());
+    if (syntax !== getDefaultSyntaxInstance()) {
+      warnDeprecated(
+        "parseStructural.syntax",
+        "parseStructural() is reading ambient withSyntax(). Pass syntax explicitly via options.syntax instead.",
+      );
+    }
+  }
+
+  let tagName: TagNameConfig;
+  if (options?.tagName) {
+    tagName = createTagNameConfig(options.tagName);
+  } else {
+    tagName = getTagNameConfig();
+    if (tagName !== DEFAULT_TAG_NAME) {
+      warnDeprecated(
+        "parseStructural.tagName",
+        "parseStructural() is reading ambient withTagNameConfig(). Pass tagName explicitly via options.tagName instead.",
+      );
+    }
+  }
 
   // ── Build gating context (mirrors parseRichText entry) ──
   let gating: GatingContext | null = null;

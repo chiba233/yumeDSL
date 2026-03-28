@@ -1,4 +1,5 @@
 import type { SyntaxConfig, SyntaxInput } from "./types.js";
+import { isInternalCaller, warnDeprecated } from "./deprecations.js";
 
 export const DEFAULT_SYNTAX: SyntaxInput = {
   tagPrefix: "$$",
@@ -146,11 +147,24 @@ export const createSyntax = (overrides?: Partial<SyntaxInput>): SyntaxConfig => 
 
 // ── Module-level active syntax (set during parse, safe for synchronous use) ──
 
-let activeSyntax: SyntaxConfig = createSyntax();
+const defaultSyntaxInstance: SyntaxConfig = createSyntax();
 
-export const getSyntax = (): SyntaxConfig => activeSyntax;
+let activeSyntax: SyntaxConfig = defaultSyntaxInstance;
+
+export const getSyntax = (): SyntaxConfig => {
+  if (!isInternalCaller()) {
+    warnDeprecated("getSyntax", "getSyntax() is deprecated. Use DslContext.syntax instead.");
+  }
+  return activeSyntax;
+};
+
+/** @internal The default SyntaxConfig instance for ambient-change detection. */
+export const getDefaultSyntaxInstance = (): SyntaxConfig => defaultSyntaxInstance;
 
 export const withSyntax = <T>(syntax: SyntaxConfig, fn: () => T): T => {
+  if (!isInternalCaller()) {
+    warnDeprecated("withSyntax", "withSyntax() is deprecated. Pass syntax via ParseOptions or DslContext instead.");
+  }
   const prev = activeSyntax;
   activeSyntax = syntax;
   try {
