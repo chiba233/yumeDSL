@@ -75,7 +75,7 @@ Turns text into a token tree — tag semantics, rendering, and UI integration ar
 - [Token Structure](#token-structure)
     - [Strong Typing](#strong-typing)
 - [Writing Tag Handlers](#writing-tag-handlers)
-- [Utility Exports](#utility-exports)
+- [Exports](#exports)
     - [DslContext](#dslcontext)
     - [PipeArgs / parsePipeTextList](#pipeargs--parsepipetextlist)
 - [Source Position Tracking](#source-position-tracking)
@@ -1102,34 +1102,41 @@ const tokens = dsl.parse(input);
 
 ---
 
-## Utility Exports
+## Exports
+
+### Core
+
+| Export            | Signature                                                              | Description                                      |
+|-------------------|------------------------------------------------------------------------|--------------------------------------------------|
+| `parseRichText`   | `(text: string, options?: ParseOptions) => TextToken[]`                | Parse DSL text into a token tree                 |
+| `stripRichText`   | `(text: string, options?: ParseOptions) => string`                     | Parse and flatten to plain text                  |
+| `createParser`    | `(defaults: ParseOptions) => Parser`                                   | Create a reusable parser with pre-filled options |
+| `parseStructural` | `(text: string, options?: StructuralParseOptions) => StructuralNode[]` | Parse into a form-preserving structural tree     |
 
 ### Configuration
 
 See [Custom Syntax](#custom-syntax) and [Custom Tag Name Characters](#custom-tag-name-characters) for full
 documentation.
 
-| Export                           | Description                                             |
-|----------------------------------|---------------------------------------------------------|
-| `DEFAULT_SYNTAX`                 | The built-in syntax tokens (`$$`, `(`, `)$$`, etc.)     |
-| `createEasySyntax(overrides)`    | Build `SyntaxConfig` with auto-derivation (recommended) |
-| `createSyntax(overrides)`        | Build `SyntaxConfig` with plain merge (low-level)       |
-| `DEFAULT_TAG_NAME`               | The built-in tag-name character rules                   |
-| `createTagNameConfig(overrides)` | Build a full `TagNameConfig` from partial overrides     |
+| Export                | Signature                                               | Description                                             |
+|-----------------------|---------------------------------------------------------|---------------------------------------------------------|
+| `DEFAULT_SYNTAX`      | `SyntaxInput`                                           | The built-in syntax tokens (`$$`, `(`, `)$$`, etc.)     |
+| `createEasySyntax`    | `(overrides?: Partial<SyntaxInput>) => SyntaxConfig`    | Build `SyntaxConfig` with auto-derivation (recommended) |
+| `createSyntax`        | `(overrides?: Partial<SyntaxInput>) => SyntaxConfig`    | Build `SyntaxConfig` with plain merge (low-level)       |
+| `DEFAULT_TAG_NAME`    | `TagNameConfig`                                         | The built-in tag-name character rules                   |
+| `createTagNameConfig` | `(overrides?: Partial<TagNameConfig>) => TagNameConfig` | Build a full `TagNameConfig` from partial overrides     |
 
 ### Handler Helpers
 
 Convenience functions for creating handlers in bulk — most projects only need these.
 
-Recommended
-
-| Export                              | Description                                                        |
-|-------------------------------------|--------------------------------------------------------------------|
-| `createPipeHandlers(definitions)`   | Pipe-aware handler builder for any combination of inline/raw/block |
-| `createSimpleInlineHandlers(names)` | Create inline handlers for simple tags in bulk                     |
-| `createSimpleBlockHandlers(names)`  | Create block-form handlers for simple tags in bulk                 |
-| `createSimpleRawHandlers(names)`    | Create raw handlers for simple tags in bulk                        |
-| `declareMultilineTags(names)`       | Declare which tags need multiline normalization                    |
+| Export                       | Signature                                                                            | Description                                                        |
+|------------------------------|--------------------------------------------------------------------------------------|--------------------------------------------------------------------|
+| `createPipeHandlers`         | `(definitions: Record<string, PipeHandlerDefinition>) => Record<string, TagHandler>` | Pipe-aware handler builder for any combination of inline/raw/block |
+| `createSimpleInlineHandlers` | `(names: readonly string[]) => Record<string, TagHandler>`                           | Create inline handlers for simple tags in bulk                     |
+| `createSimpleBlockHandlers`  | `(names: readonly string[]) => Record<string, TagHandler>`                           | Create block-form handlers for simple tags in bulk                 |
+| `createSimpleRawHandlers`    | `(names: readonly string[]) => Record<string, TagHandler>`                           | Create raw handlers for simple tags in bulk                        |
+| `declareMultilineTags`       | `(names: readonly BlockTagInput[]) => BlockTagInput[]`                               | Declare which tags need multiline normalization                    |
 
 See also [Deprecated API](#deprecated-api) for `createPipeBlockHandlers`, `createPipeRawHandlers`,
 `createPassthroughTags`.
@@ -1143,25 +1150,46 @@ The `ctx?` parameter exists for backward compatibility. New code should treat it
 pass the `DslContext` received from the handler callback or construct one explicitly.
 See [DslContext](#dslcontext) below.
 
-| Export                                | Who uses it                                | Description                                              |
-|---------------------------------------|--------------------------------------------|----------------------------------------------------------|
-| `parsePipeArgs(tokens, ctx?)`         | Custom handlers with `\|`-separated params | Split tokens by pipe and access parsed parts             |
-| `parsePipeTextArgs(text, ctx?)`       | Custom handlers parsing raw args           | Same as above, but from a plain text string              |
-| `parsePipeTextList(text, ctx?)`       | Custom handlers needing `string[]` args    | Split a pipe-delimited string into trimmed `string[]`    |
-| `splitTokensByPipe(tokens, ctx?)`     | Low-level handler code                     | Raw token splitter without helper methods                |
-| `extractText(tokens)`                 | Handlers that need plain-text values       | Flatten a token tree into a single string                |
-| `materializeTextTokens(tokens, ctx?)` | Handlers returning processed child tokens  | Recursively unescape text tokens in a tree               |
-| `unescapeInline(str, ctx?)`           | Handlers processing raw strings            | Unescape DSL escape sequences in a single string         |
-| `readEscapedSequence(text, i, ctx?)`  | Handlers inspecting escape sequences       | Read one escape sequence at position `i`                 |
-| `createTextToken(value, ctx?)`        | Handlers creating plain text leaf tokens   | Create a `{ type: "text", value }` token with `id`       |
-| `createToken(draft, position?, ctx?)` | Handlers building tokens manually          | Add an `id` (and optional `position`) to a `TokenDraft`  |
-| `resetTokenIdSeed()`                  | Test code                                  | Reset the token id counter for deterministic test output |
+| Export                  | Signature                                                                                 | Description                                                |
+|-------------------------|-------------------------------------------------------------------------------------------|------------------------------------------------------------|
+| `parsePipeArgs`         | `(tokens: TextToken[], ctx?: DslContext) => PipeArgs`                                     | Split tokens by pipe and access parsed parts               |
+| `parsePipeTextArgs`     | `(text: string, ctx?: DslContext) => PipeArgs`                                            | Same as above, but from a plain text string                |
+| `parsePipeTextList`     | `(text: string, ctx?: DslContext) => string[]`                                            | Split a pipe-delimited string into trimmed `string[]`      |
+| `splitTokensByPipe`     | `(tokens: TextToken[], ctx?: DslContext) => TextToken[][]`                                | Raw token splitter without helper methods                  |
+| `extractText`           | `(tokens?: TextToken[]) => string`                                                        | Flatten a token tree into a single string                  |
+| `materializeTextTokens` | `(tokens: TextToken[], ctx?: DslContext) => TextToken[]`                                  | Recursively unescape text tokens in a tree                 |
+| `unescapeInline`        | `(str: string, ctx?: DslContext \| SyntaxConfig) => string`                               | Unescape DSL escape sequences in a single string \*        |
+| `readEscapedSequence`   | `(text: string, i: number, ctx?: DslContext \| SyntaxConfig) => [string \| null, number]` | Read one escape sequence at position `i` \*                |
+| `createTextToken`       | `(value: string, ctx?: DslContext) => TextToken`                                          | Create a `{ type: "text", value }` token with `id`         |
+| `createToken`           | `(draft: TokenDraft, position?: SourceSpan, ctx?: DslContext \| CreateId) => TextToken`   | Add an `id` (and optional `position`) to a `TokenDraft` \* |
 
-> During parsing, token ids default to a parse-local sequence (`rt-0`, `rt-1`, ...).
-> `createToken()` only uses the module-level counter when called outside an active parse, and `resetTokenIdSeed()` is
-> mainly intended for tests around that standalone usage.
-> If you need strict request isolation for SSR or concurrent async parsing, prefer isolating parser usage per runtime
-> boundary.
+> \* `unescapeInline` and `readEscapedSequence` also accept a bare `SyntaxConfig` for convenience;
+> `createToken` also accepts a bare `CreateId`. These narrower overloads exist for internal and
+> legacy use. **New code should pass `DslContext`** — the wider types will be narrowed to
+> `DslContext`-only in a future major version.
+
+### Position Tracking
+
+Single-pass position tracking with zero extra cost when disabled.
+Pass `trackPositions: true` to attach `position` (source span with `offset` / `line` / `column`) to every output node.
+For substring parsing, `baseOffset` + `tracker` map positions back to the original document.
+See [Source Position Tracking](#source-position-tracking) for full documentation, types, and examples.
+
+| Export                 | Signature                           | Description                                                             |
+|------------------------|-------------------------------------|-------------------------------------------------------------------------|
+| `buildPositionTracker` | `(text: string) => PositionTracker` | Build a reusable line-offset table for resolving offsets to line/column |
+
+Related `ParseOptions` / `StructuralParseOptions` fields:
+
+| Option           | Type              | Description                                                        |
+|------------------|-------------------|--------------------------------------------------------------------|
+| `trackPositions` | `boolean`         | Enable position tracking (default `false`)                         |
+| `baseOffset`     | `number`          | Shift all offsets by this amount for substring parsing             |
+| `tracker`        | `PositionTracker` | Pre-built tracker from full document for correct `line` / `column` |
+
+> **Note:** The full list of exports includes deprecated APIs not shown above.
+> See [Deprecated API](#deprecated-api) for `withSyntax`, `getSyntax`, `withTagNameConfig`,
+> `resetTokenIdSeed`, `createPipeBlockHandlers`, `createPipeRawHandlers`, and `createPassthroughTags`.
 
 ### DslContext
 
@@ -1874,17 +1902,17 @@ Warnings are suppressed when `NODE_ENV=production`.
 
 These APIs will **not** be removed before September 2026.
 
-| Export                           | Use instead                       | Warns | Reason                                                    |
-|----------------------------------|-----------------------------------|-------|-----------------------------------------------------------|
-| `withSyntax(syntax, fn)`         | `DslContext`                      | Yes   | Module-level implicit state; pass `DslContext` explicitly |
-| `getSyntax()`                    | `DslContext`                      | Yes   | Same as above                                             |
-| `withTagNameConfig(config, fn)`  | Pass `tagName` via `ParseOptions` | Yes   | Same as above                                             |
-| `withCreateId(createId, fn)`     | `DslContext`                      | Yes   | Same as above                                             |
-| `resetTokenIdSeed()`             | `DslContext.createId`             | Yes   | Only needed when relying on module-level id counter       |
-| `createPipeBlockHandlers(names)` | `createPipeHandlers`              | No    | Redundant helper; `createPipeHandlers` covers all cases   |
-| `createPipeRawHandlers(names)`   | `createPipeHandlers`              | No    | Same as above                                             |
-| `createPassthroughTags(names)`   | `createSimpleInlineHandlers`      | No    | Implicit behavior; explicit handlers are clearer          |
-| `mode` in `ParseOptions`         | *(remove)*                        | No    | Only one value (`"render"`); no longer meaningful         |
+| Export                    | Signature                                                  | Use instead                       | Warns | Reason                                                    |
+|---------------------------|------------------------------------------------------------|-----------------------------------|-------|-----------------------------------------------------------|
+| `withSyntax`              | `<T>(syntax: SyntaxConfig, fn: () => T) => T`              | `DslContext`                      | Yes   | Module-level implicit state; pass `DslContext` explicitly |
+| `getSyntax`               | `() => SyntaxConfig`                                       | `DslContext`                      | Yes   | Same as above                                             |
+| `withTagNameConfig`       | `<T>(config: TagNameConfig, fn: () => T) => T`             | Pass `tagName` via `ParseOptions` | Yes   | Same as above                                             |
+| `withCreateId`            | `<T>(createId: CreateId, fn: () => T) => T`                | `DslContext`                      | Yes   | Same as above                                             |
+| `resetTokenIdSeed`        | `() => void`                                               | `DslContext.createId`             | Yes   | Only needed when relying on module-level id counter       |
+| `createPipeBlockHandlers` | `(names: readonly string[]) => Record<string, TagHandler>` | `createPipeHandlers`              | No    | Redundant helper; `createPipeHandlers` covers all cases   |
+| `createPipeRawHandlers`   | `(names: readonly string[]) => Record<string, TagHandler>` | `createPipeHandlers`              | No    | Same as above                                             |
+| `createPassthroughTags`   | `(names: readonly string[]) => Record<string, TagHandler>` | `createSimpleInlineHandlers`      | No    | Implicit behavior; explicit handlers are clearer          |
+| `mode` in `ParseOptions`  | `"render"`                                                 | *(remove)*                        | No    | Only one value (`"render"`); no longer meaningful         |
 
 ---
 
