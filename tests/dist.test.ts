@@ -63,6 +63,7 @@ const smokeTest = (mod: DistModule, label: string) => {
         assert.equal(typeof mod.createPipeRawHandlers, "function");
         assert.equal(typeof mod.createPassthroughTags, "function");
         assert.equal(typeof mod.declareMultilineTags, "function");
+        assert.equal(typeof mod.createEasyStableId, "function");
         assert.ok(mod.DEFAULT_SYNTAX);
       },
     },
