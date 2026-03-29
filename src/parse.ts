@@ -1,13 +1,16 @@
 import type {
   BlockTagInput,
   BlockTagLookup,
+  CreateId,
   MultilineForm,
   ParseContext,
   ParseOptions,
   StructuralNode,
   StructuralParseOptions,
+  SyntaxConfig,
   TagForm,
   TagHandler,
+  TagNameConfig,
   TextToken,
 } from "./types.js";
 import { extractText } from "./builders.js";
@@ -111,6 +114,11 @@ const internalParse = (
 ): TextToken[] => {
   if (!text) return [];
 
+  // 注意：这是 render parser 的主状态机。
+  // 真正会变的内部状态只有四块：`ctx.i`（扫描指针）、`ctx.buf`（文本缓冲）、
+  // `ctx.stack`（未闭合 inline 栈）、`ctx.root`（当前层输出）。
+  // 改这里时先想清楚“消费了多少源码”和“文本最终落到哪一层”，
+  // 否则最先炸的是未闭合退化、相邻 text 合并、以及 position 对齐。
   const ctx: ParseContext = {
     text,
     depthLimit,
@@ -152,6 +160,10 @@ const internalParse = (
     );
   };
 
+  // 注意：这里的处理顺序不是装饰性的。
+  // tag-start / tag-close / escape 都可能一次消费多个字符，
+  // 只有三者都不命中时，当前字符才作为普通文本塞进 buffer。
+  // 顺序乱了以后，边界恢复和源码位置都会跟着错。
   while (ctx.i < ctx.text.length) {
     if (tryConsumeTagStart(ctx, recursiveParse)) continue;
     if (tryConsumeTagClose(ctx)) continue;
@@ -164,6 +176,24 @@ const internalParse = (
   flushBuffer(ctx);
   finalizeUnclosedTags(ctx);
   return ctx.root;
+};
+
+/** Set legacy ambient state for backward-compatible handler support, suppressing deprecation warnings. */
+const withLegacyAmbientState = <T>(
+  syntax: SyntaxConfig,
+  tagName: TagNameConfig,
+  createId: CreateId,
+  fn: () => T,
+): T => {
+  // 注意：这是 compat 隔离层，不是扩功能的入口。
+  // 用户旧 handler 里那些不传 ctx 的 utility 还活着，全靠这里临时灌 ambient state。
+  // 如果把这层拿掉，或者漏包一个维度，legacy handler 会静悄悄产出错误的 syntax / tagName / id。
+  const suppress = { suppressDeprecation: true };
+  return withSyntax(syntax, () =>
+    withTagNameConfig(tagName, () =>
+      withCreateId(createId, fn, suppress),
+    suppress),
+  suppress);
 };
 
 export const parseRichText = (text: string, options: ParseOptions = {}): TextToken[] => {
@@ -184,34 +214,21 @@ export const parseRichText = (text: string, options: ParseOptions = {}): TextTok
   // with* wrappers kept for backward compatibility: user handlers may call
   // public utilities (parsePipeArgs, createToken, unescapeInline, etc.) that
   // fall back to module-level state when no explicit config is passed.
-  return withSyntax(
-    syntax,
-    () =>
-      withTagNameConfig(
-        tagName,
-        () =>
-          withCreateId(
-            createId,
-            () =>
-              internalParse(
-                text,
-                depthLimit,
-                { mode: options.mode ?? "render" },
-                allowInline,
-                registeredTags,
-                options.onError,
-                handlers,
-                blockTagSet,
-                tracker,
-                syntax,
-                tagName,
-                createId,
-              ),
-            { suppressDeprecation: true },
-          ),
-        { suppressDeprecation: true },
-      ),
-    { suppressDeprecation: true },
+  return withLegacyAmbientState(syntax, tagName, createId, () =>
+    internalParse(
+      text,
+      depthLimit,
+      { mode: options.mode ?? "render" },
+      allowInline,
+      registeredTags,
+      options.onError,
+      handlers,
+      blockTagSet,
+      tracker,
+      syntax,
+      tagName,
+      createId,
+    ),
   );
 };
 

@@ -194,6 +194,25 @@ export const createPipeHandlers = <
   return result;
 };
 
+type PipeFormHandler = (args: PipeArgs, content: TextToken[] | string, ctx: DslContext, rawArg: string) => TokenDraft;
+
+const createPipeFormHandlers = <const T extends readonly string[]>(
+  tagNames: T,
+  form: "block" | "raw",
+): Record<T[number], TagHandler> => {
+  const definitions = {} as Record<T[number], PipeHandlerDefinition>;
+  for (const tagName of tagNames) {
+    const handler: PipeFormHandler = (pipeArgs, content, _ctx, rawArg) => ({
+      type: tagName,
+      arg: rawArg,
+      args: pipeArgs.parts.map((_: unknown, index: number) => pipeArgs.text(index)),
+      value: content,
+    });
+    definitions[tagName as T[number]] = { [form]: handler };
+  }
+  return createPipeHandlers(definitions);
+};
+
 /**
  * Create block handlers that split the arg by pipe and expose both
  * the original arg and structured `args` array:
@@ -201,20 +220,7 @@ export const createPipeHandlers = <
  */
 export const createPipeBlockHandlers = <const T extends readonly string[]>(
   names: T,
-): Record<T[number], TagHandler> => {
-  const definitions = {} as Record<T[number], PipeHandlerDefinition>;
-  for (const name of names) {
-    definitions[name as T[number]] = {
-      block: (args, content, _ctx, rawArg) => ({
-        type: name,
-        arg: rawArg,
-        args: args.parts.map((_, i) => args.text(i)),
-        value: content,
-      }),
-    };
-  }
-  return createPipeHandlers(definitions);
-};
+): Record<T[number], TagHandler> => createPipeFormHandlers(names, "block");
 
 /**
  * Create raw handlers that split the arg by pipe and expose both
@@ -223,17 +229,4 @@ export const createPipeBlockHandlers = <const T extends readonly string[]>(
  */
 export const createPipeRawHandlers = <const T extends readonly string[]>(
   names: T,
-): Record<T[number], TagHandler> => {
-  const definitions = {} as Record<T[number], PipeHandlerDefinition>;
-  for (const name of names) {
-    definitions[name as T[number]] = {
-      raw: (args, content, _ctx, rawArg) => ({
-        type: name,
-        arg: rawArg,
-        args: args.parts.map((_, i) => args.text(i)),
-        value: content,
-      }),
-    };
-  }
-  return createPipeHandlers(definitions);
-};
+): Record<T[number], TagHandler> => createPipeFormHandlers(names, "raw");

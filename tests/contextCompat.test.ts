@@ -307,6 +307,84 @@ const cases = [
       );
     },
   },
+  {
+    name: "[Compat/Parser] compat wrapper 结束后不应泄漏 ambient syntax/createId",
+    run: () => {
+      parseRichText("@@link<<https://a.com || click>>@@", {
+        handlers: legacyHandlers,
+        syntax: compatSyntax,
+        createId: (draft) => `wrapped-${draft.type}`,
+      });
+
+      assert.equal(unescapeInline(String.raw`x ~|| y`), String.raw`x ~|| y`);
+
+      const token = createToken({ type: "text", value: "plain" });
+      assert.notEqual(token.id, "wrapped-text");
+      assert.match(token.id, /^rt-\d+$/);
+    },
+  },
+  {
+    name: "[Compat/Parser] createParser.structural -> 应继承 trackPositions / tagName / syntax",
+    run: () => {
+      const parser = createParser({
+        syntax: compatSyntax,
+        trackPositions: true,
+        tagName: {
+          isTagStartChar: (c) => /[a-zA-Z_0-9]/.test(c),
+        },
+      });
+
+      const nodes = parser.structural("@@1tag<<a || b>>@@");
+      assert.equal(nodes.length, 1);
+      assert.equal(nodes[0].type, "inline");
+      assert.deepEqual(nodes[0].position, {
+        start: { line: 1, column: 1, offset: 0 },
+        end: { line: 1, column: 19, offset: 18 },
+      });
+
+      const inline = nodes[0] as Extract<StructuralNode, { type: "inline" }>;
+      assert.deepEqual(normalizeStructuralNodes(inline.children), [
+        { type: "text", value: "a " },
+        { type: "separator" },
+        { type: "text", value: " b" },
+      ]);
+      assert.deepEqual(inline.children[1]?.position, {
+        start: { line: 1, column: 11, offset: 10 },
+        end: { line: 1, column: 13, offset: 12 },
+      });
+    },
+  },
+  {
+    name: "[Compat/Parser] createParser.structural override -> 局部关闭 trackPositions 仍应保留 syntax/tagName",
+    run: () => {
+      const parser = createParser({
+        syntax: compatSyntax,
+        trackPositions: true,
+        tagName: {
+          isTagStartChar: (c) => /[a-zA-Z_0-9]/.test(c),
+        },
+      });
+
+      const nodes = parser.structural("@@1tag<<x || y>>@@", {
+        trackPositions: false,
+      });
+
+      assert.equal(nodes.length, 1);
+      assert.equal(nodes[0].type, "inline");
+      assert.equal(nodes[0].position, undefined);
+      assert.deepEqual(normalizeStructuralNodes(nodes), [
+        {
+          type: "inline",
+          tag: "1tag",
+          children: [
+            { type: "text", value: "x " },
+            { type: "separator" },
+            { type: "text", value: " y" },
+          ],
+        },
+      ]);
+    },
+  },
 ];
 
 await runGoldenCases("Context Compat", " Context compat case", cases);

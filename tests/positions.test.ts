@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import type { GoldenCase } from "./testHarness.ts";
 import { runGoldenCases } from "./testHarness.ts";
 import type { SourceSpan, StructuralNode, TextToken } from "../src/types.ts";
+import { createParser, createSyntax } from "../src/index.ts";
 import { parseRichText } from "../src/parse.ts";
 import { parseStructural } from "../src/structural.ts";
 import { buildPositionTracker } from "../src/index.ts";
@@ -15,6 +16,19 @@ const parse = (text: string) =>
 
 const parseNoPos = (text: string) =>
   parseRichText(text, { handlers: testHandlers });
+
+const compatSyntax = createSyntax({
+  tagPrefix: "@@",
+  tagOpen: "<<",
+  tagClose: ">>",
+  tagDivider: "||",
+  endTag: ">>@@",
+  rawOpen: ">>%",
+  blockOpen: ">>*",
+  rawClose: "%end@@",
+  blockClose: "*end@@",
+  escapeChar: "~",
+});
 
 const position = (
   sl: number, sc: number, so: number,
@@ -418,6 +432,56 @@ const cases: GoldenCase[] = [
       assert.equal(nodes.length, 1);
       assert.equal(nodes[0].type, "inline");
       assert.deepEqual(nodes[0].position, position(1, 1, 6, 1, 16, 21));
+    },
+  },
+  {
+    name: "[Position/BaseOffset] parseStructural + custom syntax + tracker -> separator 子节点应完整回指原文",
+    run() {
+      const fullText = "pre\n@@link<<a || b>>@@\npost";
+      const sliceStart = 4;
+      const slice = fullText.slice(sliceStart, 22);
+      const tracker = buildPositionTracker(fullText);
+      const nodes = parseStructural(slice, {
+        syntax: compatSyntax,
+        trackPositions: true,
+        tracker,
+        baseOffset: sliceStart,
+      });
+
+      assert.equal(nodes.length, 1);
+      assert.equal(nodes[0].type, "inline");
+      assert.deepEqual(nodes[0].position, position(2, 1, 4, 2, 19, 22));
+
+      const inline = nodes[0] as Extract<StructuralNode, { type: "inline" }>;
+      assert.equal(inline.children.length, 3);
+      assert.equal(inline.children[1]?.type, "separator");
+      assert.deepEqual(inline.children[1]?.position, position(2, 11, 14, 2, 13, 16));
+    },
+  },
+  {
+    name: "[Position/BaseOffset] createParser.structural -> 默认 trackPositions 与 custom syntax 应一并生效",
+    run() {
+      const parser = createParser({
+        syntax: compatSyntax,
+        trackPositions: true,
+      });
+
+      const fullText = "pre\n@@link<<a || b>>@@\npost";
+      const sliceStart = 4;
+      const slice = fullText.slice(sliceStart, 22);
+      const tracker = buildPositionTracker(fullText);
+      const nodes = parser.structural(slice, {
+        tracker,
+        baseOffset: sliceStart,
+      });
+
+      assert.equal(nodes.length, 1);
+      assert.equal(nodes[0].type, "inline");
+      assert.deepEqual(nodes[0].position, position(2, 1, 4, 2, 19, 22));
+      const inline = nodes[0] as Extract<StructuralNode, { type: "inline" }>;
+      assert.deepEqual(inline.children[0]?.position, position(2, 9, 12, 2, 11, 14));
+      assert.deepEqual(inline.children[1]?.position, position(2, 11, 14, 2, 13, 16));
+      assert.deepEqual(inline.children[2]?.position, position(2, 13, 16, 2, 15, 18));
     },
   },
 ];

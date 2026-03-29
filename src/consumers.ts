@@ -11,7 +11,7 @@ import {
   readTagStartInfo,
   skipDegradedInline,
 } from "./scanner.js";
-import { tryParseComplexTag } from "./complex.js";
+import { tryParseComplexTag, type ComplexTagContext } from "./complex.js";
 import { createToken } from "./createToken.js";
 import { consumeBlockTagTrailingLineBreak } from "./blockTagFormatting.js";
 import { makePosition } from "./positions.js";
@@ -42,6 +42,12 @@ export const supportsInlineForm = (
   return !handler.raw && !handler.block;
 };
 
+/** Append text from ctx.i up to `end`, advance ctx.i to `end`. */
+const bufferAndAdvance = (ctx: ParseContext, end: number) => {
+  appendToBuffer(ctx, ctx.text.slice(ctx.i, end), ctx.i);
+  ctx.i = end;
+};
+
 export const tryConsumeDepthLimitedTag = (ctx: ParseContext, info: TagStartInfo): boolean => {
   if (ctx.stack.length < ctx.depthLimit) return false;
 
@@ -62,55 +68,39 @@ export const tryConsumeDepthLimitedTag = (ctx: ParseContext, info: TagStartInfo)
   const tagInfo = getTagCloserType(ctx.text, info.inlineContentStart, syntax);
 
   if (!tagInfo) {
-    appendToBuffer(ctx, ctx.text.slice(ctx.i, info.inlineContentStart), ctx.i);
-    ctx.i = info.inlineContentStart;
+    bufferAndAdvance(ctx, info.inlineContentStart);
     return true;
   }
 
   if (tagInfo.closer === endTag) {
     const end = findInlineClose(ctx.text, info.inlineContentStart, syntax, tagName);
     if (end === -1) {
-      const degradedEnd = skipDegradedInline(ctx.text, info.inlineContentStart, syntax, tagName);
-      appendToBuffer(ctx, ctx.text.slice(ctx.i, degradedEnd), ctx.i);
-      ctx.i = degradedEnd;
+      bufferAndAdvance(ctx, skipDegradedInline(ctx.text, info.inlineContentStart, syntax, tagName));
       return true;
     }
-
-    appendToBuffer(ctx, ctx.text.slice(ctx.i, end + endTag.length), ctx.i);
-    ctx.i = end + endTag.length;
+    bufferAndAdvance(ctx, end + endTag.length);
     return true;
   }
 
   if (tagInfo.closer === blockClose) {
     const contentStart = tagInfo.argClose + blockOpen.length;
     const end = findBlockClose(ctx.text, contentStart, syntax, tagName);
-
-    if (end === -1) {
-      appendToBuffer(ctx, ctx.text.slice(ctx.i, contentStart), ctx.i);
-      ctx.i = contentStart;
-      return true;
-    }
-
-    appendToBuffer(ctx, ctx.text.slice(ctx.i, end + blockClose.length), ctx.i);
-    ctx.i = end + blockClose.length;
+    bufferAndAdvance(ctx, end === -1 ? contentStart : end + blockClose.length);
     return true;
   }
 
   if (tagInfo.closer === rawClose) {
     const contentStart = tagInfo.argClose + rawOpen.length;
     const end = findRawClose(ctx.text, contentStart, syntax);
-
     if (end === -1) {
-      appendToBuffer(ctx, ctx.text.slice(ctx.i, contentStart), ctx.i);
-      ctx.i = contentStart;
+      bufferAndAdvance(ctx, contentStart);
       return true;
     }
-
-    appendToBuffer(ctx, ctx.text.slice(ctx.i, end + rawClose.length), ctx.i);
+    bufferAndAdvance(ctx, end + rawClose.length);
     ctx.i = consumeBlockTagTrailingLineBreak(
       info.tag,
       ctx.text,
-      end + rawClose.length,
+      ctx.i,
       ctx.mode,
       ctx.blockTagSet,
       "raw",
@@ -132,22 +122,22 @@ export const tryConsumeComplexTag = (
     innerTracker?: PositionTracker | null,
   ) => TextToken[],
 ): boolean => {
-  const result = tryParseComplexTag(
-    ctx.text,
-    info.tagOpenPos,
-    info.tag,
-    info.inlineContentStart,
+  const result = tryParseComplexTag({
+    text: ctx.text,
+    tagOpenPos: info.tagOpenPos,
+    tag: info.tag,
+    argStart: info.inlineContentStart,
     inlineEnd,
-    ctx.depthLimit,
-    ctx.mode,
-    ctx.handlers,
-    ctx.blockTagSet,
-    ctx.tracker,
-    ctx.syntax,
-    ctx.tagName,
-    ctx.createId,
+    depthLimit: ctx.depthLimit,
+    mode: ctx.mode,
+    handlers: ctx.handlers,
+    blockTagSet: ctx.blockTagSet,
+    tracker: ctx.tracker,
+    syntax: ctx.syntax,
+    tagName: ctx.tagName,
+    createId: ctx.createId,
     parseInlineContent,
-  );
+  });
 
   if (!result.handled) return false;
 

@@ -9,6 +9,13 @@
   `{ suppressDeprecation?: boolean }` option instead of relying on ambient `internalCaller` state
 - `parseRichText` passes `{ suppressDeprecation: true }` to its internal `with*` calls directly
 - Deprecation output now prefers `process.stderr.write` over `console.warn` where available
+- Refactored internals for human readability:
+  - Collapsed the three-layer `withSyntax`/`withTagNameConfig`/`withCreateId` nesting in `parseRichText` into a single `withLegacyAmbientState` helper
+  - Replaced `tryParseComplexTag`'s 14 positional parameters with a `ComplexTagContext` object
+  - Replaced boolean flags in `scanInlineBoundary` with a named `InlineBoundaryMode` object
+  - Extracted `bufferAndAdvance` helper to deduplicate repeated append-and-advance patterns in `tryConsumeDepthLimitedTag`
+  - Extracted `pushNode` helper to deduplicate conditional position assignment across `structural.ts`
+  - Deduplicated `createPipeBlockHandlers` / `createPipeRawHandlers` via shared `createPipeFormHandlers`
 
 ### 1.0.7
 

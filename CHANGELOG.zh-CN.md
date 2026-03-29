@@ -9,6 +9,13 @@
   `{ suppressDeprecation?: boolean }` 选项，不再依赖 ambient `internalCaller` 状态
 - `parseRichText` 内部调用 `with*` 时直接传递 `{ suppressDeprecation: true }`
 - 弃用警告输出优先使用 `process.stderr.write`，`console.warn` 作为回退
+- 修改了死妈代码，让代码像个人类能看的东西：
+  - `parseRichText` 中三层 `withSyntax`/`withTagNameConfig`/`withCreateId` 嵌套收拢为 `withLegacyAmbientState`
+  - `tryParseComplexTag` 的 14 个位置参数改为 `ComplexTagContext` 对象
+  - `scanInlineBoundary` 的布尔标志改为命名的 `InlineBoundaryMode` 对象
+  - 提取 `bufferAndAdvance` 消除 `tryConsumeDepthLimitedTag` 中重复的 append+advance 模式
+  - 提取 `pushNode` 消除 `structural.ts` 中重复的条件 position 赋值
+  - 提取 `createPipeFormHandlers` 合并 `createPipeBlockHandlers` / `createPipeRawHandlers` 的重复逻辑
 
 ### 1.0.7
 

@@ -7,6 +7,15 @@ export const resolveSyntax = (ctx?: DslContext | SyntaxConfig): SyntaxConfig => 
   return "syntax" in ctx ? ctx.syntax : ctx;
 };
 
+/**
+ * 只尝试识别“当前位置是不是一个合法转义序列”。
+ *
+ * 返回值语义：
+ * - `[escapedToken, nextIndex]`：命中了转义，`escapedToken` 是被转义出来的字面 token
+ * - `[null, i]`：当前位置不是合法转义起点，调用方自己决定后续怎么处理
+ *
+ * 注意：这个函数不会兜底消费普通字符；它只负责“识别”，不负责“降级读取”。
+ */
 export const readEscapedSequence = (
   text: string,
   i: number,
@@ -26,6 +35,14 @@ export const readEscapedSequence = (
   return [null, i];
 };
 
+/**
+ * 读取当前位置的“一个输出单元”：
+ * - 如果是合法转义序列，返回转义后的字面值
+ * - 否则返回当前位置的单个原始字符
+ *
+ * 注意：它比 `readEscapedSequence(...)` 多了一层兜底消费逻辑，
+ * 所以调用方拿到的一定是“能追加到输出里的内容”。
+ */
 export const readEscaped = (text: string, i: number, ctx?: DslContext | SyntaxConfig): [string, number] => {
   const syntax = resolveSyntax(ctx);
   const [escaped, next] = readEscapedSequence(text, i, syntax);
@@ -35,6 +52,14 @@ export const readEscaped = (text: string, i: number, ctx?: DslContext | SyntaxCo
   return [text.slice(i, i + 1), i + 1];
 };
 
+/**
+ * 把 inline 文本里所有合法转义序列还原成字面值。
+ *
+ * 它本质上就是：从左到右反复调用 `readEscaped(...)`，
+ * 每次取一个“输出单元”拼回结果字符串。
+ *
+ * 注意：这里只处理 escape 语义，不负责 tag 解析，也不做位置映射。
+ */
 export const unescapeInline = (str: string, ctx?: DslContext | SyntaxConfig): string => {
   const syntax = resolveSyntax(ctx);
   let result = "";

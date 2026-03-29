@@ -22,27 +22,33 @@ import {
 import { createToken } from "./createToken.js";
 import { makePosition, offsetTracker, type PositionTracker } from "./positions.js";
 
-export const tryParseComplexTag = (
-  text: string,
-  tagOpenPos: number,
-  tag: string,
-  argStart: number,
-  inlineEnd: number,
-  depthLimit: number,
-  mode: ParseMode,
-  handlers: Record<string, TagHandler>,
-  blockTagSet: BlockTagLookup,
-  tracker: PositionTracker | null,
-  syntax: SyntaxConfig,
-  tagName: TagNameConfig,
-  createId: CreateId,
+export interface ComplexTagContext {
+  text: string;
+  tagOpenPos: number;
+  tag: string;
+  argStart: number;
+  inlineEnd: number;
+  depthLimit: number;
+  mode: ParseMode;
+  handlers: Record<string, TagHandler>;
+  blockTagSet: BlockTagLookup;
+  tracker: PositionTracker | null;
+  syntax: SyntaxConfig;
+  tagName: TagNameConfig;
+  createId: CreateId;
   parseInlineContent: (
     text: string,
     depthLimit: number,
     options?: { mode?: ParseMode },
     innerTracker?: PositionTracker | null,
-  ) => TextToken[],
-): ComplexTagParseResult => {
+  ) => TextToken[];
+}
+
+export const tryParseComplexTag = (cx: ComplexTagContext): ComplexTagParseResult => {
+  const {
+    text, tagOpenPos, tag, argStart, inlineEnd, depthLimit, mode,
+    handlers, blockTagSet, tracker, syntax, tagName, createId, parseInlineContent,
+  } = cx;
   const handler = handlers[tag];
   if (!handler?.raw && !handler?.block) {
     return { handled: false, nextIndex: argStart };

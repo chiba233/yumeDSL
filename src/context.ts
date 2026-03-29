@@ -19,6 +19,9 @@ export const pushTextToCurrent = (ctx: ParseContext, str: string, position?: Sou
   const tokens = getCurrentTokens(ctx);
   const last = tokens[tokens.length - 1];
 
+  // 注意：这里不能只拼字符串，不管 position。
+  // 这个入口同时维持“相邻 text 合并”和“源码 span 连续”，
+  // 转义 / 退化 / 未闭合恢复 都会走到这里，改错后很容易出现位置整体偏移。
   if (last?.type === "text" && typeof last.value === "string") {
     (last as { value: string }).value += str;
     if (position && last.position) {
@@ -51,6 +54,9 @@ export const finalizeUnclosedTags = (ctx: ParseContext) => {
     const node = ctx.stack.pop() as ParseStackNode;
     emitError(ctx.tracker, ctx.onError, "INLINE_NOT_CLOSED", ctx.text, node.openPos, node.openLen);
 
+    // 注意：这里是在把未闭合的 inline 语法退回 text。
+    // opening 片段和已解析子 token 会重新拼回当前层；不要随便改顺序，
+    // 否则 text merge / position 恢复会一起出问题，退化路径测试会直接失败。
     const openEnd = node.openPos + node.openLen;
     pushTextToCurrent(
       ctx,
