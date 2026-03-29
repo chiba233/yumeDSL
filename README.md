@@ -23,12 +23,13 @@ Shiki code-highlighting plugin · legitimate plugins · intentional malformed ma
 Zero-dependency, single-pass, pluggable-semantics rich-text DSL parser.
 Turns text into a token tree — tag semantics, rendering, and UI integration are all yours to define.
 
+Not a Markdown renderer. Not a rich-text component library. Not an HTML producer.
+It parses a custom markup language into a token tree. Everything else is your layer —
+though [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker) can handle that part if you'd rather not build it from scratch.
+
 - No regex backtracking — deterministic linear scan
 - Inline / Raw / Block — three tag forms, one parser
 - Fully configurable syntax tokens and tag-name rules
-
-**Core parsing API is stable.** Some utility and ambient-state APIs are transitional — see
-[Deprecated API](#deprecated-api). Breaking changes, if any, will land in major versions with explicit migration notes.
 
 ## Ecosystem
 
@@ -292,12 +293,14 @@ dsl.parse(text, {onError: (e) => console.warn(e)});
 
 **What `createParser` binds:**
 
+Most of the time you only need to bind `handlers`. The rest just tags along for convenience.
+
 | Option           | What it does when pre-bound                                              |
 |------------------|--------------------------------------------------------------------------|
-| `handlers`       | Your tag definitions — no need to pass them on every call                |
-| `allowForms`     | Restrict accepted tag forms (default: all forms enabled)                 |
+| **`handlers`**   | **Your tag definitions — the main reason to use `createParser`**         |
 | `syntax`         | Custom syntax tokens (if you override `$$` prefix, etc.)                 |
 | `tagName`        | Custom tag-name character rules                                          |
+| `allowForms`     | Restrict accepted tag forms (default: all forms enabled)                 |
 | `depthLimit`     | Nesting limit — rarely changes per call                                  |
 | `createId`       | Custom token id generator (can be overridden per call)                   |
 | `blockTags`      | Tags that receive block-level line-break normalization                   |
@@ -590,8 +593,8 @@ derivation can't help — use [`createSyntax`](#createsyntax-low-level) instead.
 
 ### createSyntax (low-level)
 
-Plain shallow merge onto `DEFAULT_SYNTAX` — no derivation. Use this only when you need full manual control over every
-token.
+`createSyntax` is not an advanced version of `createEasySyntax` — it is a raw builder with no validation or derivation.
+Use it only when you need full manual control over every token.
 
 ```ts
 import {createSyntax} from "yume-dsl-rich-text";
@@ -1192,7 +1195,9 @@ Related `ParseOptions` / `StructuralParseOptions` fields:
 
 ### DslContext
 
-`DslContext` is the lightweight context for public utility functions:
+`DslContext` carries the active syntax and token-id generator for a parse session.
+All public utilities accept it as an optional `ctx` parameter — **pass it through** to keep
+everything on the same configuration. `ctx` will become required in a future major version.
 
 ```ts
 interface DslContext {
@@ -1206,22 +1211,8 @@ interface DslContext {
 | `syntax`   | The active `SyntaxConfig` — controls escape characters, delimiters, etc. |
 | `createId` | Optional token id generator — used by `createToken` when building tokens |
 
-What `ctx` actually is:
-
-- Inside a `TagHandler`, `ctx` is the second/third argument passed in by the parser for the current parse.
-- It carries the active syntax and token-id generator for that parse.
-- When a handler calls public utilities, pass the same `ctx` through so those utilities stay on the same parse-local
-  configuration.
-- Outside parsing, you can construct `DslContext` yourself and pass it explicitly.
-
-Use `DslContext` consistently:
-
-- Inside a `TagHandler`, receive `ctx` from the parser and pass it through to public utilities.
-- Outside parsing, construct `DslContext` explicitly and pass it yourself.
-- Treat explicit `DslContext` as the intended 2.0 contract.
-
 ```ts
-// Inside a handler: reuse the parse-local ctx passed in by the parser
+// Inside a handler: pass through the ctx the parser gives you
 link: {
     inline: (tokens, ctx) => {
         const args = parsePipeArgs(tokens, ctx);
@@ -1229,55 +1220,22 @@ link: {
     },
 }
 
-// Outside parsing: construct DslContext explicitly
+// Outside parsing: construct one yourself
 const ctx: DslContext = {syntax: createSyntax(), createId: (draft) => `demo-${draft.type}`};
 const args = parsePipeTextArgs("ts | Demo", ctx);
 const token = createTextToken("hello", ctx);
 ```
 
-This keeps handler code, standalone scripts, and future 2.0 usage on the same explicit model.
+### Migration to explicit `ctx`
 
-### Migration Guide
+Affects the handler → utility call chain, not the core parse API:
 
-Use this section as the migration target for 2.0 preparation.
+`TagHandler` · `parsePipeArgs` · `parsePipeTextArgs` · `parsePipeTextList` · `splitTokensByPipe` ·
+`materializeTextTokens` · `unescapeInline` · `readEscapedSequence` · `createToken`
 
-**Affected APIs**
-
-This migration affects the handler-to-utility call chain, not the entire library:
-
-- `TagHandler`
-- `parsePipeArgs`
-- `parsePipeTextArgs`
-- `parsePipeTextList`
-- `splitTokensByPipe`
-- `materializeTextTokens`
-- `unescapeInline`
-- `readEscapedSequence`
-- `createToken`
-
-**Target pattern**
-
-```ts
-link: {
-    inline: (tokens, ctx) => {
-        const args = parsePipeArgs(tokens, ctx);
-        return {type: "link", url: args.text(0), value: args.materializedTailTokens(1)};
-    },
-}
-```
-
-```ts
-const ctx: DslContext = {syntax: createSyntax(), createId: (draft) => `demo-${draft.type}`};
-const args = parsePipeTextArgs("ts | Demo", ctx);
-const token = createToken({type: "text", value: "hello"}, undefined, ctx);
-```
-
-**Recommended migration order**
-
-1. Update custom `TagHandler` signatures to accept `ctx`.
-2. Pass that `ctx` through to every public utility used inside handlers.
-3. Update standalone scripts/tests to construct and pass `DslContext` explicitly.
-4. Review examples and internal docs so they no longer show implicit utility calls.
+1. Add `ctx` to your `TagHandler` signatures.
+2. Pass it through to every utility call inside handlers.
+3. In standalone scripts/tests, construct `DslContext` explicitly.
 
 ### PipeArgs / parsePipeTextList
 
@@ -1889,6 +1847,9 @@ tagMap.date = DateText;
 ---
 
 ## Deprecated API
+
+**Core parsing API is stable.** Some utility and ambient-state APIs are transitional.
+Breaking changes, if any, will land in major versions with explicit migration notes.
 
 The following exports will be removed in a future major version. They remain functional for backward compatibility.
 
