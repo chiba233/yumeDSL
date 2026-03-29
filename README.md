@@ -83,7 +83,7 @@ Turns text into a token tree — tag semantics, rendering, and UI integration ar
 - [Graceful Degradation](#graceful-degradation)
 - [Vue 3 Rendering](#vue-3-rendering)
 - [Deprecated API](#deprecated-api)
-- [Changelog](https://github.com/chiba233/yumeDSL/blob/main/yume-dsl-rich-text/CHANGELOG.md)
+- [Changelog](#Changelog)
 - [License](#license)
 
 ---
