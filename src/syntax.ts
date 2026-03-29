@@ -1,5 +1,5 @@
 import type { SyntaxConfig, SyntaxInput } from "./types.js";
-import { isInternalCaller, warnDeprecated } from "./deprecations.js";
+import { warnDeprecated } from "./deprecations.js";
 
 export const DEFAULT_SYNTAX: SyntaxInput = {
   tagPrefix: "$$",
@@ -151,20 +151,24 @@ const defaultSyntaxInstance: SyntaxConfig = createSyntax();
 
 let activeSyntax: SyntaxConfig = defaultSyntaxInstance;
 
-export const getSyntax = (): SyntaxConfig => {
-  if (!isInternalCaller()) {
-    warnDeprecated("getSyntax", "getSyntax() is deprecated. Use DslContext.syntax instead.");
-  }
+export const getSyntax = (options?: { suppressDeprecation?: boolean }): SyntaxConfig => {
+  warnDeprecated("getSyntax", "getSyntax() is deprecated. Use DslContext.syntax instead.", {
+    suppress: options?.suppressDeprecation,
+  });
   return activeSyntax;
 };
 
 /** @internal The default SyntaxConfig instance for ambient-change detection. */
 export const getDefaultSyntaxInstance = (): SyntaxConfig => defaultSyntaxInstance;
 
-export const withSyntax = <T>(syntax: SyntaxConfig, fn: () => T): T => {
-  if (!isInternalCaller()) {
-    warnDeprecated("withSyntax", "withSyntax() is deprecated. Pass syntax via ParseOptions or DslContext instead.");
-  }
+export const withSyntax = <T>(
+  syntax: SyntaxConfig,
+  fn: () => T,
+  options?: { suppressDeprecation?: boolean },
+): T => {
+  warnDeprecated("withSyntax", "withSyntax() is deprecated. Pass syntax via ParseOptions or DslContext instead.", {
+    suppress: options?.suppressDeprecation,
+  });
   const prev = activeSyntax;
   activeSyntax = syntax;
   try {

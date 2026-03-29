@@ -1,5 +1,9 @@
 const warned = new Set<string>();
 
+interface DeprecationOptions {
+  suppress?: boolean;
+}
+
 const shouldWarn = (): boolean => {
   try {
     if (typeof process !== "undefined" && process.env?.NODE_ENV === "production") {
@@ -10,27 +14,21 @@ const shouldWarn = (): boolean => {
 };
 
 /** Emit a deprecation warning once per key. Suppressed when `NODE_ENV=production`. */
-export const warnDeprecated = (key: string, message: string) => {
+export const warnDeprecated = (
+  key: string,
+  message: string,
+  options?: DeprecationOptions,
+) => {
+  if (options?.suppress) return;
   if (warned.has(key)) return;
   warned.add(key);
   if (!shouldWarn()) return;
-  console.warn(`[yume-dsl-rich-text] Deprecated: ${message}`);
-};
-
-/**
- * Internal-use flag. When true, ambient state functions skip deprecation warnings.
- * Set by parseRichText during its internal withSyntax/withCreateId wrapping.
- */
-let internalCaller = false;
-
-export const isInternalCaller = () => internalCaller;
-
-export const withInternalCaller = <T>(fn: () => T): T => {
-  const prev = internalCaller;
-  internalCaller = true;
+  const line = `[yume-dsl-rich-text] Deprecated: ${message}`;
   try {
-    return fn();
-  } finally {
-    internalCaller = prev;
-  }
+    if (typeof process !== "undefined" && typeof process.stderr?.write === "function") {
+      process.stderr.write(`${line}\n`);
+      return;
+    }
+  } catch {}
+  console.warn(line);
 };

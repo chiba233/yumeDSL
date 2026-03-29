@@ -2,6 +2,14 @@
 
 # 更新日志
 
+### 1.0.8
+
+- 移除 `deprecations.ts` 中的 `isInternalCaller` / `withInternalCaller` 隐式全局标志
+- `withSyntax`、`withCreateId`、`withTagNameConfig`、`getSyntax` 改为接收显式
+  `{ suppressDeprecation?: boolean }` 选项，不再依赖 ambient `internalCaller` 状态
+- `parseRichText` 内部调用 `with*` 时直接传递 `{ suppressDeprecation: true }`
+- 弃用警告输出优先使用 `process.stderr.write`，`console.warn` 作为回退
+
 ### 1.0.7
 
 - 修复同时支持 inline 与 block/raw 形态的标签在 inline 关闭时的一个 bug：

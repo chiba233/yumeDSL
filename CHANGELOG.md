@@ -2,6 +2,14 @@
 
 # Changelog
 
+### 1.0.8
+
+- Removed `isInternalCaller` / `withInternalCaller` implicit global flag from `deprecations.ts`
+- `withSyntax`, `withCreateId`, `withTagNameConfig`, and `getSyntax` now accept an explicit
+  `{ suppressDeprecation?: boolean }` option instead of relying on ambient `internalCaller` state
+- `parseRichText` passes `{ suppressDeprecation: true }` to its internal `with*` calls directly
+- Deprecation output now prefers `process.stderr.write` over `console.warn` where available
+
 ### 1.0.7
 
 - Fixed an inline-close bug for tags that support both inline and block/raw forms:

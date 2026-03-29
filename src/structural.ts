@@ -7,7 +7,7 @@ import type {
 } from "./types.js";
 import { getDefaultSyntaxInstance, getSyntax } from "./syntax.js";
 import { DEFAULT_TAG_NAME, getTagNameConfig } from "./chars.js";
-import { warnDeprecated, withInternalCaller } from "./deprecations.js";
+import { warnDeprecated } from "./deprecations.js";
 import { readEscapedSequence } from "./escape.js";
 import { supportsInlineForm } from "./consumers.js";
 import { emptyBuffer } from "./context.js";
@@ -372,7 +372,7 @@ export const parseStructural = (
   // ── Legacy ambient fallback (parseStructural-specific) ──
   let legacySyntax: SyntaxConfig | undefined;
   if (!options?.syntax) {
-    const ambient = withInternalCaller(() => getSyntax());
+    const ambient = getSyntax({ suppressDeprecation: true });
     if (ambient !== getDefaultSyntaxInstance()) {
       warnDeprecated(
         "parseStructural.syntax",
