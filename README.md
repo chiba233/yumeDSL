@@ -1330,6 +1330,9 @@ interface SourceSpan {
 
 ### Parsing substrings with `baseOffset` and `tracker`
 
+> **TL;DR** — `baseOffset` maps substring positions back to absolute offsets in the original text;
+> `tracker` resolves those absolute offsets into correct `line`/`column`. Pass both for full accuracy.
+
 When you parse a substring extracted from a larger document, pass `baseOffset` and a pre-built `tracker`
 so that **all** position fields (`offset`, `line`, `column`) point back into the original source:
 
@@ -1354,10 +1357,10 @@ const tokens = parseRichText(slice, {
 // tokens[0].position.start.column → 8   (correct column in fullText)
 ```
 
-| Option        | Purpose                                                                         |
-|---------------|---------------------------------------------------------------------------------|
-| `baseOffset`  | Shift all offsets by this amount (default `0`)                                  |
-| `tracker`     | Pre-built tracker from the full document — enables correct `line`/`column` too  |
+| Option       | Purpose                                                                        |
+|--------------|--------------------------------------------------------------------------------|
+| `baseOffset` | Shift all offsets by this amount (default `0`)                                 |
+| `tracker`    | Pre-built tracker from the full document — enables correct `line`/`column` too |
 
 Both options apply to `parseRichText` and `parseStructural`. They require `trackPositions: true`;
 when position tracking is off, both are ignored.
@@ -1366,7 +1369,8 @@ when position tracking is off, both are ignored.
 resolved locally against the substring. This is sufficient when you only need offset-based lookups.
 
 **With `tracker`** (recommended): all three fields are fully correct against the original document.
-Build the tracker once with `buildPositionTracker(fullText)` and reuse it across multiple slice parses.
+Build the tracker **once** with `buildPositionTracker(fullText)` and reuse it across all subsequent slice parses.
+Do not call `buildPositionTracker` per slice — it rebuilds the line table from scratch each time.
 
 ### What `position` covers
 
@@ -1375,8 +1379,21 @@ Each token's `position` spans the source range for that parser's own output mode
 - In `parseRichText`, block/raw token spans include any trailing line break consumed by line-break normalization.
 - In `parseStructural`, spans follow the raw structural syntax and therefore stop at `*end$$` / `%end$$`.
 
-For example, in `$$info()*\nhello\n*end$$\nnext`, `parseRichText` reports the `info` token past the `\n` after
-`*end$$`, while `parseStructural` leaves that `\n` as the next text node.
+For example, given this input (28 characters):
+
+```
+$$info()*\nhello\n*end$$\nnext
+0         1         2
+0123456789012345678901234567
+```
+
+| API               | `info` token `position.end.offset` | Covers                       |
+|-------------------|------------------------------------|------------------------------|
+| `parseRichText`   | **23** (past the `\n` after `$$`)  | `$$info()*\nhello\n*end$$\n` |
+| `parseStructural` | **22** (stops at `$$`)             | `$$info()*\nhello\n*end$$`   |
+
+`parseRichText` consumes the trailing `\n` as part of block line-break normalization;
+`parseStructural` stops at the raw syntax boundary. The `\n` at offset 22 becomes the start of the next text node.
 
 ### Semantic differences between `parseRichText` and `parseStructural`
 

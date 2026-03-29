@@ -1299,6 +1299,9 @@ interface SourceSpan {
 
 ### 子串解析：`baseOffset` 与 `tracker`
 
+> **一句话** — `baseOffset` 负责把子串内位置映射回原始文本的绝对 offset；
+> `tracker` 负责把这些绝对 offset 解析为原始文本中正确的 `line`/`column`。两个都传才全对。
+
 解析从大文档中截取的子串时，传入 `baseOffset` 和预构建的 `tracker`，让 `offset`、`line`、`column` 全部指回原始文档：
 
 ```ts
@@ -1331,7 +1334,8 @@ const tokens = parseRichText(slice, {
 
 **只传 `baseOffset`**：`offset` 被正确偏移，但 `line`/`column` 基于子串本地计算。适合只需 offset 查找的场景。
 
-**同时传 `tracker`**（推荐）：三个字段全部正确。用 `buildPositionTracker(fullText)` 构建一次，多次切片复用。
+**同时传 `tracker`**（推荐）：三个字段全部正确。用 `buildPositionTracker(fullText)` **构建一次**，后续所有切片复用。
+不要对每个 slice 单独 build tracker——它每次都会从头扫描整个文本重建行表。
 
 ### `position` 覆盖范围
 
@@ -1340,8 +1344,21 @@ const tokens = parseRichText(slice, {
 - `parseRichText` 中，block/raw token 的 span 会包含因换行归一化而被消费的尾部换行。
 - `parseStructural` 中，span 保持原始结构语法范围，因此会停在 `*end$$` / `%end$$` 处。
 
-例如 `$$info()*\nhello\n*end$$\nnext` 中，`parseRichText` 的 `info.position.end` 会越过 `*end$$` 后的那个
-`\n`；而 `parseStructural` 会把这个 `\n` 留给后续文本节点。
+例如下面这段输入（28 个字符）：
+
+```
+$$info()*\nhello\n*end$$\nnext
+0         1         2
+0123456789012345678901234567
+```
+
+| API               | `info` 的 `position.end.offset` | 覆盖范围                         |
+|-------------------|--------------------------------|------------------------------|
+| `parseRichText`   | **23**（越过 `$$` 后的 `\n`）        | `$$info()*\nhello\n*end$$\n` |
+| `parseStructural` | **22**（停在 `$$`）                | `$$info()*\nhello\n*end$$`   |
+
+`parseRichText` 会把尾部 `\n` 作为 block 换行归一化的一部分消费掉；
+`parseStructural` 停在原始语法边界。offset 22 处的 `\n` 成为下一个文本节点的起始。
 
 ### `parseRichText` 与 `parseStructural` 的语义差异
 
