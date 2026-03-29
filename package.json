@@ -24,7 +24,7 @@
   "sideEffects": false,
   "scripts": {
     "build": "tsup --target esnext",
-    "test": "tsup  --target esnext && node --import tsx tests/run-dsl-tests.ts",
+    "test": "tsup --target esnext && node --import tsx tests/run-dsl-tests.ts",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
