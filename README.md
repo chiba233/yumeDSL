@@ -2,6 +2,10 @@
 
 # yume-dsl-rich-text(ユメテキスト)
 
+> Important: Upgrade to `1.0.7` or later if you use tags that support both inline and block/raw forms.
+> Versions before `1.0.7` had a serious parsing bug where inline `$$tag(...)$$` could incorrectly consume the
+> following newline and change rendered output.
+
 ### [▶ Live Demo — DSL Fallback Museum](https://qwwq.org/blog/dsl-fallback-museum)
 
 Shiki code-highlighting plugin · legitimate plugins · intentional malformed markup · error reporting
@@ -1379,12 +1383,12 @@ Each token's `position` spans the source range for that parser's own output mode
 - In `parseRichText`, block/raw token spans include any trailing line break consumed by line-break normalization.
 - In `parseStructural`, spans follow the raw structural syntax and therefore stop at `*end$$` / `%end$$`.
 
-For example, given this input (28 characters):
+For example, given this input (27 characters):
 
 ```
 $$info()*\nhello\n*end$$\nnext
 0         1         2
-0123456789012345678901234567
+012345678901234567890123456
 ```
 
 | API               | `info` token `position.end.offset` | Covers                       |

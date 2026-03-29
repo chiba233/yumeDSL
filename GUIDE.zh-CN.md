@@ -2,6 +2,9 @@
 
 # yume-dsl-rich-text (ユメテキスト)
 
+> 重要：如果你使用同时支持 inline 与 block/raw 形态的标签，请升级到 `1.0.7` 或更高版本。
+> `1.0.7` 之前的版本存在一个严重解析 bug：inline `$$tag(...)$$` 可能会错误吞掉后续换行，从而改变渲染结果。
+
 ### [▶ 在线演示 — DSL Fallback Museum](https://qwwq.org/blog/dsl-fallback-museum)
 
 Shiki 代码高亮插件 · 合法插件用法 · 各种故意书写错误 · 错误报告
@@ -1344,12 +1347,12 @@ const tokens = parseRichText(slice, {
 - `parseRichText` 中，block/raw token 的 span 会包含因换行归一化而被消费的尾部换行。
 - `parseStructural` 中，span 保持原始结构语法范围，因此会停在 `*end$$` / `%end$$` 处。
 
-例如下面这段输入（28 个字符）：
+例如下面这段输入（27 个字符）：
 
 ```
 $$info()*\nhello\n*end$$\nnext
 0         1         2
-0123456789012345678901234567
+012345678901234567890123456
 ```
 
 | API               | `info` 的 `position.end.offset` | 覆盖范围                         |

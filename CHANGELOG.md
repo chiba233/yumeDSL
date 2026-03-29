@@ -2,6 +2,13 @@
 
 # Changelog
 
+### 1.0.7
+
+- Fixed an inline-close bug for tags that support both inline and block/raw forms:
+  inline `$$tag(...)$$` no longer incorrectly consumes the following trailing newline via block normalization rules
+- Fixed documentation examples for substring position tracking:
+  corrected the character-count ruler example in README / GUIDE
+
 ### 1.0.6
 
 - New public export: `buildPositionTracker(text)` — build a reusable `PositionTracker` from any text

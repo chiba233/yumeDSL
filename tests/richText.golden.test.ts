@@ -1030,6 +1030,22 @@ const cases: Array<{ name: string; run: () => void }> = [
     },
   },
   {
+    name: "[Inline/Multiline] 同时支持 inline/block 的标签在 inline close 后不应吞掉换行",
+    run: () => {
+      const tokens = parseRichText("$$info(hello)$$\nnext", {
+        handlers: testHandlers,
+      });
+      assert.deepEqual(normalizeTokens(tokens), [
+        {
+          type: "info",
+          title: "Info",
+          value: [{ type: "text", value: "hello" }],
+        },
+        { type: "text", value: "\nnext" },
+      ]);
+    },
+  },
+  {
     name: "[Block/Syntax] 自定义多字符开闭符 -> 应当正确解析 block 标签",
     run: () => {
       const tokens = parseRichText("@@info<<Notice>>*\nA @@bold<<B>>@@\n*end@@", {
@@ -1163,6 +1179,7 @@ const cases: Array<{ name: string; run: () => void }> = [
 
       assert.deepEqual(normalizeTokens(tokens), [
         { type: "multi-inline", value: [{ type: "text", value: "i" }] },
+        { type: "text", value: "\n" },
         { type: "multi-raw", arg: "r", value: "raw\n" },
         { type: "multi-block", arg: "b", value: [{ type: "text", value: "block\n" }] },
       ]);

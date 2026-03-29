@@ -2,6 +2,13 @@
 
 # 更新日志
 
+### 1.0.7
+
+- 修复同时支持 inline 与 block/raw 形态的标签在 inline 关闭时的一个 bug：
+  inline `$$tag(...)$$` 不再误用 block 归一化规则吞掉后续换行
+- 修正文档中的子串位置追踪示例：
+  更正 README / GUIDE 中的字符总数与尺子示例
+
 ### 1.0.6
 
 - 新增公开导出：`buildPositionTracker(text)` — 从任意文本构建可复用的 `PositionTracker`
