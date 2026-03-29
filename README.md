@@ -74,7 +74,7 @@ though [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walk
 - [ParseOptions](#parseoptions)
 - [Token Structure](#token-structure)
     - [Strong Typing](#strong-typing)
-- [Writing Tag Handlers](#writing-tag-handlers)
+- [Writing Tag Handlers (advanced)](#writing-tag-handlers-advanced)
 - [Exports](#exports)
     - [DslContext](#dslcontext)
     - [PipeArgs / parsePipeTextList](#pipeargs--parsepipetextlist)
@@ -173,7 +173,7 @@ First-time users:
 2. [DSL Syntax](#dsl-syntax) — the three tag forms
 3. [createParser](#createparserdefaults--recommended-entry-point) — the main entry point
 4. [Handler Helpers](#handler-helpers) — bulk-register tags without boilerplate
-5. [Writing Tag Handlers](#writing-tag-handlers) — custom handler logic
+5. [Writing Tag Handlers (advanced)](#writing-tag-handlers-advanced) — custom handler logic
 6. [parseStructural](#parsestructural--structural-parse) — for structural consumers (highlighting, linting, editors,
    source inspection)
 
@@ -997,17 +997,12 @@ switches.
 
 ---
 
-## Writing Tag Handlers
+## Writing Tag Handlers (advanced)
 
-For tags that need custom logic — extracting parameters, attaching extra fields, supporting multiple forms — you write a
-`TagHandler` manually.
-
-Use [handler helpers](#handler-helpers) for simple wrapper tags. Write custom handlers when you need:
-
-- **Pipe parameters** — e.g., `$$link(url | display text)$$`
-- **Extra fields** on the output token — e.g., `url`, `lang`, `title`
-- **Multiple forms** — the same tag supporting inline, raw, and block syntax
-- **Transformation logic** — e.g., language alias mapping for code blocks
+Most tags can be created with [`createPipeHandlers`](#createpipehandlersdefinitions) or the
+[`createSimple*` helpers](#handler-helpers). You only need a manual `TagHandler` when you want
+logic that helpers can't express — e.g., conditional field mapping, content transformation, or
+dynamic type selection.
 
 ### TagHandler interface
 
@@ -1019,43 +1014,18 @@ interface TagHandler {
 }
 ```
 
-You only need to implement the forms your tag supports.
-Unsupported forms fall back gracefully instead of breaking the parse.
+Implement only the forms your tag supports — unsupported forms degrade gracefully.
+Pass `ctx` through to any utility call (`parsePipeArgs`, `materializeTextTokens`, etc.).
 
-Handlers should accept `ctx` and pass it through when calling public utility functions such as `parsePipeArgs`,
-`parsePipeTextList`, `materializeTextTokens`, `unescapeInline`, or `createToken`.
-
-### Example: full handler set
+### Example
 
 ```ts
-import {
-    createParser,
-    createSimpleInlineHandlers,
-    extractText,
-    parsePipeArgs,
-} from "yume-dsl-rich-text";
-
 const dsl = createParser({
     handlers: {
-        // Simple tags — use helpers
-        ...createSimpleInlineHandlers(["bold", "italic", "underline"]),
+        // Most tags — use helpers
+        ...createSimpleInlineHandlers(["bold", "italic"]),
 
-        // Custom: pipe parameters → extra fields
-        link: {
-            inline: (tokens, ctx) => {
-                const args = parsePipeArgs(tokens, ctx);
-                return {
-                    type: "link",
-                    url: args.text(0),
-                    value:
-                        args.parts.length > 1
-                            ? args.materializedTailTokens(1)
-                            : args.materializedTokens(0),
-                };
-            },
-        },
-
-        // Custom: raw form → preserves content as-is
+        // Manual handler: only when you need custom logic
         code: {
             raw: (arg, content, _ctx) => ({
                 type: "code-block",
@@ -1063,39 +1033,8 @@ const dsl = createParser({
                 value: content,
             }),
         },
-
-        // Custom: supports both inline and block forms
-        info: {
-            inline: (tokens, ctx) => {
-                const args = parsePipeArgs(tokens, ctx);
-                return {
-                    type: "info",
-                    title: extractText(args.materializedTokens(0)),
-                    value: args.materializedTailTokens(1),
-                };
-            },
-            block: (arg, content, _ctx) => ({
-                type: "info",
-                title: arg || "Info",
-                value: content,
-            }),
-        },
     },
 });
-```
-
-Input:
-
-```text
-Hello $$bold(world)$$!
-
-$$info(Notice)*
-This is a $$bold(block)$$ example.
-*end$$
-
-$$code(ts)%
-const answer = 42;
-%end$$
 ```
 
 ```ts
