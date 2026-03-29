@@ -7,6 +7,7 @@ import { runGoldenCases } from "./testHarness.ts";
 import type { SourceSpan, StructuralNode, TextToken } from "../src/types.ts";
 import { parseRichText } from "../src/parse.ts";
 import { parseStructural } from "../src/structural.ts";
+import { buildPositionTracker } from "../src/index.ts";
 import { testHandlers } from "./handlers.ts";
 
 const parse = (text: string) =>
@@ -347,6 +348,76 @@ const cases: GoldenCase[] = [
       assert.deepEqual(block.children[1].position, position(2, 1, 10, 2, 12, 21));
       assert.equal(block.children[2].type, "text");
       assert.deepEqual(block.children[2].position, position(2, 12, 21, 3, 1, 22));
+    },
+  },
+  {
+    name: "[Position/BaseOffset] parseRichText + tracker -> 切片 position 应完整回指原文",
+    run() {
+      const fullText = "hello\n$$bold(world)$$\nnext";
+      const sliceStart = 6;
+      const slice = fullText.slice(sliceStart, 21);
+      const tracker = buildPositionTracker(fullText);
+      const tokens = parseRichText(slice, {
+        handlers: testHandlers,
+        trackPositions: true,
+        tracker,
+        baseOffset: sliceStart,
+      });
+
+      assert.equal(tokens.length, 1);
+      assert.equal(tokens[0].type, "bold");
+      assert.deepEqual(tokens[0].position, position(2, 1, 6, 2, 16, 21));
+    },
+  },
+  {
+    name: "[Position/BaseOffset] parseRichText 仅 baseOffset -> line/column 仍按切片局部计算",
+    run() {
+      const fullText = "hello\n$$bold(world)$$\nnext";
+      const sliceStart = 6;
+      const slice = fullText.slice(sliceStart, 21);
+      const tokens = parseRichText(slice, {
+        handlers: testHandlers,
+        trackPositions: true,
+        baseOffset: sliceStart,
+      });
+
+      assert.equal(tokens.length, 1);
+      assert.equal(tokens[0].type, "bold");
+      assert.deepEqual(tokens[0].position, position(1, 1, 6, 1, 16, 21));
+    },
+  },
+  {
+    name: "[Position/BaseOffset] parseStructural + tracker -> 切片 position 应完整回指原文",
+    run() {
+      const fullText = "hello\n$$bold(world)$$\nnext";
+      const sliceStart = 6;
+      const slice = fullText.slice(sliceStart, 21);
+      const tracker = buildPositionTracker(fullText);
+      const nodes = parseStructural(slice, {
+        trackPositions: true,
+        tracker,
+        baseOffset: sliceStart,
+      });
+
+      assert.equal(nodes.length, 1);
+      assert.equal(nodes[0].type, "inline");
+      assert.deepEqual(nodes[0].position, position(2, 1, 6, 2, 16, 21));
+    },
+  },
+  {
+    name: "[Position/BaseOffset] parseStructural 仅 baseOffset -> line/column 仍按切片局部计算",
+    run() {
+      const fullText = "hello\n$$bold(world)$$\nnext";
+      const sliceStart = 6;
+      const slice = fullText.slice(sliceStart, 21);
+      const nodes = parseStructural(slice, {
+        trackPositions: true,
+        baseOffset: sliceStart,
+      });
+
+      assert.equal(nodes.length, 1);
+      assert.equal(nodes[0].type, "inline");
+      assert.deepEqual(nodes[0].position, position(1, 1, 6, 1, 16, 21));
     },
   },
 ];

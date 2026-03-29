@@ -2,6 +2,20 @@
 
 # Changelog
 
+### 1.0.6
+
+- New public export: `buildPositionTracker(text)` — build a reusable `PositionTracker` from any text
+- New public type: `PositionTracker` — precomputed line-offset table for resolving offsets to line/column
+- `ParserBaseOptions` now accepts two new optional fields for substring parsing:
+  - `baseOffset?: number` — shift all `offset` values by this amount (default `0`)
+  - `tracker?: PositionTracker` — pre-built tracker from the original full document;
+    when provided, `line` and `column` are also resolved against the original document
+  - Both require `trackPositions: true` to have any effect
+  - Without `tracker`, only `offset` is shifted; `line`/`column` remain local to the substring
+  - With `tracker`, all three fields (`offset`, `line`, `column`) are fully correct
+- These options apply to both `parseRichText` and `parseStructural`
+- No breaking changes — all new fields are optional with backward-compatible defaults
+
 ### 1.0.5
 
 - New helper: `createPipeHandlers(definitions)`

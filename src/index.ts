@@ -76,8 +76,12 @@ export type {
   CreateId,
 } from "./types.js";
 
+// ── Position tracking ──
+export { buildPositionTracker } from "./positions.js";
+
 // ── Types: source positions ──
 export type {
+  PositionTracker,
   SourcePosition,
   SourceSpan,
 } from "./types.js";

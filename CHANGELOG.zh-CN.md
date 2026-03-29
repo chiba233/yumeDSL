@@ -2,6 +2,20 @@
 
 # 更新日志
 
+### 1.0.6
+
+- 新增公开导出：`buildPositionTracker(text)` — 从任意文本构建可复用的 `PositionTracker`
+- 新增公开类型：`PositionTracker` — 预计算的行偏移表，用于将偏移量解析为行列号
+- `ParserBaseOptions` 新增两个可选字段，支持子串解析场景：
+  - `baseOffset?: number` — 将所有 `offset` 值偏移此量（默认 `0`）
+  - `tracker?: PositionTracker` — 基于原始完整文档预构建的 tracker；
+    传入后 `line` 和 `column` 也会基于原始文档解析
+  - 两者均需要 `trackPositions: true` 才生效
+  - 只传 `baseOffset` 不传 `tracker` 时，仅 `offset` 被偏移，`line`/`column` 仍为子串本地坐标
+  - 同时传 `tracker` 时，三个字段（`offset`、`line`、`column`）均完全正确
+- 以上选项同时适用于 `parseRichText` 和 `parseStructural`
+- 无破坏性变更——所有新字段均可选，默认值向后兼容
+
 ### 1.0.5
 
 - 新增 helper：`createPipeHandlers(definitions)`

@@ -34,6 +34,7 @@ export const makePosition = (
 
 /**
  * Create an offset-adjusted tracker for recursive inner parses on substrings.
+ * Both offset and line/column are remapped via the outer tracker.
  * Returns null if the outer tracker is null.
  */
 export const offsetTracker = (
@@ -42,4 +43,22 @@ export const offsetTracker = (
 ): PositionTracker | null => {
   if (!tracker || baseOffset === 0) return tracker;
   return { resolve: (offset) => tracker.resolve(offset + baseOffset) };
+};
+
+/**
+ * Create a tracker for parsing a substring without a full-document tracker.
+ * `offset` is shifted by `baseOffset`, while `line`/`column` stay local to
+ * the substring.
+ */
+export const localOffsetTracker = (
+  tracker: PositionTracker | null,
+  baseOffset: number,
+): PositionTracker | null => {
+  if (!tracker || baseOffset === 0) return tracker;
+  return {
+    resolve(offset: number): SourcePosition {
+      const pos = tracker.resolve(offset);
+      return { offset: pos.offset + baseOffset, line: pos.line, column: pos.column };
+    },
+  };
 };

@@ -372,6 +372,8 @@ interface ParserBaseOptions {
     depthLimit?: number;
     syntax?: Partial<SyntaxInput>;
     tagName?: Partial<TagNameConfig>;
+    baseOffset?: number;
+    tracker?: PositionTracker;
 }
 
 interface ParseOptions extends ParserBaseOptions {
@@ -806,6 +808,8 @@ interface ParserBaseOptions {
     depthLimit?: number;
     syntax?: Partial<SyntaxInput>;
     tagName?: Partial<TagNameConfig>;
+    baseOffset?: number;
+    tracker?: PositionTracker;
 }
 
 interface ParseOptions extends ParserBaseOptions {
@@ -828,6 +832,10 @@ interface StructuralParseOptions extends ParserBaseOptions {
 - `depthLimit`：最大嵌套深度，默认 `50`
 - `syntax`：覆盖默认语法符号
 - `tagName`：覆盖标签名字符规则
+- `baseOffset`：启用 `trackPositions` 时，将所有 `offset` 偏移此量（默认 `0`）。
+  详见[子串解析：baseOffset 与 tracker](#子串解析baseoffset-与-tracker)
+- `tracker`：基于原始完整文档预构建的 `PositionTracker`，同时保证 `line`/`column` 正确。
+  详见[子串解析：baseOffset 与 tracker](#子串解析baseoffset-与-tracker)
 
 ### `ParseOptions` 专属字段
 
@@ -1288,6 +1296,42 @@ interface SourceSpan {
     end: SourcePosition;
 }
 ```
+
+### 子串解析：`baseOffset` 与 `tracker`
+
+解析从大文档中截取的子串时，传入 `baseOffset` 和预构建的 `tracker`，让 `offset`、`line`、`column` 全部指回原始文档：
+
+```ts
+import {parseRichText, buildPositionTracker} from "yume-dsl-rich-text";
+
+const fullText = "第一行\nprefix $$bold(world)$$ suffix";
+const tracker = buildPositionTracker(fullText);
+
+const start = 11;  // "$$bold(world)$$" 在 fullText 中的起始偏移
+const slice = fullText.slice(start, 26);
+
+const tokens = parseRichText(slice, {
+    handlers: {bold: {inline: (t) => ({type: "bold", value: t})}},
+    trackPositions: true,
+    baseOffset: start,
+    tracker,           // ← 基于完整文档构建
+});
+
+// tokens[0].position.start.offset → 11  (绝对偏移，指向 fullText)
+// tokens[0].position.start.line   → 2   (fullText 中的正确行号)
+// tokens[0].position.start.column → 8   (fullText 中的正确列号)
+```
+
+| 选项           | 用途                                         |
+|--------------|--------------------------------------------|
+| `baseOffset` | 将所有 offset 偏移此量（默认 `0`）                    |
+| `tracker`    | 基于完整文档预构建的 tracker，同时保证 `line`/`column` 正确 |
+
+两个选项同时适用于 `parseRichText` 和 `parseStructural`，需要 `trackPositions: true` 才生效。
+
+**只传 `baseOffset`**：`offset` 被正确偏移，但 `line`/`column` 基于子串本地计算。适合只需 offset 查找的场景。
+
+**同时传 `tracker`**（推荐）：三个字段全部正确。用 `buildPositionTracker(fullText)` 构建一次，多次切片复用。
 
 ### `position` 覆盖范围
 

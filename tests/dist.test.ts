@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { runGoldenCases } from "./testHarness.ts";
 import { testHandlers } from "./handlers.ts";
+import type { DslContext, PipeArgs, TextToken, TokenDraft } from "../src/index.ts";
 
 // ── Load both module formats ──
 
@@ -314,7 +315,7 @@ const smokeTest = (mod: DistModule, label: string) => {
           createId: () => "legacy-id",
           handlers: {
             link: {
-              inline: (tokens: { type: string; value: string | unknown[] }[]) => {
+              inline: (tokens: TextToken[]): TokenDraft => {
                 const args = mod.parsePipeArgs(tokens);
                 return {
                   type: "link",
@@ -471,7 +472,7 @@ const smokeTest = (mod: DistModule, label: string) => {
       run: () => {
         const handlers = mod.createPipeHandlers({
           link: {
-            inline: (args: { text: (index: number) => string; materializedTailTokens: (index: number) => unknown[] }) => ({
+            inline: (args: PipeArgs): TokenDraft => ({
               type: "link",
               url: args.text(0),
               value: args.materializedTailTokens(1),
@@ -479,14 +480,14 @@ const smokeTest = (mod: DistModule, label: string) => {
           },
           panel: {
             block: (
-              args: { parts: unknown[]; text: (index: number) => string },
-              content: unknown[],
-              _ctx: unknown,
+              args: PipeArgs,
+              content: TextToken[],
+              _ctx: DslContext | undefined,
               rawArg?: string,
-            ) => ({
+            ): TokenDraft => ({
               type: "panel",
               arg: rawArg,
-              args: args.parts.map((_: unknown, i: number) => args.text(i)),
+              args: args.parts.map((_, i) => args.text(i)),
               value: content,
             }),
           },

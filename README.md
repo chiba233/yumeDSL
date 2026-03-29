@@ -381,6 +381,8 @@ interface ParserBaseOptions {
     depthLimit?: number;
     syntax?: Partial<SyntaxInput>;
     tagName?: Partial<TagNameConfig>;
+    baseOffset?: number;
+    tracker?: PositionTracker;
 }
 
 interface ParseOptions extends ParserBaseOptions {
@@ -822,6 +824,8 @@ interface ParserBaseOptions {
     depthLimit?: number;
     syntax?: Partial<SyntaxInput>;
     tagName?: Partial<TagNameConfig>;
+    baseOffset?: number;
+    tracker?: PositionTracker;
 }
 
 interface ParseOptions extends ParserBaseOptions {
@@ -844,6 +848,10 @@ interface StructuralParseOptions extends ParserBaseOptions {
 - `depthLimit`: maximum nesting depth, default `50`
 - `syntax`: override default syntax tokens
 - `tagName`: override tag-name character rules
+- `baseOffset`: base offset for position tracking when parsing substrings (default `0`).
+  See [Parsing substrings with baseOffset and tracker](#parsing-substrings-with-baseoffset-and-tracker)
+- `tracker`: pre-built `PositionTracker` from the original full document for correct `line`/`column`.
+  See [Parsing substrings with baseOffset and tracker](#parsing-substrings-with-baseoffset-and-tracker)
 
 ### Fields — `ParseOptions` only
 
@@ -1319,6 +1327,46 @@ interface SourceSpan {
     end: SourcePosition;
 }
 ```
+
+### Parsing substrings with `baseOffset` and `tracker`
+
+When you parse a substring extracted from a larger document, pass `baseOffset` and a pre-built `tracker`
+so that **all** position fields (`offset`, `line`, `column`) point back into the original source:
+
+```ts
+import {parseRichText, buildPositionTracker} from "yume-dsl-rich-text";
+
+const fullText = "first line\nprefix $$bold(world)$$ suffix";
+const tracker = buildPositionTracker(fullText);
+
+const start = 18;  // "$$bold(world)$$" starts at offset 18
+const slice = fullText.slice(start, 33);
+
+const tokens = parseRichText(slice, {
+    handlers: {bold: {inline: (t) => ({type: "bold", value: t})}},
+    trackPositions: true,
+    baseOffset: start,
+    tracker,           // ← built from the full document
+});
+
+// tokens[0].position.start.offset → 18  (absolute, in fullText)
+// tokens[0].position.start.line   → 2   (correct line in fullText)
+// tokens[0].position.start.column → 8   (correct column in fullText)
+```
+
+| Option        | Purpose                                                                         |
+|---------------|---------------------------------------------------------------------------------|
+| `baseOffset`  | Shift all offsets by this amount (default `0`)                                  |
+| `tracker`     | Pre-built tracker from the full document — enables correct `line`/`column` too  |
+
+Both options apply to `parseRichText` and `parseStructural`. They require `trackPositions: true`;
+when position tracking is off, both are ignored.
+
+**Without `tracker`** (only `baseOffset`): `offset` is shifted correctly, but `line`/`column` are
+resolved locally against the substring. This is sufficient when you only need offset-based lookups.
+
+**With `tracker`** (recommended): all three fields are fully correct against the original document.
+Build the tracker once with `buildPositionTracker(fullText)` and reuse it across multiple slice parses.
 
 ### What `position` covers
 

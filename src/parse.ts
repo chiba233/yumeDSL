@@ -11,14 +11,15 @@ import type {
   TextToken,
 } from "./types.js";
 import { extractText } from "./builders.js";
-import { createTagNameConfig, withTagNameConfig } from "./chars.js";
+import { withTagNameConfig } from "./chars.js";
 import { tryConsumeEscape, tryConsumeTagClose, tryConsumeTagStart } from "./consumers.js";
 import { emptyBuffer, appendToBuffer, finalizeUnclosedTags, flushBuffer } from "./context.js";
 import { withCreateId } from "./createToken.js";
 import { withInternalCaller } from "./deprecations.js";
 import { parseStructural } from "./structural.js";
-import { createSyntax, withSyntax } from "./syntax.js";
-import { buildPositionTracker, type PositionTracker } from "./positions.js";
+import { withSyntax } from "./syntax.js";
+import { type PositionTracker } from "./positions.js";
+import { buildGatingContext, resolveBaseOptions } from "./resolveOptions.js";
 
 const buildBlockTagLookup = (inputs: readonly BlockTagInput[]): BlockTagLookup => {
   const rawSet = new Set<string>();
@@ -169,20 +170,17 @@ const internalParse = (
 export const parseRichText = (text: string, options: ParseOptions = {}): TextToken[] => {
   if (!text) return [];
 
-  const rawHandlers = options.handlers ?? {};
-  const registeredTags = new Set(Object.keys(rawHandlers));
-  const handlers = options.allowForms
-    ? filterHandlersByForms(rawHandlers, new Set(options.allowForms))
-    : rawHandlers;
-  const allowInline = !options.allowForms || options.allowForms.includes("inline");
+  const { handlers, registeredTags, allowInline } = buildGatingContext(
+    options.handlers ?? {},
+    options.allowForms,
+    filterHandlersByForms,
+  );
   const blockTagSet = options.blockTags
     ? buildBlockTagLookup(options.blockTags)
     : deriveBlockTags(handlers);
-  const syntax = createSyntax(options.syntax);
-  const tagName = createTagNameConfig(options.tagName);
+  const { syntax, tagName, depthLimit, tracker } = resolveBaseOptions(text, options);
   let seed = 0;
   const createId = options.createId ?? (() => `rt-${seed++}`);
-  const tracker = options.trackPositions ? buildPositionTracker(text) : null;
 
   // with* wrappers kept for backward compatibility: user handlers may call
   // public utilities (parsePipeArgs, createToken, unescapeInline, etc.) that
@@ -193,7 +191,7 @@ export const parseRichText = (text: string, options: ParseOptions = {}): TextTok
       withCreateId(createId, () =>
         internalParse(
           text,
-          options.depthLimit ?? 50,
+          depthLimit,
           { mode: options.mode ?? "render" },
           allowInline,
           registeredTags,

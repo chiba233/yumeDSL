@@ -143,6 +143,26 @@ export interface ParserBaseOptions {
   syntax?: Partial<SyntaxInput>;
   /** Override how tag-name characters are recognized. */
   tagName?: Partial<TagNameConfig>;
+  /**
+   * Base offset added to all source positions when `trackPositions` is enabled.
+   * Use this when parsing a substring that starts at a non-zero offset in the
+   * original document — positions will be reported relative to the original source.
+   *
+   * When used alone, only `offset` is shifted; `line`/`column` are local to the substring.
+   * For fully correct `line`/`column`, also pass a `tracker` built from the original
+   * full document via `buildPositionTracker(fullText)`.
+   *
+   * Default: 0.
+   */
+  baseOffset?: number;
+  /**
+   * Pre-built position tracker from the original full document.
+   * When provided together with `baseOffset`, all position fields (`offset`, `line`, `column`)
+   * are resolved against the original document — not the substring being parsed.
+   *
+   * Build with `buildPositionTracker(fullText)`. Requires `trackPositions: true`.
+   */
+  tracker?: PositionTracker;
 }
 
 export interface ParseOptions extends ParserBaseOptions {
@@ -198,13 +218,17 @@ export interface StructuralParseOptions extends ParserBaseOptions {
   trackPositions?: boolean;
 }
 
-// ── Internal types (not re-exported from index) ──
-
-export type ParseMode = "render";
-
+/**
+ * Precomputed line-offset table for resolving string offsets into line/column positions.
+ * Build with `buildPositionTracker(text)`.
+ */
 export interface PositionTracker {
   resolve(offset: number): SourcePosition;
 }
+
+// ── Internal types (not re-exported from index) ──
+
+export type ParseMode = "render";
 
 export interface BufferState {
   content: string;

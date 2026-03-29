@@ -3,11 +3,10 @@ import type {
   StructuralNode,
   StructuralParseOptions,
   SyntaxConfig,
-  TagHandler,
   TagNameConfig,
 } from "./types.js";
-import { createSyntax, getDefaultSyntaxInstance, getSyntax } from "./syntax.js";
-import { createTagNameConfig, DEFAULT_TAG_NAME, getTagNameConfig } from "./chars.js";
+import { getDefaultSyntaxInstance, getSyntax } from "./syntax.js";
+import { DEFAULT_TAG_NAME, getTagNameConfig } from "./chars.js";
 import { warnDeprecated, withInternalCaller } from "./deprecations.js";
 import { readEscapedSequence } from "./escape.js";
 import { supportsInlineForm } from "./consumers.js";
@@ -21,15 +20,17 @@ import {
   findRawClose,
   skipTagBoundary,
 } from "./scanner.js";
-import { buildPositionTracker, makePosition, type PositionTracker } from "./positions.js";
+import {
+  buildPositionTracker,
+  localOffsetTracker,
+  makePosition,
+  offsetTracker as wrapOffsetTracker,
+  type PositionTracker,
+} from "./positions.js";
+import { type GatingContext, buildGatingContext, resolveBaseOptions } from "./resolveOptions.js";
 
 // ── Form gating context ──
 
-interface GatingContext {
-  handlers: Record<string, TagHandler>;
-  registeredTags: ReadonlySet<string>;
-  allowInline: boolean;
-}
 
 // ── Structural parser ──
 
@@ -368,47 +369,39 @@ export const parseStructural = (
 ): StructuralNode[] => {
   if (!text) return [];
 
-  const depthLimit = options?.depthLimit ?? 50;
-
-  let syntax: SyntaxConfig;
-  if (options?.syntax) {
-    syntax = createSyntax(options.syntax);
-  } else {
-    syntax = withInternalCaller(() => getSyntax());
-    if (syntax !== getDefaultSyntaxInstance()) {
+  // ── Legacy ambient fallback (parseStructural-specific) ──
+  let legacySyntax: SyntaxConfig | undefined;
+  if (!options?.syntax) {
+    const ambient = withInternalCaller(() => getSyntax());
+    if (ambient !== getDefaultSyntaxInstance()) {
       warnDeprecated(
         "parseStructural.syntax",
         "parseStructural() is reading ambient withSyntax(). Pass syntax explicitly via options.syntax instead.",
       );
+      legacySyntax = ambient;
     }
   }
 
-  let tagName: TagNameConfig;
-  if (options?.tagName) {
-    tagName = createTagNameConfig(options.tagName);
-  } else {
-    tagName = getTagNameConfig();
-    if (tagName !== DEFAULT_TAG_NAME) {
+  let legacyTagName: TagNameConfig | undefined;
+  if (!options?.tagName) {
+    const ambient = getTagNameConfig();
+    if (ambient !== DEFAULT_TAG_NAME) {
       warnDeprecated(
         "parseStructural.tagName",
         "parseStructural() is reading ambient withTagNameConfig(). Pass tagName explicitly via options.tagName instead.",
       );
+      legacyTagName = ambient;
     }
   }
 
-  // ── Build gating context (mirrors parseRichText entry) ──
-  let gating: GatingContext | null = null;
-  if (options?.handlers) {
-    const rawHandlers = options.handlers;
-    const registeredTags = new Set(Object.keys(rawHandlers));
-    const handlers = options.allowForms
-      ? filterHandlersByForms(rawHandlers, new Set(options.allowForms))
-      : rawHandlers;
-    const allowInline = !options.allowForms || options.allowForms.includes("inline");
-    gating = { handlers, registeredTags, allowInline };
-  }
+  const { syntax, tagName, depthLimit, tracker } = resolveBaseOptions(text, options, {
+    syntax: legacySyntax,
+    tagName: legacyTagName,
+  });
 
-  const tracker = options?.trackPositions ? buildPositionTracker(text) : null;
+  const gating = options?.handlers
+    ? buildGatingContext(options.handlers, options.allowForms, filterHandlersByForms)
+    : null;
 
   return parseNodes(text, 0, depthLimit, gating, false, 0, tracker, syntax, tagName);
 };
