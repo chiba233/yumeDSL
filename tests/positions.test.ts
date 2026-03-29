@@ -69,6 +69,14 @@ const cases: GoldenCase[] = [
       assert.deepEqual(tokens[0].position, position(1, 1, 0, 2, 3, 5));
     },
   },
+  {
+    name: "[Position/Text] CRLF 文本 -> line/column 应按 LF 分行且 offset 保持原始宽度",
+    run() {
+      const tokens = parse("ab\r\ncd");
+      assert.equal(tokens.length, 1);
+      assert.deepEqual(tokens[0].position, position(1, 1, 0, 2, 3, 6));
+    },
+  },
 
   // ── Inline tag ──
   {
@@ -482,6 +490,36 @@ const cases: GoldenCase[] = [
       assert.deepEqual(inline.children[0]?.position, position(2, 9, 12, 2, 11, 14));
       assert.deepEqual(inline.children[1]?.position, position(2, 11, 14, 2, 13, 16));
       assert.deepEqual(inline.children[2]?.position, position(2, 13, 16, 2, 15, 18));
+    },
+  },
+  {
+    name: "[Position/Tracker] buildPositionTracker -> CRLF 行尾后的 offset 应映射到下一行",
+    run() {
+      const tracker = buildPositionTracker("ab\r\ncd");
+      assert.deepEqual(tracker.resolve(0), { line: 1, column: 1, offset: 0 });
+      assert.deepEqual(tracker.resolve(2), { line: 1, column: 3, offset: 2 });
+      assert.deepEqual(tracker.resolve(3), { line: 1, column: 4, offset: 3 });
+      assert.deepEqual(tracker.resolve(4), { line: 2, column: 1, offset: 4 });
+      assert.deepEqual(tracker.resolve(6), { line: 2, column: 3, offset: 6 });
+    },
+  },
+  {
+    name: "[Position/BaseOffset] parseRichText + tracker + CRLF -> offset 回指原文且 line/column 取原文坐标",
+    run() {
+      const fullText = "head\r\n$$bold(x)$$\r\ntail";
+      const sliceStart = 6;
+      const slice = fullText.slice(sliceStart, 17);
+      const tracker = buildPositionTracker(fullText);
+      const tokens = parseRichText(slice, {
+        handlers: testHandlers,
+        trackPositions: true,
+        tracker,
+        baseOffset: sliceStart,
+      });
+
+      assert.equal(tokens.length, 1);
+      assert.equal(tokens[0].type, "bold");
+      assert.deepEqual(tokens[0].position, position(2, 1, 6, 2, 12, 17));
     },
   },
 ];

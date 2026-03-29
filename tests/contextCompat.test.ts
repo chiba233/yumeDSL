@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import {
   createParser,
+  createSimpleInlineHandlers,
+  createSimpleRawHandlers,
   createSyntax,
   createTextToken,
   createToken,
@@ -14,6 +16,7 @@ import {
   unescapeInline,
   withSyntax,
 } from "../src/index.ts";
+import { withTagNameConfig } from "../src/chars.ts";
 import type { DslContext, StructuralNode, TagHandler, TextToken } from "../src/types.ts";
 import { runGoldenCases } from "./testHarness.ts";
 
@@ -165,6 +168,38 @@ const cases = [
     },
   },
   {
+    name: "[Compat/Explicit] parsePipeArgs fallback -> 空段 / 越界 / 尾段拍平都应稳定",
+    run: () => {
+      const args = parsePipeArgs(
+        [
+          createTextToken("a || ", { syntax: compatSyntax }),
+          { type: "bold", value: [createTextToken("x", { syntax: compatSyntax })], id: "b1" },
+          createTextToken(" || c", { syntax: compatSyntax }),
+        ],
+        { syntax: compatSyntax },
+      );
+
+      assert.equal(args.has(0), true);
+      assert.equal(args.has(1), true);
+      assert.equal(args.has(2), true);
+      assert.equal(args.has(3), false);
+      assert.equal(args.text(1), "x");
+      assert.equal(args.text(5, "fallback"), "fallback");
+      assert.deepEqual(normalizeTokens(args.materializedTokens(1)), [
+        { type: "bold", value: [{ type: "text", value: "x" }] },
+        { type: "text", value: " " },
+      ]);
+      assert.deepEqual(normalizeTokens(args.materializedTokens(6, [createTextToken("fallback")])), [
+        { type: "text", value: "fallback" },
+      ]);
+      assert.deepEqual(normalizeTokens(args.materializedTailTokens(1)), [
+        { type: "bold", value: [{ type: "text", value: "x" }] },
+        { type: "text", value: " " },
+        { type: "text", value: "c" },
+      ]);
+    },
+  },
+  {
     name: "[Compat/Explicit] handler 显式透传 ctx -> inline/raw/block 三种路径都应正确工作",
     run: () => {
       const tokens = parseRichText(
@@ -269,6 +304,29 @@ const cases = [
           ],
         );
       });
+    },
+  },
+  {
+    name: "[Compat/Legacy] withTagNameConfig -> structural parser 应继承 ambient tagName",
+    run: () => {
+      withTagNameConfig(
+        {
+          isTagStartChar: (c) => /[a-zA-Z_0-9]/.test(c),
+          isTagChar: (c) => /[a-zA-Z_0-9-]/.test(c),
+        },
+        () => {
+          assert.deepEqual(
+            normalizeStructuralNodes(parseStructural("$$1tag(ok)$$")),
+            [
+              {
+                type: "inline",
+                tag: "1tag",
+                children: [{ type: "text", value: "ok" }],
+              },
+            ],
+          );
+        },
+      );
     },
   },
   {
@@ -383,6 +441,57 @@ const cases = [
           ],
         },
       ]);
+    },
+  },
+  {
+    name: "[Compat/Parser] createParser override -> 局部 syntax 覆盖后下一次调用不应污染默认值",
+    run: () => {
+      const parser = createParser({
+        handlers: explicitHandlers,
+      });
+
+      assert.deepEqual(
+        normalizeTokens(parser.parse("@@link<<https://a.com || click>>@@", { syntax: compatSyntax })),
+        [
+          {
+            type: "link",
+            url: "https://a.com",
+            value: [{ type: "text", value: "click" }],
+          },
+        ],
+      );
+
+      assert.deepEqual(
+        normalizeTokens(parser.parse("$$link(https://b.com|tap)$$")),
+        [
+          {
+            type: "link",
+            url: "https://b.com",
+            value: [{ type: "text", value: "tap" }],
+          },
+        ],
+      );
+    },
+  },
+  {
+    name: "[Compat/Parser] createParser override -> allowForms 局部覆盖后下一次调用不应污染默认值",
+    run: () => {
+      const parser = createParser({
+        handlers: {
+          ...createSimpleInlineHandlers(["bold"] as const),
+          ...createSimpleRawHandlers(["code"] as const),
+        },
+      });
+
+      assert.deepEqual(
+        normalizeTokens(parser.parse("$$code(ts)%\nconst x = 1\n%end$$", { allowForms: ["inline"] })),
+        [{ type: "text", value: "$$code(ts)%\nconst x = 1\n%end$$" }],
+      );
+
+      assert.deepEqual(
+        normalizeTokens(parser.parse("$$code(ts)%\nconst x = 1\n%end$$")),
+        [{ type: "code", arg: "ts", value: "const x = 1\n" }],
+      );
     },
   },
 ];

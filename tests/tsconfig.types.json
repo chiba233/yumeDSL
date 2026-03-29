@@ -3,5 +3,5 @@
   "compilerOptions": {
     "noEmit": true
   },
-  "include": ["../src/**/*.ts", "./typeAssertions.ts"]
+  "include": ["../src/**/*.ts", "./typeAssertions.ts", "./typeAssertions.dist.ts"]
 }

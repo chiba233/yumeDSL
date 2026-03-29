@@ -5,6 +5,7 @@ import {
   createPipeHandlers,
   createPipeBlockHandlers,
   createPipeRawHandlers,
+  createEasySyntax,
   createSimpleBlockHandlers,
   createSimpleInlineHandlers,
   createSimpleRawHandlers,
@@ -655,6 +656,83 @@ const cases: Array<{ name: string; run: () => void }> = [
           value: [{ type: "text", value: "click me" }],
         },
       ]);
+    },
+  },
+  {
+    name: "[Syntax/Easy] createEasySyntax -> 只传 base tokens 也应派生出完整协议",
+    run: () => {
+      const easySyntax = createEasySyntax({
+        tagPrefix: "@@",
+        tagOpen: "<<",
+        tagClose: ">>",
+        tagDivider: "||",
+        escapeChar: "~",
+      });
+
+      assert.equal(easySyntax.endTag, ">>@@");
+      assert.equal(easySyntax.rawOpen, ">>%");
+      assert.equal(easySyntax.blockOpen, ">>*");
+      assert.equal(easySyntax.rawClose, "%end@@");
+      assert.equal(easySyntax.blockClose, "*end@@");
+
+      assert.deepEqual(
+        normalizeTokens(
+          parseRichText("@@bold<<hi>>@@", {
+            handlers: testHandlers,
+            syntax: easySyntax,
+          }),
+        ),
+        [
+          {
+            type: "bold",
+            value: [{ type: "text", value: "hi" }],
+          },
+        ],
+      );
+
+      assert.deepEqual(
+        normalizeStructuralNodes(parseStructural("@@link<<a || b>>@@", { syntax: easySyntax })),
+        [
+          {
+            type: "inline",
+            tag: "link",
+            children: [
+              { type: "text", value: "a " },
+              { type: "separator" },
+              { type: "text", value: " b" },
+            ],
+          },
+        ],
+      );
+    },
+  },
+  {
+    name: "[Syntax/Easy] createEasySyntax -> 显式 compound override 应覆盖派生值",
+    run: () => {
+      const easySyntax = createEasySyntax({
+        tagPrefix: "@@",
+        tagOpen: "<<",
+        tagClose: ">>",
+        tagDivider: "||",
+        escapeChar: "~",
+        endTag: ">>/@@",
+      });
+
+      assert.equal(easySyntax.endTag, ">>/@@");
+      assert.deepEqual(
+        normalizeTokens(
+          parseRichText("@@bold<<hi>>/@@", {
+            handlers: testHandlers,
+            syntax: easySyntax,
+          }),
+        ),
+        [
+          {
+            type: "bold",
+            value: [{ type: "text", value: "hi" }],
+          },
+        ],
+      );
     },
   },
   {
