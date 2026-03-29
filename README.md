@@ -2,9 +2,8 @@
 
 # yume-dsl-rich-text(ユメテキスト)
 
-> Important: Upgrade to `1.0.7` or later if you use tags that support both inline and block/raw forms.
-> Versions before `1.0.7` had a serious parsing bug where inline `$$tag(...)$$` could incorrectly consume the
-> following newline and change rendered output.
+> **Version note:** If you use tags that support both inline and block/raw forms, use `1.0.7` or later.
+> `1.0.7` fixed a serious parsing bug that could affect newline semantics.
 
 ### [▶ Live Demo — DSL Fallback Museum](https://qwwq.org/blog/dsl-fallback-museum)
 

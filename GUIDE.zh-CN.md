@@ -2,8 +2,8 @@
 
 # yume-dsl-rich-text (ユメテキスト)
 
-> 重要：如果你使用同时支持 inline 与 block/raw 形态的标签，请升级到 `1.0.7` 或更高版本。
-> `1.0.7` 之前的版本存在一个严重解析 bug：inline `$$tag(...)$$` 可能会错误吞掉后续换行，从而改变渲染结果。
+> **版本说明：** 若你使用同时支持 inline 与 block/raw 的标签，请使用 `1.0.7+`。
+> `1.0.7` 修复了一个会影响换行语义的严重解析 bug。
 
 ### [▶ 在线演示 — DSL Fallback Museum](https://qwwq.org/blog/dsl-fallback-museum)
 
