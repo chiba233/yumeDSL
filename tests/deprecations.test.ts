@@ -27,12 +27,12 @@ const runSnippet = async (body: string): Promise<SnippetResult> => {
       captured.push(args.join(" "));
     };
 
-    process.stderr.write = ((chunk, ...args) => {
+    process.stderr.write = ((chunk) => {
       captured.push(String(chunk));
       return true;
     });
 
-    process.stdout.write = ((chunk, ...args) => {
+    process.stdout.write = ((chunk) => {
       stdout.push(String(chunk));
       return true;
     });
@@ -105,7 +105,7 @@ const captureWarnings = async (run: () => Promise<void> | void): Promise<string>
   const captured: string[] = [];
   const originalWrite = process.stderr.write.bind(process.stderr);
 
-  process.stderr.write = ((chunk, ...args) => {
+  process.stderr.write = ((chunk) => {
     captured.push(String(chunk));
     return true;
   }) as typeof process.stderr.write;
