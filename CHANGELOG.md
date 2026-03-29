@@ -2,6 +2,20 @@
 
 # Changelog
 
+### 1.0.9
+
+- New public export: `createEasyStableId(options?)` — parse-session scoped, stateful `CreateId`
+  generator that derives deterministic, content-based token IDs instead of sequential counters
+  - Default fingerprint: `type` + `value` (recursive); pass a custom `fingerprint` closure for full control
+  - Duplicate fingerprints auto-disambiguated with numeric suffixes (`s-abc`, `s-abc-1`, …)
+  - Configurable `prefix` (default `"s"`)
+- New public type: `EasyStableIdOptions`
+- Documentation
+  - New **Stable Token IDs** section in README / GUIDE with usage, scope, and disambiguation examples
+  - Added **Handler Utilities** demo — one handler covering all 10 utility functions from the export table
+  - Updated intro: use cases (game dialogue, chat/UGC, CMS, localization), graceful degradation,
+    framework-agnostic runtime, `parseStructural` + `parseSlice` pipeline
+
 ### 1.0.8
 
 - Removed `isInternalCaller` / `withInternalCaller` implicit global flag from `deprecations.ts`

@@ -78,6 +78,7 @@ export type {
 
 // ── Position tracking ──
 export { buildPositionTracker } from "./positions.js";
+export { createEasyStableId } from "./stableId.js";
 
 // ── Types: source positions ──
 export type {
@@ -91,3 +92,4 @@ export type { StructuralNode, StructuralParseOptions } from "./types.js";
 
 export type { PipeArgs } from "./builders.js";
 export type { PipeHandlerDefinition } from "./handlerHelpers.js";
+export type { EasyStableIdOptions } from "./stableId.js";

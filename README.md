@@ -2,15 +2,6 @@
 
 # yume-dsl-rich-text(ユメテキスト)
 
-> **Version note:** If you use tags that support both inline and block/raw forms, use `1.0.7` or later.
-> `1.0.7` fixed a serious parsing bug that could affect newline semantics.
-
-### [▶ Live Demo — DSL Fallback Museum](https://qwwq.org/blog/dsl-fallback-museum)
-
-Shiki code-highlighting plugin · legitimate plugins · intentional malformed markup · error reporting
-
----
-
 <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white" />
 
 [![npm](https://img.shields.io/npm/v/yume-dsl-rich-text)](https://www.npmjs.com/package/yume-dsl-rich-text)
@@ -20,16 +11,28 @@ Shiki code-highlighting plugin · legitimate plugins · intentional malformed ma
 [![Contributing](https://img.shields.io/badge/Contributing-guide-blue.svg)](./CONTRIBUTING.md)
 [![Security](https://img.shields.io/badge/Security-policy-red.svg)](./SECURITY.md)
 
-Zero-dependency, single-pass, pluggable-semantics rich-text DSL parser.
-Turns text into a token tree — tag semantics, rendering, and UI integration are all yours to define.
+Zero-dependency, single-pass rich-text DSL parser.
+Text goes in, token tree comes out — what tags mean, how they render, which framework they live in is entirely up to you.
 
-Not a Markdown renderer. Not a rich-text component library. Not an HTML producer.
-It parses a custom markup language into a token tree. Everything else is your layer —
-though [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker) can handle that part if you'd rather not build it from scratch.
+- **Not** a Markdown renderer, rich-text editor, or HTML pipeline
+- **Is** a syntax-only token machine — you feed it rules, it returns structure; [syntax tokens are fully swappable](#custom-syntax)
+- No regex backtracking — deterministic linear scan, runtime proportional to input length
+- Inline / Raw / Block — three tag forms, fully swappable syntax tokens and tag-name rules; built-in [escape sequences](#escape-sequences) let any syntax token appear as literal text
+- Malformed or unknown tags [degrade to plain text](#graceful-degradation) — never throws, never corrupts surrounding content
+- Framework-agnostic, DOM-free — runs in browsers, Node, Deno, Bun, game engines, or any JS runtime
+- Content-driven [stable IDs](#stable-token-ids), single-pass [position tracking](#source-position-tracking), handler-level [pipe parameters](#pipe-parameters) — use what you need
+- [`parseStructural`](#parsestructural--structural-parse) gives you a lightweight map of the document; paired with [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker)'s `parseSlice`, you jump to any region and get fully positioned `TextToken[]` without re-parsing the whole document
 
-- No regex backtracking — deterministic linear scan
-- Inline / Raw / Block — three tag forms, one parser
-- Fully configurable syntax tokens and tag-name rules
+**Use cases:**
+game dialogue & visual novels (typewriter / shake / color tags you invent),
+chat & comments (safe UGC with graceful degradation),
+CMS & blogs, documentation pipelines, localization workflows (translators edit text, not markup)
+
+### [▶ Live Demo — DSL Fallback Museum](https://qwwq.org/blog/dsl-fallback-museum)
+
+Shiki code highlighting · valid tags · intentionally malformed markup · error reporting
+
+> **Version note:** if a tag supports both inline and block/raw forms, use `1.0.7+`.
 
 ## Ecosystem
 
@@ -74,6 +77,7 @@ though [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walk
 - [ParseOptions](#parseoptions)
 - [Token Structure](#token-structure)
     - [Strong Typing](#strong-typing)
+- [Stable Token IDs](#stable-token-ids)
 - [Writing Tag Handlers (advanced)](#writing-tag-handlers-advanced)
 - [Exports](#exports)
     - [DslContext](#dslcontext)
@@ -997,6 +1001,98 @@ switches.
 
 ---
 
+## Stable Token IDs
+
+By default, each `parseRichText` call assigns sequential IDs (`rt-0`, `rt-1`, …).
+These reset per call, so the same input always gets the same IDs — but inserting or removing
+content earlier in the document shifts every ID after it.
+
+`createEasyStableId()` returns a **parse-session scoped, stateful** `CreateId` generator.
+Each call creates a fresh closure with its own disambiguation counter — IDs are derived from
+token content instead of stream position.
+
+### Stability guarantees
+
+- Edits that produce a **different fingerprint**: stable — no effect on other IDs.
+- **Duplicate fingerprints** are disambiguated by occurrence order (`s-abc`, `s-abc-1`, …).
+  Inserting a new duplicate *before* an existing one will shift the suffix of later duplicates.
+- The hash is FNV-1a 32-bit. Different fingerprints can theoretically collide to the same
+  base key — the counter still produces unique IDs, but unrelated tokens may share a prefix.
+  Fine for UI keying; don't use as database primary keys.
+
+### Basic usage
+
+```ts
+import { parseRichText, createEasyStableId } from "yume-dsl-rich-text";
+
+const tokens = parseRichText("Hello $$bold(world)$$", {
+  handlers,
+  createId: createEasyStableId(), // → "s-a1b2c3" (content-based)
+});
+```
+
+### Custom fingerprint
+
+The default fingerprint uses `type` + `value`. Pass a `fingerprint` function to control
+exactly what participates in the hash.
+
+`TokenDraft` has an index signature (`[key: string]: unknown`), so handler-attached fields
+are accessible but typed as `unknown` — narrow before use:
+
+```ts
+// Include a handler-attached field (narrow from unknown)
+createEasyStableId({
+  fingerprint: (t) => {
+    const lang = typeof t.lang === "string" ? t.lang : "";
+    return `${t.type}:${lang}:${typeof t.value === "string" ? t.value : ""}`;
+  },
+})
+```
+
+### Options
+
+```ts
+interface EasyStableIdOptions {
+  /** Prefix for generated IDs. Default: "s". */
+  prefix?: string;
+  /** Custom fingerprint — controls what goes into the hash. */
+  fingerprint?: (token: TokenDraft) => string;
+}
+```
+
+### Disambiguation
+
+Tokens with identical fingerprints get a numeric suffix:
+
+```ts
+const stableId = createEasyStableId();
+const tokens = parseRichText("$$bold(hi)$$ and $$bold(hi)$$", {
+  handlers,
+  createId: stableId,
+});
+// tokens[0].id → "s-x1y2z3"
+// tokens[2].id → "s-x1y2z3-1"   ← same content, auto-suffixed
+```
+
+### Scope
+
+The generator is stateful — its disambiguation counter lives in the closure.
+How you wire it determines the scope of uniqueness:
+
+```ts
+// ① Per-parse scope (recommended) — each parse gets independent IDs
+const dsl = createParser({ handlers });
+dsl.parse(text, { createId: createEasyStableId() });
+
+// ② Shared scope — counter carries across parses
+const stableId = createEasyStableId({ prefix: "doc" });
+const dsl2 = createParser({ handlers, createId: stableId });
+dsl2.parse(text1); // counter starts at 0
+dsl2.parse(text2); // counter continues
+```
+
+---
+
 ## Writing Tag Handlers (advanced)
 
 Most tags can be created with [`createPipeHandlers`](#createpipehandlersdefinitions) or the
@@ -1066,6 +1162,7 @@ documentation.
 | `createSyntax`        | `(overrides?: Partial<SyntaxInput>) => SyntaxConfig`    | Build `SyntaxConfig` with plain merge (low-level)       |
 | `DEFAULT_TAG_NAME`    | `TagNameConfig`                                         | The built-in tag-name character rules                   |
 | `createTagNameConfig` | `(overrides?: Partial<TagNameConfig>) => TagNameConfig` | Build a full `TagNameConfig` from partial overrides     |
+| `createEasyStableId`  | `(options?: EasyStableIdOptions) => CreateId`           | Content-based [stable IDs](#stable-token-ids) with optional custom fingerprint |
 
 ### Handler Helpers
 
@@ -1108,6 +1205,78 @@ See [DslContext](#dslcontext) below.
 > `createToken` also accepts a bare `CreateId`. These narrower overloads exist for internal and
 > legacy use. **New code should pass `DslContext`** — the wider types will be narrowed to
 > `DslContext`-only in a future major version.
+
+**Demo** — manual handler using every utility from this table:
+
+```ts
+import {
+  createParser,
+  parsePipeArgs,          // split inline tokens by pipe → PipeArgs
+  parsePipeTextArgs,      // split plain string by pipe → PipeArgs
+  parsePipeTextList,      // plain string → trimmed string[]
+  splitTokensByPipe,      // raw token splitter (no helper methods)
+  extractText,            // flatten token tree → single string
+  materializeTextTokens,  // recursively unescape text leaves
+  unescapeInline,         // unescape a single string
+  readEscapedSequence,    // read one escape at position i
+  createTextToken,        // shortcut: { type: "text", value } + id
+  createToken,            // attach id (+ optional position) to any TokenDraft
+} from "yume-dsl-rich-text";
+
+const handlers = {
+  // A single handler that demonstrates every utility
+  demo: {
+    // ── inline: $$demo(title | body with $$bold(nested)$$)$$ ──
+    inline: (tokens, ctx) => {
+      const args = parsePipeArgs(tokens, ctx);         // ← split by pipe, get PipeArgs
+      const title = args.text(0, "Untitled");          //    .text() → unescape + trim
+      const bodyTokens = args.materializedTailTokens(1); // .materializedTailTokens() → materializeTextTokens
+
+      const plain = extractText(bodyTokens);           // ← flatten to string (no unescape)
+
+      return { type: "demo", title, plain, value: bodyTokens };
+    },
+
+    // ── raw: $$demo(lang | label)% raw content %end$$ ──
+    raw: (arg, content, ctx) => {
+      const args = parsePipeTextArgs(arg ?? "", ctx);  // ← split arg string by pipe
+      const labels = parsePipeTextList(arg ?? "", ctx);// ← even simpler: string[]
+
+      const unescaped = unescapeInline(content, ctx);  // ← manually unescape raw content
+
+      return {
+        type: "demo",
+        lang: args.text(0, "text"),
+        labels,
+        value: unescaped,
+      };
+    },
+
+    // ── block: $$demo(heading)* children *end$$ ──
+    block: (arg, content, ctx) => {
+      const parts = splitTokensByPipe(content, ctx);   // ← raw split, no helper methods
+      const materialized = materializeTextTokens(content, ctx); // ← unescape all leaves
+
+      // readEscapedSequence — check if a position is an escape
+      const sample = arg ?? "";
+      const [escaped, next] = readEscapedSequence(sample, 0, ctx); // → [char | null, nextIndex]
+
+      // createTextToken / createToken — build tokens manually
+      const extra = createTextToken("(appended)", ctx);            // { type:"text", value, id }
+      const custom = createToken(                                  // any TokenDraft → TextToken
+        { type: "demo-meta", value: escaped ?? sample },
+        undefined, ctx,
+      );
+
+      return {
+        type: "demo",
+        sectionCount: parts.length,
+        value: [...materialized, extra, custom],
+      };
+    },
+  },
+};
+```
 
 ### Position Tracking
 

@@ -2,6 +2,20 @@
 
 # 更新日志
 
+### 1.0.9
+
+- 新增公开导出：`createEasyStableId(options?)` — 解析会话级有状态 `CreateId` 生成器，
+  基于内容生成确定性 token ID，替代默认顺序计数器
+  - 默认指纹：`type` + `value`（递归）；可传自定义 `fingerprint` 闭包完全控制
+  - 相同指纹自动用数字后缀消歧（`s-abc`、`s-abc-1`、…）
+  - 可配置 `prefix`（默认 `"s"`）
+- 新增公开类型：`EasyStableIdOptions`
+- 文档
+  - README / GUIDE 新增 **稳定 Token ID** 章节，含用法、作用域和消歧示例
+  - 新增 **处理器工具函数** 示例 — 一个 handler 覆盖导出表中全部 10 个工具函数
+  - 更新介绍：使用场景（游戏对话、聊天/UGC、CMS、本地化）、优雅降级、
+    框架无关运行时、`parseStructural` + `parseSlice` 管线
+
 ### 1.0.8
 
 - 移除 `deprecations.ts` 中的 `isInternalCaller` / `withInternalCaller` 隐式全局标志
