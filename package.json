@@ -23,8 +23,8 @@
   "type": "module",
   "sideEffects": false,
   "scripts": {
-    "build": "tsup",
-    "test": "tsup && node --import tsx tests/run-dsl-tests.ts",
+    "build": "tsup --target esnext",
+    "test": "tsup  --target esnext && node --import tsx tests/run-dsl-tests.ts",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
