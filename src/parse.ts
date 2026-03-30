@@ -5,6 +5,7 @@ import type {
   MultilineForm,
   ParseContext,
   ParseOptions,
+  ParserBaseOptions,
   StructuralNode,
   StructuralParseOptions,
   SyntaxConfig,
@@ -244,11 +245,24 @@ export interface Parser {
   structural: (text: string, overrides?: StructuralParseOptions) => StructuralNode[];
 }
 
-export const createParser = (defaults: ParseOptions): Parser => ({
-  parse: (text, overrides) =>
-    parseRichText(text, overrides ? { ...defaults, ...overrides } : defaults),
-  strip: (text, overrides) =>
-    stripRichText(text, overrides ? { ...defaults, ...overrides } : defaults),
-  structural: (text, overrides) =>
-    parseStructural(text, overrides ? { ...defaults, ...overrides } : defaults),
-});
+export const createParser = (defaults: ParseOptions): Parser => {
+  const merge = <T extends ParserBaseOptions>(overrides: T): ParseOptions & T => {
+    const merged: ParseOptions & T = { ...defaults, ...overrides };
+    if (defaults.syntax && overrides.syntax) {
+      merged.syntax = { ...defaults.syntax, ...overrides.syntax };
+    }
+    if (defaults.tagName && overrides.tagName) {
+      merged.tagName = { ...defaults.tagName, ...overrides.tagName };
+    }
+    return merged;
+  };
+
+  return {
+    parse: (text, overrides) =>
+      parseRichText(text, overrides ? merge(overrides) : defaults),
+    strip: (text, overrides) =>
+      stripRichText(text, overrides ? merge(overrides) : defaults),
+    structural: (text, overrides) =>
+      parseStructural(text, overrides ? merge(overrides) : defaults),
+  };
+};

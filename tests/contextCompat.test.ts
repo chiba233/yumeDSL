@@ -474,6 +474,65 @@ const cases = [
     },
   },
   {
+    name: "[Compat/Parser] createParser override -> defaults.syntax 与局部 partial syntax 应深合并",
+    run: () => {
+      const parser = createParser({
+        handlers: explicitHandlers,
+        syntax: compatSyntax,
+      });
+
+      assert.deepEqual(
+        normalizeTokens(
+          parser.parse("@@link<<https://a.com || click>>@@", {
+            syntax: { escapeChar: "\\" },
+          }),
+        ),
+        [
+          {
+            type: "link",
+            url: "https://a.com",
+            value: [{ type: "text", value: "click" }],
+          },
+        ],
+      );
+    },
+  },
+  {
+    name: "[Compat/Parser] createParser override -> defaults.tagName 与局部 partial tagName 应深合并",
+    run: () => {
+      const parser = createParser({
+        handlers: {
+          "bold_1": {
+            inline: (tokens) => ({
+              type: "bold_1",
+              value: tokens,
+            }),
+          },
+        },
+        tagName: {
+          isTagStartChar: (char) => /[A-Za-z]/.test(char),
+          isTagChar: (char) => /[A-Za-z0-9_]/.test(char),
+        },
+      });
+
+      assert.deepEqual(
+        normalizeTokens(
+          parser.parse("$$bold_1(x)$$", {
+            tagName: {
+              isTagChar: (char) => /[A-Za-z0-9_:-]/.test(char),
+            },
+          }),
+        ),
+        [
+          {
+            type: "bold_1",
+            value: [{ type: "text", value: "x" }],
+          },
+        ],
+      );
+    },
+  },
+  {
     name: "[Compat/Parser] createParser override -> allowForms 局部覆盖后下一次调用不应污染默认值",
     run: () => {
       const parser = createParser({

@@ -2,6 +2,19 @@
 
 # Changelog
 
+### 1.0.11
+
+- New token traversal utilities:
+  - `walkTokens(tokens, visitor)` — depth-first pre-order read-only visitor; accepts a generic callback
+    or a `Record<type, fn>` for type-based dispatch
+  - `mapTokens(tokens, visitor)` — depth-first post-order immutable transform; return a replacement token,
+    an array to expand one token into multiple siblings, or `null` to remove; children are mapped before
+    the visitor sees the parent
+  - `TokenVisitContext` — `{ parent, depth, index }` provided to every callback
+- Fix: `createParser(defaults)` now deep-merges `syntax` and `tagName` when overrides are passed to
+  `parse()` / `strip()` / `structural()`. Previously, a partial override like `{ syntax: { escapeChar: "~" } }`
+  would clobber the entire default `syntax` object instead of merging into it
+
 ### 1.0.10
 
 - Update markdown

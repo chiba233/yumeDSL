@@ -2,6 +2,17 @@
 
 # 更新日志
 
+### 1.0.11
+
+- 新增 token 遍历工具：
+  - `walkTokens(tokens, visitor)` — 前序深度优先只读遍历；接受通用回调或 `Record<type, fn>` 按类型分发
+  - `mapTokens(tokens, visitor)` — 后序深度优先不可变变换；返回替换 token、数组展开为多个兄弟节点、
+    或 `null` 删除；children 在 visitor 看到父节点之前已完成变换
+  - `TokenVisitContext` — 每次回调提供 `{ parent, depth, index }`
+- 修复：`createParser(defaults)` 在 `parse()` / `strip()` / `structural()` 接收 override 时，
+  现在对 `syntax` 和 `tagName` 做深合并。此前传递 `{ syntax: { escapeChar: "~" } }` 等局部覆盖
+  会整个替换掉默认的 `syntax` 对象，而非合并进去
+
 ### 1.0.10
 
 - 更新文档

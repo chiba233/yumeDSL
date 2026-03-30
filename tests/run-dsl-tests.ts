@@ -21,5 +21,8 @@ await import("./contextCompat.test.ts");
 console.log("=== Deprecations ===");
 await import("./deprecations.test.ts");
 
+console.log("=== Walk / Map ===");
+await import("./walk.test.ts");
+
 console.log("=== Type Check ===");
 await import("./typecheck.test.ts");

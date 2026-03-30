@@ -40,6 +40,7 @@ CMS & blogs, documentation pipelines, localization workflows (translators edit t
 Shiki code highlighting · valid tags · intentionally malformed markup · error reporting
 
 > **Version note:** if a tag supports both inline and block/raw forms, use `1.0.7+`.
+> `walkTokens` / `mapTokens` and the `createParser` partial-override fix require `1.0.11+`.
 
 ## Ecosystem
 
@@ -300,7 +301,8 @@ const dsl = createParser({
 dsl.parse("Hello $$bold(world)$$!");
 dsl.strip("Hello $$bold(world)$$!");
 
-// Per-call overrides are shallow-merged onto defaults
+// Per-call overrides are merged onto defaults.
+// `syntax` and `tagName` also merge one level deep so partial overrides keep the rest.
 dsl.parse(text, {onError: (e) => console.warn(e)});
 ```
 
@@ -433,7 +435,9 @@ Handler functions themselves are never called; only the presence of `inline` / `
 
 When `handlers` is omitted, all syntactically valid tags in all forms are accepted.
 
-> **Deprecated:** when called inside a `withSyntax` / `withTagNameConfig` wrapper, `parseStructural` still reads the ambient state, but this path is deprecated and emits a `console.warn`. Pass `options.syntax` / `options.tagName` explicitly instead.
+> **Deprecated:** when called inside a `withSyntax` / `withTagNameConfig` wrapper, `parseStructural` still reads the
+> ambient state, but this path is deprecated and emits a `console.warn`. Pass `options.syntax` / `options.tagName`
+> explicitly instead.
 
 **`StructuralNode` variants:**
 
@@ -1278,6 +1282,60 @@ const handlers = {
 };
 ```
 
+### Token Traversal
+
+Read-only visitor and immutable tree transform for `TextToken[]`.
+
+| Export       | Signature                                                   | Description                                        |
+|--------------|-------------------------------------------------------------|----------------------------------------------------|
+| `walkTokens` | `(tokens: TextToken[], visitor: WalkVisitor) => void`       | Pre-order depth-first traversal (side-effect only) |
+| `mapTokens`  | `(tokens: TextToken[], visitor: MapVisitor) => TextToken[]` | Post-order depth-first immutable transform         |
+
+Both pass a `TokenVisitContext` (`{ parent, depth, index }`) to every callback.
+
+**`WalkVisitor`** — generic function or `Record<type, fn>` for type-based dispatch:
+
+```ts
+import {walkTokens} from "yume-dsl-rich-text";
+
+// Collect all tag types used in a tree
+const types = new Set<string>();
+walkTokens(tokens, (token) => types.add(token.type));
+
+// Or dispatch by type
+walkTokens(tokens, {
+    bold: (token, ctx) => console.log(`bold at depth ${ctx.depth}`),
+    link: (token) => urls.push(token.href as string),
+});
+```
+
+**`MapVisitor`** — return a replacement token, an array (expand), or `null` (remove):
+
+```ts
+import {mapTokens} from "yume-dsl-rich-text";
+
+// Remove all "hidden" tokens
+const visible = mapTokens(tokens, (token) =>
+    token.type === "hidden" ? null : token,
+);
+
+// Uppercase all text leaves (children mapped first — post-order)
+const shouted = mapTokens(tokens, (token) =>
+    token.type === "text" && typeof token.value === "string"
+        ? {...token, value: token.value.toUpperCase()}
+        : token,
+);
+
+// Unwrap a transparent wrapper — expand its children into siblings
+const unwrapped = mapTokens(tokens, (token) =>
+    token.type === "wrapper" ? (token.value as TextToken[]) : token,
+);
+```
+
+> In `mapTokens`, traversal is post-order for the current token, but `ctx.parent` is the original
+> parent context rather than a fully mapped parent snapshot. Do not rely on `ctx.parent.value` to
+> reflect already-mapped siblings or children.
+
 ### Position Tracking
 
 Single-pass position tracking with zero extra cost when disabled.
@@ -1303,9 +1361,7 @@ Related `ParseOptions` / `StructuralParseOptions` fields:
 
 ### DslContext
 
-`DslContext` carries the active syntax and token-id generator for a parse session.
-All public utilities accept it as an optional `ctx` parameter — **pass it through** to keep
-everything on the same configuration. `ctx` will become required in a future major version.
+`DslContext` bundles the syntax config and token-id generator for a parse session.
 
 ```ts
 interface DslContext {
@@ -1314,36 +1370,38 @@ interface DslContext {
 }
 ```
 
-| Field      | Description                                                              |
-|------------|--------------------------------------------------------------------------|
-| `syntax`   | The active `SyntaxConfig` — controls escape characters, delimiters, etc. |
-| `createId` | Optional token id generator — used by `createToken` when building tokens |
+**When do I need this?**
 
-```ts
-// Inside a handler: pass through the ctx the parser gives you
-link: {
-    inline: (tokens, ctx) => {
-        const args = parsePipeArgs(tokens, ctx);
-        return {type: "link", url: args.text(0), value: args.materializedTailTokens(1)};
-    },
-}
+- **Writing a custom handler** — the parser passes `ctx` as the last argument. Forward it to any
+  utility you call (`parsePipeArgs`, `createTextToken`, `unescapeInline`, …) so that escape rules,
+  pipe delimiters, and token IDs all stay consistent with the current parse:
 
-// Outside parsing: construct one yourself
-const ctx: DslContext = {syntax: createSyntax(), createId: (draft) => `demo-${draft.type}`};
-const args = parsePipeTextArgs("ts | Demo", ctx);
-const token = createTextToken("hello", ctx);
-```
+  ```ts
+  link: {
+      inline: (tokens, ctx) => {
+          const args = parsePipeArgs(tokens, ctx);   // ← same syntax & id generator
+          return {type: "link", url: args.text(0), value: args.materializedTailTokens(1)};
+      },
+  }
+  ```
 
-### Migration to explicit `ctx`
+- **Calling utilities outside a parse** (standalone script, test, post-processing) — construct one
+  yourself:
 
-Affects the handler → utility call chain, not the core parse API:
+  ```ts
+  const ctx: DslContext = {syntax: createSyntax(), createId: (draft) => `demo-${draft.type}`};
+  const args = parsePipeTextArgs("ts | Demo", ctx);
+  ```
 
-`TagHandler` · `parsePipeArgs` · `parsePipeTextArgs` · `parsePipeTextList` · `splitTokensByPipe` ·
-`materializeTextTokens` · `unescapeInline` · `readEscapedSequence` · `createToken`
+- **Using only `parseRichText` or `createParser` without custom handlers** — you don't need to
+  think about `DslContext` at all. The parser handles everything internally.
 
-1. Add `ctx` to your `TagHandler` signatures.
-2. Pass it through to every utility call inside handlers.
-3. In standalone scripts/tests, construct `DslContext` explicitly.
+- **Still using old handlers that don't accept `ctx`** — they keep working (JS ignores the extra
+  argument), but pipe splitting and escaping fall back to module-level defaults. If you ever switch
+  to custom syntax, those handlers will silently use the wrong delimiters. Adding `ctx` is a
+  one-line fix per handler and prevents that class of bugs entirely.
+
+`ctx` will become required in a future major version.
 
 ### PipeArgs / parsePipeTextList
 

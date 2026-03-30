@@ -34,6 +34,10 @@ export {
 export { unescapeInline, readEscapedSequence } from "./escape.js";
 export { createToken, resetTokenIdSeed } from "./createToken.js";
 
+// ── Token traversal ──
+export { walkTokens, mapTokens } from "./walk.js";
+export type { TokenVisitContext, WalkVisitor, MapVisitor } from "./walk.js";
+
 // ── Legacy context (compat) ──
 // These module-level context wrappers are still used in two places:
 // 1. parseRichText wraps with withSyntax/withTagNameConfig/withCreateId so that
