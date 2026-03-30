@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { parseStructural, printStructural, createEasySyntax } from "../src/index.ts";
+import { parseStructural, printStructural } from "../src/index.ts";
 import type { StructuralNode } from "../src/types.ts";
 import type { GoldenCase } from "./testHarness.ts";
 import { runGoldenCases } from "./testHarness.ts";
@@ -93,11 +93,10 @@ const cases: GoldenCase[] = [
       const syntax = { tagPrefix: "@@", tagOpen: "[", tagClose: "]", tagDivider: ";", endTag: "]@@", rawOpen: "]%", blockOpen: "]*", rawClose: "%end@@", blockClose: "*end@@", escapeChar: "~" };
       const input = "@@bold[text]@@";
       const tree = parseStructural(input, { syntax });
-      // Verify parse actually produced a structural inline node, not a fallback text node
       assert.equal(tree.length, 1);
       assert.equal(tree[0].type, "inline");
       assert.equal((tree[0] as { tag: string }).tag, "bold");
-      // Then verify round-trip
+      assert.deepEqual((tree[0] as { children: StructuralNode[] }).children, [{ type: "text", value: "text" }]);
       const output = printStructural(tree, { syntax });
       assert.equal(output, input);
     },
