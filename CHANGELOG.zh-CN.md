@@ -9,6 +9,12 @@
   - `PrintOptions` 类型 — 接受 `syntax` 覆盖，用于自定义语法的往返序列化
   - 支持往返序列化：当使用相同的 syntax 配置时，
     `printStructural(parseStructural(input)) === input` 对良好输入成立
+- 新增结构查询工具：
+  - `findFirst(nodes, predicate)` — 前序深度优先搜索，返回第一个匹配的 `StructuralNode`
+  - `findAll(nodes, predicate)` — 前序深度优先搜索，返回所有匹配的 `StructuralNode[]`
+  - `nodeAtOffset(nodes, offset)` — 返回包含给定源码 offset 的最深结构节点
+  - `enclosingNode(nodes, offset)` — 返回包含给定源码 offset 的最深标签节点（`inline` / `raw` / `block`）
+  - `StructuralVisitContext` / `StructuralPredicate` 类型 — 为结构遍历提供类型化回调上下文
 
 ### 1.0.11
 

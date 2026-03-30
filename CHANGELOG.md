@@ -9,6 +9,12 @@
   - `PrintOptions` type — accepts `syntax` override for custom syntax round-trip
   - Supports round-trip serialization: `printStructural(parseStructural(input)) === input` for well-formed inputs
     when the same syntax configuration is used
+- New structural query helpers:
+  - `findFirst(nodes, predicate)` — depth-first pre-order search returning the first matching `StructuralNode`
+  - `findAll(nodes, predicate)` — depth-first pre-order search returning all matching `StructuralNode[]`
+  - `nodeAtOffset(nodes, offset)` — returns the deepest structural node containing the given source offset
+  - `enclosingNode(nodes, offset)` — returns the deepest enclosing tag node (`inline` / `raw` / `block`)
+  - `StructuralVisitContext` / `StructuralPredicate` types — typed callback context for structural traversal
 
 ### 1.0.11
 
