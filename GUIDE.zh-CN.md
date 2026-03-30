@@ -418,16 +418,7 @@ interface StructuralParseOptions extends ParserBaseOptions {
 
 省略 `handlers` 时，所有合法标签和所有形态均被接受。
 
-**Ambient 捕获：** 未传 `syntax` / `tagName` 覆盖时，`parseStructural` 在入口处一次性捕获当前
-`getSyntax()` / `getTagNameConfig()` 的值，并在解析过程中显式透传。因此可以在 `withSyntax` /
-`withTagNameConfig` 包裹中使用：
-
-```ts
-withSyntax(customSyntax, () => {
-    parseStructural(text);  // 入口捕获 customSyntax
-    parseStructural(text2); // 同样在入口捕获 customSyntax
-});
-```
+> **已弃用：** 在 `withSyntax` / `withTagNameConfig` 包裹中调用 `parseStructural` 时，ambient 状态仍会被读取，但该路径已弃用并会触发 `console.warn`。请改用 `options.syntax` / `options.tagName` 显式传入配置。
 
 **`StructuralNode` 变体：**
 

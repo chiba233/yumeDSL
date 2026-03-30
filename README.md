@@ -433,16 +433,7 @@ Handler functions themselves are never called; only the presence of `inline` / `
 
 When `handlers` is omitted, all syntactically valid tags in all forms are accepted.
 
-**Ambient capture:** when called without `syntax` / `tagName` overrides, `parseStructural` captures the
-current `getSyntax()` / `getTagNameConfig()` values once at entry and threads them explicitly through the
-parse. This makes it composable inside `withSyntax` / `withTagNameConfig` wrappers:
-
-```ts
-withSyntax(customSyntax, () => {
-    parseStructural(text);  // captures customSyntax at entry
-    parseStructural(text2); // also captures customSyntax at entry
-});
-```
+> **Deprecated:** when called inside a `withSyntax` / `withTagNameConfig` wrapper, `parseStructural` still reads the ambient state, but this path is deprecated and emits a `console.warn`. Pass `options.syntax` / `options.tagName` explicitly instead.
 
 **`StructuralNode` variants:**
 
