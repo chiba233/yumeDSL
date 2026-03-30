@@ -89,9 +89,9 @@ Shiki code highlighting · valid tags · intentionally malformed markup · error
     - [Strong Typing](#strong-typing)
 - [Stable Token IDs](#stable-token-ids)
 - [Writing Tag Handlers (advanced)](#writing-tag-handlers-advanced)
+    - [PipeArgs / parsePipeTextList](#pipeargs--parsepipetextlist)
 - [Exports](#exports)
     - [DslContext](#dslcontext)
-    - [PipeArgs / parsePipeTextList](#pipeargs--parsepipetextlist)
 - [Source Position Tracking](#source-position-tracking)
 - [Error Handling](#error-handling)
 - [Graceful Degradation](#graceful-degradation)
@@ -1185,102 +1185,90 @@ See also [Deprecated API](#deprecated-api) for `createPipeBlockHandlers`, `creat
 
 ### Handler Utilities
 
-Lower-level tools for writing custom `TagHandler` implementations.
-You will not need these if you only use the handler helpers above.
+`createPipeHandlers` and the simple helpers cover common patterns, not all handler logic.
+When they are not enough, write handlers directly using the
+[handler utilities](#everyday--covers-90-of-custom-handlers) below.
+Most handlers only need the first table.
+Always forward the `ctx` the parser passes to your handler — see [DslContext](#dslcontext).
 
-The `ctx?` parameter exists for backward compatibility. New code should treat it as required in practice —
-pass the `DslContext` received from the handler callback or construct one explicitly.
-See [DslContext](#dslcontext) below.
+#### Everyday — covers 90% of custom handlers
 
-| Export                  | Signature                                                                                 | Description                                                |
-|-------------------------|-------------------------------------------------------------------------------------------|------------------------------------------------------------|
-| `parsePipeArgs`         | `(tokens: TextToken[], ctx?: DslContext) => PipeArgs`                                     | Split tokens by pipe and access parsed parts               |
-| `parsePipeTextArgs`     | `(text: string, ctx?: DslContext) => PipeArgs`                                            | Same as above, but from a plain text string                |
-| `parsePipeTextList`     | `(text: string, ctx?: DslContext) => string[]`                                            | Split a pipe-delimited string into trimmed `string[]`      |
-| `splitTokensByPipe`     | `(tokens: TextToken[], ctx?: DslContext) => TextToken[][]`                                | Raw token splitter without helper methods                  |
-| `extractText`           | `(tokens?: TextToken[]) => string`                                                        | Flatten a token tree into a single string                  |
-| `materializeTextTokens` | `(tokens: TextToken[], ctx?: DslContext) => TextToken[]`                                  | Recursively unescape text tokens in a tree                 |
-| `unescapeInline`        | `(str: string, ctx?: DslContext \| SyntaxConfig) => string`                               | Unescape DSL escape sequences in a single string \*        |
-| `readEscapedSequence`   | `(text: string, i: number, ctx?: DslContext \| SyntaxConfig) => [string \| null, number]` | Read one escape sequence at position `i` \*                |
-| `createTextToken`       | `(value: string, ctx?: DslContext) => TextToken`                                          | Create a `{ type: "text", value }` token with `id`         |
-| `createToken`           | `(draft: TokenDraft, position?: SourceSpan, ctx?: DslContext \| CreateId) => TextToken`   | Add an `id` (and optional `position`) to a `TokenDraft` \* |
+| When you need to…                              | Use this                                          |
+|------------------------------------------------|---------------------------------------------------|
+| Split inline tokens by pipe, read parts        | `parsePipeArgs(tokens, ctx)` → `PipeArgs`         |
+| Split a raw/block `arg` string by pipe         | `parsePipeTextList(text, ctx)` → `string[]`       |
+| Get the plain text of a token tree             | `extractText(tokens)` → `string`                  |
+| Build a text leaf inside a handler             | `createTextToken(value, ctx)` → `TextToken`       |
 
-> \* `unescapeInline` and `readEscapedSequence` also accept a bare `SyntaxConfig` for convenience;
-> `createToken` also accepts a bare `CreateId`. These narrower overloads exist for internal and
-> legacy use. **New code should pass `DslContext`** — the wider types will be narrowed to
-> `DslContext`-only in a future major version.
+```ts
+// Inline handler: $$link(url | display text)$$
+link: {
+    inline: (tokens, ctx) => {
+        const args = parsePipeArgs(tokens, ctx);
+        return {type: "link", url: args.text(0), value: args.materializedTailTokens(1)};
+    },
+},
 
-**Demo** — manual handler using every utility from this table:
+// Raw handler: $$code(ts | label)% content %end$$
+code: {
+    raw: (arg, content, ctx) => {
+        const [lang, label] = parsePipeTextList(arg ?? "", ctx);
+        return {type: "code", lang, label, value: content};
+    },
+},
+```
+
+#### Advanced — do not reach for these first
+
+> **These are internal building blocks.** `parsePipeArgs` already calls `splitTokensByPipe`,
+> `materializeTextTokens`, and `unescapeInline` internally. New handler code should start with the
+> everyday table above. Only drop to this level when the everyday API genuinely cannot express what
+> you need (e.g. manually unescaping raw content, or building non-text tokens from scratch).
+
+| Export                  | Signature                                                                                 | When you might need it                                          |
+|-------------------------|-------------------------------------------------------------------------------------------|-----------------------------------------------------------------|
+| `parsePipeTextArgs`     | `(text: string, ctx?) => PipeArgs`                                                        | Like `parsePipeArgs` but from a plain string instead of tokens  |
+| `splitTokensByPipe`     | `(tokens: TextToken[], ctx?) => TextToken[][]`                                            | Raw pipe split without the `PipeArgs` helper methods            |
+| `materializeTextTokens` | `(tokens: TextToken[], ctx?) => TextToken[]`                                             | Unescape an entire tree yourself (e.g. block children)          |
+| `unescapeInline`        | `(str: string, ctx?) => string`                                                           | Unescape a single string (e.g. raw content)                     |
+| `createToken`           | `(draft: TokenDraft, position?: SourceSpan, ctx?) => TextToken`                           | Build a non-text token from a `TokenDraft`                      |
+| `readEscapedSequence`   | `(text: string, i: number, ctx?) => [string \| null, number]`                             | Character-level escape scanner — almost never needed in handlers |
+
+> `unescapeInline`, `readEscapedSequence`, and `createToken` also accept narrower types
+> (`SyntaxConfig` / `CreateId`) for internal use. **New code should pass `DslContext`.**
+
+<details>
+<summary><strong>Advanced demo</strong> — most handlers do not need to go this far</summary>
+
+If your handler has a raw or block form that needs manual escape handling or custom token
+construction, here is what that looks like. Compare with the everyday examples above — if
+your handler looks like the everyday ones, **stay there**.
 
 ```ts
 import {
-    createParser,
-    parsePipeArgs,          // split inline tokens by pipe → PipeArgs
-    parsePipeTextArgs,      // split plain string by pipe → PipeArgs
-    parsePipeTextList,      // plain string → trimmed string[]
-    splitTokensByPipe,      // raw token splitter (no helper methods)
-    extractText,            // flatten token tree → single string
-    materializeTextTokens,  // recursively unescape text leaves
-    unescapeInline,         // unescape a single string
-    readEscapedSequence,    // read one escape at position i
-    createTextToken,        // shortcut: { type: "text", value } + id
-    createToken,            // attach id (+ optional position) to any TokenDraft
+    parsePipeTextList, createTextToken,   // everyday
+    materializeTextTokens, unescapeInline, createToken,  // advanced
 } from "yume-dsl-rich-text";
 
 const handlers = {
-    // A single handler that demonstrates every utility
-    demo: {
-        // ── inline: $$demo(title | body with $$bold(nested)$$)$$ ──
-        inline: (tokens, ctx) => {
-            const args = parsePipeArgs(tokens, ctx);         // ← split by pipe, get PipeArgs
-            const title = args.text(0, "Untitled");          //    .text() → unescape + trim
-            const bodyTokens = args.materializedTailTokens(1); // .materializedTailTokens() → materializeTextTokens
-
-            const plain = extractText(bodyTokens);           // ← flatten to string (no unescape)
-
-            return {type: "demo", title, plain, value: bodyTokens};
-        },
-
-        // ── raw: $$demo(lang | label)% raw content %end$$ ──
+    card: {
+        // raw: manual unescape because raw content is a plain string, not tokens
         raw: (arg, content, ctx) => {
-            const args = parsePipeTextArgs(arg ?? "", ctx);  // ← split arg string by pipe
-            const labels = parsePipeTextList(arg ?? "", ctx);// ← even simpler: string[]
-
-            const unescaped = unescapeInline(content, ctx);  // ← manually unescape raw content
-
-            return {
-                type: "demo",
-                lang: args.text(0, "text"),
-                labels,
-                value: unescaped,
-            };
+            const [lang, label] = parsePipeTextList(arg ?? "", ctx);
+            return {type: "card", lang, label, value: unescapeInline(content, ctx)};
         },
 
-        // ── block: $$demo(heading)* children *end$$ ──
+        // block: manual materialize + custom meta token
         block: (arg, content, ctx) => {
-            const parts = splitTokensByPipe(content, ctx);   // ← raw split, no helper methods
-            const materialized = materializeTextTokens(content, ctx); // ← unescape all leaves
-
-            // readEscapedSequence — check if a position is an escape
-            const sample = arg ?? "";
-            const [escaped, next] = readEscapedSequence(sample, 0, ctx); // → [char | null, nextIndex]
-
-            // createTextToken / createToken — build tokens manually
-            const extra = createTextToken("(appended)", ctx);            // { type:"text", value, id }
-            const custom = createToken(                                  // any TokenDraft → TextToken
-                {type: "demo-meta", value: escaped ?? sample},
-                undefined, ctx,
-            );
-
-            return {
-                type: "demo",
-                sectionCount: parts.length,
-                value: [...materialized, extra, custom],
-            };
+            const heading = createTextToken(arg ?? "Note", ctx);
+            const body = materializeTextTokens(content, ctx);
+            const meta = createToken({type: "card-meta", value: String(content.length)}, undefined, ctx);
+            return {type: "card", value: [heading, ...body, meta]};
         },
     },
 };
 ```
+</details>
 
 ### Token Traversal
 

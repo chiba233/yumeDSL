@@ -84,9 +84,9 @@ Shiki 代码高亮 · 合法标签 · 故意写错的标签 · 错误报告
     - [强类型](#强类型)
 - [稳定 Token ID](#稳定-token-id)
 - [编写标签处理器（进阶）](#编写标签处理器进阶)
+    - [PipeArgs / parsePipeTextList](#pipeargs--parsepipetextlist)
 - [导出一览](#导出一览)
     - [DslContext](#dslcontext)
-    - [PipeArgs / parsePipeTextList](#pipeargs--parsepipetextlist)
 - [源码位置追踪](#源码位置追踪)
 - [错误处理](#错误处理)
 - [优雅降级](#优雅降级)
@@ -420,7 +420,8 @@ interface StructuralParseOptions extends ParserBaseOptions {
 
 省略 `handlers` 时，所有合法标签和所有形态均被接受。
 
-> **已弃用：** 在 `withSyntax` / `withTagNameConfig` 包裹中调用 `parseStructural` 时，ambient 状态仍会被读取，但该路径已弃用并会触发 `console.warn`。请改用 `options.syntax` / `options.tagName` 显式传入配置。
+> **已弃用：** 在 `withSyntax` / `withTagNameConfig` 包裹中调用 `parseStructural` 时，ambient 状态仍会被读取，但该路径已弃用并会触发
+`console.warn`。请改用 `options.syntax` / `options.tagName` 显式传入配置。
 
 **`StructuralNode` 变体：**
 
@@ -1144,99 +1145,91 @@ const dsl = createParser({
 
 ### 处理器工具函数
 
-编写自定义 `TagHandler` 时使用的底层工具。
-如果你只使用上面的辅助函数，则不需要这些。
+`createPipeHandlers` 和简单 helper 只覆盖高频模式，不试图覆盖全部 handler 逻辑。
+当它们不够时，应直接手写 handler，配合下方的[处理器工具函数](#常用覆盖-90-的自定义-handler)。
+大多数 handler 只需要第一张表。
+始终透传解析器传给 handler 的 `ctx`——详见 [DslContext](#dslcontext)。
 
-`ctx?` 参数为向后兼容而保留可选。新代码应将其视为实际必填——传入 handler 回调收到的 `DslContext`，
-或自行构造一个。详见下方 [DslContext](#dslcontext)。
+#### 常用——覆盖 90% 的自定义 handler
 
-| 导出                      | 签名                                                                                        | 说明                                         |
-|-------------------------|-------------------------------------------------------------------------------------------|--------------------------------------------|
-| `parsePipeArgs`         | `(tokens: TextToken[], ctx?: DslContext) => PipeArgs`                                     | 按管道分割 token 并访问解析后的部分                      |
-| `parsePipeTextArgs`     | `(text: string, ctx?: DslContext) => PipeArgs`                                            | 同上，但输入为纯文本字符串                              |
-| `parsePipeTextList`     | `(text: string, ctx?: DslContext) => string[]`                                            | 将管道分隔字符串直接拆分为 trim 后的 `string[]`           |
-| `splitTokensByPipe`     | `(tokens: TextToken[], ctx?: DslContext) => TextToken[][]`                                | 按 pipe 分割 token 的底层工具，不含辅助方法               |
-| `extractText`           | `(tokens?: TextToken[]) => string`                                                        | 将 token 树展平为单个字符串                          |
-| `materializeTextTokens` | `(tokens: TextToken[], ctx?: DslContext) => TextToken[]`                                  | 递归反转义 token 树中的文本 token                    |
-| `unescapeInline`        | `(str: string, ctx?: DslContext \| SyntaxConfig) => string`                               | 反转义单个字符串中的 DSL 转义序列 \*                     |
-| `readEscapedSequence`   | `(text: string, i: number, ctx?: DslContext \| SyntaxConfig) => [string \| null, number]` | 读取位置 `i` 处的一个转义序列 \*                       |
-| `createTextToken`       | `(value: string, ctx?: DslContext) => TextToken`                                          | 创建带 `id` 的 `{ type: "text", value }` token |
-| `createToken`           | `(draft: TokenDraft, position?: SourceSpan, ctx?: DslContext \| CreateId) => TextToken`   | 为 `TokenDraft` 添加 `id`（和可选的 `position`） \* |
+| 场景                         | 用这个                                         |
+|----------------------------|---------------------------------------------|
+| inline token 按管道分割，读各段     | `parsePipeArgs(tokens, ctx)` → `PipeArgs`   |
+| raw/block 的 `arg` 字符串按管道分割 | `parsePipeTextList(text, ctx)` → `string[]` |
+| 取 token 树的纯文本              | `extractText(tokens)` → `string`            |
+| 在 handler 里建一个文本叶节点        | `createTextToken(value, ctx)` → `TextToken` |
 
-> \* `unescapeInline` 和 `readEscapedSequence` 也接受裸 `SyntaxConfig`；`createToken` 也接受裸 `CreateId`。
-> 这些较窄的重载为内部和遗留用法保留。**新代码应传 `DslContext`** — 未来 major 版本会将宽类型收窄为仅 `DslContext`。
+```ts
+// Inline handler: $$link(url | display text)$$
+link: {
+    inline: (tokens, ctx) => {
+        const args = parsePipeArgs(tokens, ctx);
+        return {type: "link", url: args.text(0), value: args.materializedTailTokens(1)};
+    },
+}
+,
 
-**示例** — 一个手写 handler 演示表中每个工具函数：
+// Raw handler: $$code(ts | label)% content %end$$
+code: {
+    raw: (arg, content, ctx) => {
+        const [lang, label] = parsePipeTextList(arg ?? "", ctx);
+        return {type: "code", lang, label, value: content};
+    },
+}
+,
+```
+
+#### 进阶——先确认常用工具确实不够再往下看
+
+> **这些是内部构建块。** `parsePipeArgs` 内部已经调用了 `splitTokensByPipe`、
+> `materializeTextTokens` 和 `unescapeInline`。新 handler 代码应从上面的常用表开始。
+> 只在常用 API 确实无法表达你的需求时（如手动反转义 raw content、或从零构建非文本 token）
+> 才降到这一层。
+
+| 导出                      | 签名                                                              | 什么时候需要                              |
+|-------------------------|-----------------------------------------------------------------|-------------------------------------|
+| `parsePipeTextArgs`     | `(text: string, ctx?) => PipeArgs`                              | 类似 `parsePipeArgs`，但输入是纯字符串而非 token |
+| `splitTokensByPipe`     | `(tokens: TextToken[], ctx?) => TextToken[][]`                  | 只要原始分割结果，不需要 `PipeArgs` 辅助方法        |
+| `materializeTextTokens` | `(tokens: TextToken[], ctx?) => TextToken[]`                    | 自己对整棵树做反转义（如 block children）        |
+| `unescapeInline`        | `(str: string, ctx?) => string`                                 | 反转义单个字符串（如 raw content）             |
+| `createToken`           | `(draft: TokenDraft, position?: SourceSpan, ctx?) => TextToken` | 从 `TokenDraft` 构建非文本 token          |
+| `readEscapedSequence`   | `(text: string, i: number, ctx?) => [string \| null, number]`   | 字符级转义扫描——handler 里几乎用不到             |
+
+> `unescapeInline`、`readEscapedSequence` 和 `createToken` 也接受更窄的类型
+> （`SyntaxConfig` / `CreateId`），仅供内部使用。**新代码应传 `DslContext`。**
+
+<details>
+<summary><strong>进阶示例</strong>——大多数 handler 不需要走到这步</summary>
+
+如果你的 handler 有 raw 或 block 形态，需要手动处理转义或自建 token，
+下面是具体写法。和上面的常用示例对比——如果你的 handler 长得像常用的那种，
+**留在常用层就好**。
 
 ```ts
 import {
-    createParser,
-    parsePipeArgs,          // 按 pipe 分割 inline tokens → PipeArgs
-    parsePipeTextArgs,      // 按 pipe 分割纯字符串 → PipeArgs
-    parsePipeTextList,      // 纯字符串 → trim 后的 string[]
-    splitTokensByPipe,      // 底层 token 分割（无辅助方法）
-    extractText,            // 将 token 树展平为单个字符串
-    materializeTextTokens,  // 递归反转义文本叶子节点
-    unescapeInline,         // 反转义单个字符串
-    readEscapedSequence,    // 读取位置 i 处的一个转义序列
-    createTextToken,        // 快捷方式：{ type: "text", value } + id
-    createToken,            // 为任意 TokenDraft 附加 id（+ 可选 position）
+    parsePipeTextList, createTextToken,   // 常用
+    materializeTextTokens, unescapeInline, createToken,  // 进阶
 } from "yume-dsl-rich-text";
 
 const handlers = {
-    // 一个 handler 演示全部工具函数
-    demo: {
-        // ── inline: $$demo(title | body with $$bold(nested)$$)$$ ──
-        inline: (tokens, ctx) => {
-            const args = parsePipeArgs(tokens, ctx);         // ← 按 pipe 分割，得到 PipeArgs
-            const title = args.text(0, "Untitled");          //    .text() → unescape + trim
-            const bodyTokens = args.materializedTailTokens(1); // .materializedTailTokens() → materializeTextTokens
-
-            const plain = extractText(bodyTokens);           // ← 展平为字符串（不做 unescape）
-
-            return {type: "demo", title, plain, value: bodyTokens};
-        },
-
-        // ── raw: $$demo(lang | label)% raw content %end$$ ──
+    card: {
+        // raw：手动反转义，因为 raw content 是纯字符串而非 token
         raw: (arg, content, ctx) => {
-            const args = parsePipeTextArgs(arg ?? "", ctx);  // ← 按 pipe 分割 arg 字符串
-            const labels = parsePipeTextList(arg ?? "", ctx);// ← 更简洁：直接得到 string[]
-
-            const unescaped = unescapeInline(content, ctx);  // ← 手动反转义 raw 内容
-
-            return {
-                type: "demo",
-                lang: args.text(0, "text"),
-                labels,
-                value: unescaped,
-            };
+            const [lang, label] = parsePipeTextList(arg ?? "", ctx);
+            return {type: "card", lang, label, value: unescapeInline(content, ctx)};
         },
 
-        // ── block: $$demo(heading)* children *end$$ ──
+        // block：手动 materialize + 自建 meta token
         block: (arg, content, ctx) => {
-            const parts = splitTokensByPipe(content, ctx);   // ← 底层分割，无辅助方法
-            const materialized = materializeTextTokens(content, ctx); // ← 反转义所有叶子
-
-            // readEscapedSequence — 检查某个位置是否是转义序列
-            const sample = arg ?? "";
-            const [escaped, next] = readEscapedSequence(sample, 0, ctx); // → [char | null, nextIndex]
-
-            // createTextToken / createToken — 手动构建 token
-            const extra = createTextToken("(appended)", ctx);            // { type:"text", value, id }
-            const custom = createToken(                                  // 任意 TokenDraft → TextToken
-                {type: "demo-meta", value: escaped ?? sample},
-                undefined, ctx,
-            );
-
-            return {
-                type: "demo",
-                sectionCount: parts.length,
-                value: [...materialized, extra, custom],
-            };
+            const heading = createTextToken(arg ?? "Note", ctx);
+            const body = materializeTextTokens(content, ctx);
+            const meta = createToken({type: "card-meta", value: String(content.length)}, undefined, ctx);
+            return {type: "card", value: [heading, ...body, meta]};
         },
     },
 };
 ```
+</details>
 
 ### Token 遍历
 
@@ -1260,8 +1253,8 @@ walkTokens(tokens, (token) => types.add(token.type));
 
 // 按类型分发
 walkTokens(tokens, {
-  bold: (token, ctx) => console.log(`bold at depth ${ctx.depth}`),
-  link: (token) => urls.push(token.href as string),
+    bold: (token, ctx) => console.log(`bold at depth ${ctx.depth}`),
+    link: (token) => urls.push(token.href as string),
 });
 ```
 
