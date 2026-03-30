@@ -40,7 +40,7 @@ CMS & blogs, documentation pipelines, localization workflows (translators edit t
 Shiki code highlighting · valid tags · intentionally malformed markup · error reporting
 
 > **Version note:** if a tag supports both inline and block/raw forms, use `1.0.7+`.
-> `walkTokens` / `mapTokens` and the `createParser` partial-override fix require `1.0.11+`.
+> `createParser` partial-override fix require `1.0.11+`.
 
 ## Ecosystem
 
