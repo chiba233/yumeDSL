@@ -2,6 +2,14 @@
 
 # 更新日志
 
+### 1.0.12
+
+- 新增结构打印 API：
+  - `printStructural(nodes, options?)` — 将 `StructuralNode[]` 树序列化回 DSL 源码文本
+  - `PrintOptions` 类型 — 接受 `syntax` 覆盖，用于自定义语法的往返序列化
+  - 支持往返序列化：当使用相同的 syntax 配置时，
+    `printStructural(parseStructural(input)) === input` 对良好输入成立
+
 ### 1.0.11
 
 - 新增 token 遍历工具：

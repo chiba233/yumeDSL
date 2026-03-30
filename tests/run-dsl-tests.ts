@@ -26,3 +26,6 @@ await import("./walk.test.ts");
 
 console.log("=== Type Check ===");
 await import("./typecheck.test.ts");
+
+console.log("=== Print / Formatter ===");
+await import("./print.test.ts");

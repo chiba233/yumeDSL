@@ -70,6 +70,7 @@ Shiki 代码高亮 · 合法标签 · 故意写错的标签 · 错误报告
     - [createParser](#createparserdefaults--推荐入口)
     - [parseRichText / stripRichText](#parserichtext--striprichtext)
     - [parseStructural](#parsestructural--结构化解析)
+    - [printStructural](#printstructural--结构打印)
 - [自定义语法](#自定义语法)
     - [默认语法](#默认语法)
     - [createEasySyntax](#createeasysyntax推荐)
@@ -450,6 +451,44 @@ interface StructuralParseOptions extends ParserBaseOptions {
 | 输出类型     | `TextToken[]`                                    | `StructuralNode[]`                                   |
 
 **怎么选？** 目标是*渲染内容*，用 `parseRichText`；目标是*分析源码结构*，用 `parseStructural`。
+
+### `printStructural` — 结构打印
+
+`printStructural` 是 `parseStructural` 的逆操作——将 `StructuralNode[]` 树序列化回 DSL 源码文本。
+
+```ts
+import {parseStructural, printStructural} from "yume-dsl-rich-text";
+
+const input = "Hello $$bold(world)$$!";
+const tree = parseStructural(input);
+printStructural(tree); // "Hello $$bold(world)$$!"
+```
+
+```ts
+function printStructural(nodes: StructuralNode[], options?: PrintOptions): string
+```
+
+| 参数               | 类型                     | 说明                                                    |
+|------------------|------------------------|-------------------------------------------------------|
+| `nodes`          | `StructuralNode[]`     | 要序列化的结构树                                              |
+| `options.syntax` | `Partial<SyntaxInput>` | 覆盖语法 token——必须与 `parseStructural` 使用的 syntax 一致 |
+
+也可以编程式构建树后序列化：
+
+```ts
+import type {StructuralNode} from "yume-dsl-rich-text";
+import {printStructural} from "yume-dsl-rich-text";
+
+const tree: StructuralNode[] = [
+    {type: "text", value: "Hello "},
+    {type: "inline", tag: "bold", children: [{type: "text", value: "world"}]},
+];
+
+printStructural(tree); // "Hello $$bold(world)$$"
+```
+
+当结构树保留了完整的原始语法信息、且 parse 与 print 使用相同的 syntax 配置时，
+可实现良好输入的往返序列化。
 
 ---
 
@@ -1115,6 +1154,7 @@ const dsl = createParser({
 | `stripRichText`   | `(text: string, options?: ParseOptions) => string`                     | 解析后展平为纯文本           |
 | `createParser`    | `(defaults: ParseOptions) => Parser`                                   | 创建预填选项的可复用解析器       |
 | `parseStructural` | `(text: string, options?: StructuralParseOptions) => StructuralNode[]` | 解析为保留标签形态的结构树       |
+| `printStructural` | `(nodes: StructuralNode[], options?: PrintOptions) => string`          | 将结构树序列化回 DSL 源码      |
 
 ### 配置
 

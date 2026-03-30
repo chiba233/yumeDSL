@@ -2,6 +2,14 @@
 
 # Changelog
 
+### 1.0.12
+
+- New structural print API:
+  - `printStructural(nodes, options?)` — serialize a `StructuralNode[]` tree back to DSL source text
+  - `PrintOptions` type — accepts `syntax` override for custom syntax round-trip
+  - Supports round-trip serialization: `printStructural(parseStructural(input)) === input` for well-formed inputs
+    when the same syntax configuration is used
+
 ### 1.0.11
 
 - New token traversal utilities:

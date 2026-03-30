@@ -75,6 +75,7 @@ Shiki code highlighting · valid tags · intentionally malformed markup · error
     - [createParser](#createparserdefaults--recommended-entry-point)
     - [parseRichText / stripRichText](#parserichtext--striprichtext)
     - [parseStructural](#parsestructural--structural-parse)
+    - [printStructural](#printstructural--structural-print)
 - [Custom Syntax](#custom-syntax)
     - [Default Syntax](#default-syntax)
     - [createEasySyntax](#createeasysyntax-recommended)
@@ -467,6 +468,44 @@ Differences from `parseRichText` (features, not bugs):
 
 **Which one do I use?** If your goal is *rendering content*, use `parseRichText`.
 If your goal is *analyzing source structure*, use `parseStructural`.
+
+### `printStructural` — structural print
+
+`printStructural` is the inverse of `parseStructural` — it serializes a `StructuralNode[]` tree back to DSL source text.
+
+```ts
+import {parseStructural, printStructural} from "yume-dsl-rich-text";
+
+const input = "Hello $$bold(world)$$!";
+const tree = parseStructural(input);
+printStructural(tree); // "Hello $$bold(world)$$!"
+```
+
+```ts
+function printStructural(nodes: StructuralNode[], options?: PrintOptions): string
+```
+
+| Param            | Type                   | Description                                                               |
+|------------------|------------------------|---------------------------------------------------------------------------|
+| `nodes`          | `StructuralNode[]`     | The structural tree to serialize                                          |
+| `options.syntax` | `Partial<SyntaxInput>` | Override syntax tokens — must match the syntax used during `parseStructural` |
+
+You can also build trees programmatically:
+
+```ts
+import type {StructuralNode} from "yume-dsl-rich-text";
+import {printStructural} from "yume-dsl-rich-text";
+
+const tree: StructuralNode[] = [
+    {type: "text", value: "Hello "},
+    {type: "inline", tag: "bold", children: [{type: "text", value: "world"}]},
+];
+
+printStructural(tree); // "Hello $$bold(world)$$"
+```
+
+When the structural tree preserves the original syntax-relevant information and the same syntax
+configuration is used for both parse and print, round-trip serialization of well-formed inputs is supported.
 
 ---
 
@@ -1153,6 +1192,7 @@ const tokens = dsl.parse(input);
 | `stripRichText`   | `(text: string, options?: ParseOptions) => string`                     | Parse and flatten to plain text                  |
 | `createParser`    | `(defaults: ParseOptions) => Parser`                                   | Create a reusable parser with pre-filled options |
 | `parseStructural` | `(text: string, options?: StructuralParseOptions) => StructuralNode[]` | Parse into a form-preserving structural tree     |
+| `printStructural` | `(nodes: StructuralNode[], options?: PrintOptions) => string`          | Serialize a structural tree back to DSL source   |
 
 ### Configuration
 

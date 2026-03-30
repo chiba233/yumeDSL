@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createEasyStableId, createParser } from "../src/index.ts";
+import type { TokenDraft } from "../src/index.ts";
 import { testHandlers } from "./handlers.ts";
 import type { GoldenCase } from "./testHarness.ts";
 import { runGoldenCases } from "./testHarness.ts";
@@ -60,7 +61,7 @@ const cases: GoldenCase[] = [
     name: "[StableId/Fingerprint] 自定义 fingerprint -> 可覆盖默认 type+value 策略",
     run() {
       const factoryOptions = {
-        fingerprint: (token) => {
+        fingerprint: (token: TokenDraft) => {
           const title = typeof token.title === "string" ? token.title : "";
           return `${token.type}:${title}`;
         },

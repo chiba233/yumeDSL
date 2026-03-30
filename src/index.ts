@@ -5,6 +5,10 @@ export type { Parser } from "./parse.js";
 // ── Structural parse ──
 export { parseStructural } from "./structural.js";
 
+// ── Structural print ──
+export { printStructural } from "./print.js";
+export type { PrintOptions } from "./print.js";
+
 // ── Configuration ──
 export { DEFAULT_SYNTAX, createEasySyntax, createSyntax } from "./syntax.js";
 export { DEFAULT_TAG_NAME, createTagNameConfig } from "./chars.js";
