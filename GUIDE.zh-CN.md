@@ -38,17 +38,19 @@ Shiki 代码高亮 · 合法标签 · 故意写错的标签 · 错误报告
 
 ## 生态
 
-| 包                                                                                  | 角色                            |
-|------------------------------------------------------------------------------------|-------------------------------|
-| **`yume-dsl-rich-text`**                                                           | 解析器核心 — 文本到 token 树（本包）       |
-| [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker)       | 解释器 — token 树到输出节点            |
-| [`yume-dsl-shiki-highlight`](https://github.com/chiba233/yume-dsl-shiki-highlight) | 语法高亮 — 彩色 token 或 TextMate 语法 |
+| 包                                                                                  | 角色                                   |
+|------------------------------------------------------------------------------------|--------------------------------------|
+| **`yume-dsl-rich-text`**                                                           | 解析器核心 — 文本到 token 树（本包）              |
+| [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker)       | 解释器 — token 树到输出节点                   |
+| [`yume-dsl-shiki-highlight`](https://github.com/chiba233/yume-dsl-shiki-highlight) | 语法高亮 — 彩色 token 或 TextMate 语法        |
+| [`yume-dsl-markdown-it`](https://github.com/chiba233/yume-dsl-markdown-it)         | markdown-it 插件 — Markdown 中渲染 DSL 标签 |
 
 **推荐组合方式：**
 
 - **只需把 DSL 解析成 token** → `yume-dsl-rich-text`
 - **把 token 树解释为任意输出节点** → 再配合 `yume-dsl-token-walker`
 - **源码级高亮或 TextMate 语法支持** → 再配合 `yume-dsl-shiki-highlight`
+- **在 Markdown 中渲染 DSL（markdown-it）** → 再配合 `yume-dsl-markdown-it`
 
 ---
 
@@ -487,8 +489,8 @@ Inline:   $$tag(content)$$
                ↑       ↑
           tagOpen(  endTag)$$
 
-嵌套括号： $$tag(fn(x) text)$$
-                  ↑ ↑
+嵌套括号：  $$tag(fn(x) text)$$
+                   ↑ ↑
           tagOpen(  tagClose)   ← 深度追踪保持内层括号平衡
 
 带参数：   $$tag(arg | content)$$
@@ -1000,11 +1002,11 @@ function render(token: MyToken): string {
 ### 基本用法
 
 ```ts
-import { parseRichText, createEasyStableId } from "yume-dsl-rich-text";
+import {parseRichText, createEasyStableId} from "yume-dsl-rich-text";
 
 const tokens = parseRichText("Hello $$bold(world)$$", {
-  handlers,
-  createId: createEasyStableId(), // → "s-a1b2c3"（基于内容）
+    handlers,
+    createId: createEasyStableId(), // → "s-a1b2c3"（基于内容）
 });
 ```
 
@@ -1017,10 +1019,10 @@ const tokens = parseRichText("Hello $$bold(world)$$", {
 ```ts
 // 包含处理器附加的字段（从 unknown 收窄）
 createEasyStableId({
-  fingerprint: (t) => {
-    const lang = typeof t.lang === "string" ? t.lang : "";
-    return `${t.type}:${lang}:${typeof t.value === "string" ? t.value : ""}`;
-  },
+    fingerprint: (t) => {
+        const lang = typeof t.lang === "string" ? t.lang : "";
+        return `${t.type}:${lang}:${typeof t.value === "string" ? t.value : ""}`;
+    },
 })
 ```
 
@@ -1028,10 +1030,10 @@ createEasyStableId({
 
 ```ts
 interface EasyStableIdOptions {
-  /** 生成 ID 的前缀。默认："s"。 */
-  prefix?: string;
-  /** 自定义指纹 — 控制哪些信息进入哈希。 */
-  fingerprint?: (token: TokenDraft) => string;
+    /** 生成 ID 的前缀。默认："s"。 */
+    prefix?: string;
+    /** 自定义指纹 — 控制哪些信息进入哈希。 */
+    fingerprint?: (token: TokenDraft) => string;
 }
 ```
 
@@ -1042,8 +1044,8 @@ interface EasyStableIdOptions {
 ```ts
 const stableId = createEasyStableId();
 const tokens = parseRichText("$$bold(hi)$$ and $$bold(hi)$$", {
-  handlers,
-  createId: stableId,
+    handlers,
+    createId: stableId,
 });
 // tokens[0].id → "s-x1y2z3"
 // tokens[2].id → "s-x1y2z3-1"   ← 内容相同，自动加后缀
@@ -1056,12 +1058,12 @@ const tokens = parseRichText("$$bold(hi)$$ and $$bold(hi)$$", {
 
 ```ts
 // ① 每次 parse 独立（推荐）——每次解析拿到独立的 ID
-const dsl = createParser({ handlers });
-dsl.parse(text, { createId: createEasyStableId() });
+const dsl = createParser({handlers});
+dsl.parse(text, {createId: createEasyStableId()});
 
 // ② 共享作用域——计数器跨 parse 延续
-const stableId = createEasyStableId({ prefix: "doc" });
-const dsl2 = createParser({ handlers, createId: stableId });
+const stableId = createEasyStableId({prefix: "doc"});
+const dsl2 = createParser({handlers, createId: stableId});
 dsl2.parse(text1); // 计数器从 0 开始
 dsl2.parse(text2); // 计数器继续
 ```

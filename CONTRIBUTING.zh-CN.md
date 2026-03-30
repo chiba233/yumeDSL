@@ -6,11 +6,12 @@
 
 ## 生态
 
-| 包名                                                                                 | 说明                            |
-|------------------------------------------------------------------------------------|-------------------------------|
-| **`yume-dsl-rich-text`**                                                           | 解析器核心 — 文本到 token 树（本仓库）      |
-| [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker)       | 解释器 — token 树到输出节点            |
-| [`yume-dsl-shiki-highlight`](https://github.com/chiba233/yume-dsl-shiki-highlight) | 语法高亮 — 彩色 token 或 TextMate 语法 |
+| 包名                                                                                 | 说明                                   |
+|------------------------------------------------------------------------------------|--------------------------------------|
+| **`yume-dsl-rich-text`**                                                           | 解析器核心 — 文本到 token 树（本仓库）             |
+| [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker)       | 解释器 — token 树到输出节点                   |
+| [`yume-dsl-shiki-highlight`](https://github.com/chiba233/yume-dsl-shiki-highlight) | 语法高亮 — 彩色 token 或 TextMate 语法        |
+| [`yume-dsl-markdown-it`](https://github.com/chiba233/yume-dsl-markdown-it)         | markdown-it 插件 — Markdown 中渲染 DSL 标签 |
 
 ## 环境要求
 

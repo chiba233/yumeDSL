@@ -11,6 +11,7 @@ Thanks for your interest in contributing! This guide covers how to set up the pr
 | **`yume-dsl-rich-text`**                                                           | Parser core — text to token tree (this repo)     |
 | [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker)       | Interpreter — token tree to output nodes         |
 | [`yume-dsl-shiki-highlight`](https://github.com/chiba233/yume-dsl-shiki-highlight) | Syntax highlighting — tokens or TextMate grammar |
+| [`yume-dsl-markdown-it`](https://github.com/chiba233/yume-dsl-markdown-it)         | markdown-it plugin — DSL tags inside Markdown    |
 
 ## Prerequisites
 

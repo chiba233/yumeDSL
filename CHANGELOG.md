@@ -2,6 +2,10 @@
 
 # Changelog
 
+### 1.0.10
+
+- Update markdown
+
 ### 1.0.9
 
 - New public export: `createEasyStableId(options?)` — parse-session scoped, stateful `CreateId`

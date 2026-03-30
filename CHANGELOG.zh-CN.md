@@ -2,6 +2,10 @@
 
 # 更新日志
 
+### 1.0.10
+
+- 更新文档
+
 ### 1.0.9
 
 - 新增公开导出：`createEasyStableId(options?)` — 解析会话级有状态 `CreateId` 生成器，
