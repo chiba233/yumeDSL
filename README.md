@@ -507,6 +507,10 @@ printStructural(tree); // "Hello $$bold(world)$$"
 When the structural tree preserves the original syntax-relevant information and the same syntax
 configuration is used for both parse and print, round-trip serialization of well-formed inputs is supported.
 
+> For searching, locating, and querying structural trees (`findFirst`, `findAll`, `nodeAtOffset`,
+> `enclosingNode`), see
+> [`yume-dsl-token-walker` — Structural Query](https://github.com/chiba233/yume-dsl-token-walker?tab=readme-ov-file#structural-query).
+
 ---
 
 ## Custom Syntax

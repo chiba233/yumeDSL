@@ -468,9 +468,9 @@ printStructural(tree); // "Hello $$bold(world)$$!"
 function printStructural(nodes: StructuralNode[], options?: PrintOptions): string
 ```
 
-| 参数               | 类型                     | 说明                                                    |
-|------------------|------------------------|-------------------------------------------------------|
-| `nodes`          | `StructuralNode[]`     | 要序列化的结构树                                              |
+| 参数               | 类型                     | 说明                                              |
+|------------------|------------------------|-------------------------------------------------|
+| `nodes`          | `StructuralNode[]`     | 要序列化的结构树                                        |
 | `options.syntax` | `Partial<SyntaxInput>` | 覆盖语法 token——必须与 `parseStructural` 使用的 syntax 一致 |
 
 也可以编程式构建树后序列化：
@@ -489,6 +489,10 @@ printStructural(tree); // "Hello $$bold(world)$$"
 
 当结构树保留了完整的原始语法信息、且 parse 与 print 使用相同的 syntax 配置时，
 可实现良好输入的往返序列化。
+
+> 如需搜索、定位和查询结构树（`findFirst`、`findAll`、`nodeAtOffset`、`enclosingNode`），请参阅
+> [
+`yume-dsl-token-walker` — 结构查询](https://github.com/chiba233/yume-dsl-token-walker?tab=readme-ov-file#structural-query)。
 
 ---
 
@@ -1154,7 +1158,7 @@ const dsl = createParser({
 | `stripRichText`   | `(text: string, options?: ParseOptions) => string`                     | 解析后展平为纯文本           |
 | `createParser`    | `(defaults: ParseOptions) => Parser`                                   | 创建预填选项的可复用解析器       |
 | `parseStructural` | `(text: string, options?: StructuralParseOptions) => StructuralNode[]` | 解析为保留标签形态的结构树       |
-| `printStructural` | `(nodes: StructuralNode[], options?: PrintOptions) => string`          | 将结构树序列化回 DSL 源码      |
+| `printStructural` | `(nodes: StructuralNode[], options?: PrintOptions) => string`          | 将结构树序列化回 DSL 源码     |
 
 ### 配置
 
@@ -1269,6 +1273,7 @@ const handlers = {
     },
 };
 ```
+
 </details>
 
 ### Token 遍历
