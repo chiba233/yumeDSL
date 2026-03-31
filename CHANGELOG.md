@@ -2,6 +2,24 @@
 
 # Changelog
 
+### 1.0.13
+
+- Documentation
+  - Add inline Vue 3 and React rendering snippets to README / GUIDE intro — first-time users can see
+    how rendering works before scrolling
+  - Add [Wiki](https://github.com/chiba233/yumeDSL/wiki/) with full API documentation, in-depth
+    handler utility reference, and three step-by-step tutorials:
+    - [Building a Link Tag from Scratch](https://github.com/chiba233/yumeDSL/wiki/en-Tutorial-Link-Tag)
+    - [Game Dialogue Tags](https://github.com/chiba233/yumeDSL/wiki/en-Tutorial-Game-Dialogue)
+    - [Safe UGC Chat](https://github.com/chiba233/yumeDSL/wiki/en-Tutorial-Safe-UGC)
+  - Add [React Rendering](https://github.com/chiba233/yumeDSL/wiki/en-React-Rendering) wiki page —
+    drop-in recursive component, `useMemo` integration, Material UI / Ant Design / syntax-highlighter examples
+  - Move Vue 3 rendering demo from README to
+    [Wiki](https://github.com/chiba233/yumeDSL/wiki/en-Vue-3-Rendering) — README now links to wiki
+  - Remove Table of Contents from README / GUIDE (redundant with wiki navigation)
+  - Add Wiki badge to README / GUIDE header
+  - Add wiki cross-reference links to Handler Utilities, Exports, Error Handling, and Security sections
+
 ### 1.0.12
 
 - New structural print API:

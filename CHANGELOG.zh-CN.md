@@ -2,6 +2,23 @@
 
 # 更新日志
 
+### 1.0.13
+
+- 文档
+  - README / GUIDE 介绍区新增 Vue 3 和 React 渲染代码片段——新用户无需滚动即可看到渲染方式
+  - 新增 [Wiki](https://github.com/chiba233/yumeDSL/wiki/)，包含完整 API 文档、处理器工具函数详解，
+    以及三篇手把手实战教程：
+    - [从零实现 link 标签](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E6%95%99%E7%A8%8B-link-%E6%A0%87%E7%AD%BE)
+    - [游戏对话标签](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E6%95%99%E7%A8%8B-%E6%B8%B8%E6%88%8F%E5%AF%B9%E8%AF%9D)
+    - [安全 UGC 聊天](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E6%95%99%E7%A8%8B-%E5%AE%89%E5%85%A8UGC)
+  - 新增 [React 渲染](https://github.com/chiba233/yumeDSL/wiki/zh-CN-React-%E6%B8%B2%E6%9F%93) wiki 页面——
+    递归组件、`useMemo` 集成、Material UI / Ant Design / 语法高亮示例
+  - Vue 3 渲染 demo 从 README 迁移至
+    [Wiki](https://github.com/chiba233/yumeDSL/wiki/zh-CN-Vue-3-%E6%B8%B2%E6%9F%93)——README 改为链接引导
+  - 删除 README / GUIDE 中的目录（已被 wiki 导航替代）
+  - README / GUIDE 顶部徽章区新增 Wiki 徽章
+  - 处理器工具函数、导出一览、错误处理、安全策略章节新增 wiki 交叉引用链接
+
 ### 1.0.12
 
 - 新增结构打印 API：
