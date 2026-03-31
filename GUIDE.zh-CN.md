@@ -456,14 +456,14 @@ const dsl = createParser({
 
         ...createPipeHandlers({
             link: {
-                inline: (args) => ({
+                inline: (args, ctx) => ({
                     type: "link",
                     url: args.text(0),
                     value: args.materializedTailTokens(1),
                 }),
             },
             code: {
-                raw: (args, content) => ({
+                raw: (args, content, ctx) => ({
                     type: "raw-code",
                     lang: args.text(0, "text"),
                     value: content,
@@ -663,7 +663,7 @@ interface TagHandler {
 
 只实现标签支持的形式即可，不支持的形式会优雅降级。
 
-`ctx` 由解析器保证提供。回调里调了 `parsePipeArgs`、`materializeTextTokens` 等需要 ctx 的工具函数时声明它；不需要时可以省略——TypeScript 允许省略没用到的尾参数。`createPipeHandlers` 的回调同理。在并发环境（如 SSR）下，建议始终声明并转发 `ctx`，以避免依赖模块级环境状态。
+`ctx` 由解析器保证提供。建议在所有回调中都声明 ctx——没有额外开销，兼容未来 ctx 必填的大版本，并避免并发环境（如 SSR）下的模块级状态问题。
 
 ### 示例
 

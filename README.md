@@ -469,14 +469,14 @@ const dsl = createParser({
 
         ...createPipeHandlers({
             link: {
-                inline: (args) => ({
+                inline: (args, ctx) => ({
                     type: "link",
                     url: args.text(0),
                     value: args.materializedTailTokens(1),
                 }),
             },
             code: {
-                raw: (args, content) => ({
+                raw: (args, content, ctx) => ({
                     type: "raw-code",
                     lang: args.text(0, "text"),
                     value: content,
@@ -687,7 +687,7 @@ interface TagHandler {
 
 Implement only the forms your tag supports — unsupported forms degrade gracefully.
 
-`ctx` is guaranteed provided by the parser. Declare it when your callback calls ctx-aware utilities (`parsePipeArgs`, `materializeTextTokens`, etc.); omit it when your callback doesn't need it — TypeScript allows omitting unused trailing parameters. `createPipeHandlers` callbacks follow the same rule. In concurrent environments (e.g., SSR), always declare and forward `ctx` to avoid reliance on module-level ambient state.
+`ctx` is guaranteed provided by the parser. Always declare it in your callbacks — it costs nothing, keeps your code ready for the upcoming required-ctx major version, and avoids ambient-state issues in concurrent environments (e.g., SSR).
 
 ### Example
 
