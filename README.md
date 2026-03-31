@@ -97,6 +97,12 @@ Shiki code highlighting · valid tags · intentionally malformed markup · error
 
 ---
 
+## Quick Navigation
+
+[Install](#install) · [Quick Start](#quick-start) · [DSL Syntax](#dsl-syntax) · [API](#api) · [Custom Syntax](#custom-syntax) · [Handler Helpers](#handler-helpers) · [ParseOptions](#parseoptions) · [Token Structure](#token-structure) · [Stable Token IDs](#stable-token-ids) · [Writing Tag Handlers](#writing-tag-handlers-advanced) · [Exports](#exports) · [Source Position Tracking](#source-position-tracking) · [Error Handling](#error-handling) · [Deprecated API](#deprecated-api) · [Changelog](#changelog)
+
+---
+
 ## Install
 
 ```bash
@@ -814,8 +820,17 @@ const tokens = dsl.parse(input);
 
 ## Exports
 
-See the [Exports wiki page](https://github.com/chiba233/yumeDSL/wiki/en-Exports) for the complete export table
-with signatures, descriptions, and links to detailed documentation for every function and type.
+| Category | Exports |
+|---|---|
+| **Core** | `parseRichText`, `stripRichText`, `createParser`, `parseStructural`, `printStructural` |
+| **Configuration** | `DEFAULT_SYNTAX`, `createEasySyntax`, `createSyntax`, `DEFAULT_TAG_NAME`, `createTagNameConfig`, `createEasyStableId` |
+| **Handler Helpers** | `createPipeHandlers`, `createSimpleInlineHandlers`, `createSimpleBlockHandlers`, `createSimpleRawHandlers`, `declareMultilineTags` |
+| **Handler Utilities** | `parsePipeArgs`, `parsePipeTextArgs`, `parsePipeTextList`, `extractText`, `createTextToken`, `splitTokensByPipe`, `materializeTextTokens`, `unescapeInline`, `readEscapedSequence`, `createToken` |
+| **Token Traversal** | `walkTokens`, `mapTokens` |
+| **Position Tracking** | `buildPositionTracker` |
+| **Types** | `TextToken`, `TokenDraft`, `CreateId`, `DslContext`, `TagHandler`, `TagForm`, `ParseOptions`, `ParserBaseOptions`, `StructuralParseOptions`, `Parser`, `SyntaxInput`, `SyntaxConfig`, `TagNameConfig`, `BlockTagInput`, `MultilineForm`, `ErrorCode`, `ParseError`, `StructuralNode`, `SourcePosition`, `SourceSpan`, `PositionTracker`, `PipeArgs`, `PipeHandlerDefinition`, `EasyStableIdOptions`, `PrintOptions`, `TokenVisitContext`, `WalkVisitor`, `MapVisitor` |
+
+See the [Exports wiki page](https://github.com/chiba233/yumeDSL/wiki/en-Exports) for full signatures and detailed documentation.
 
 ## Source Position Tracking
 
