@@ -469,14 +469,14 @@ const dsl = createParser({
 
         ...createPipeHandlers({
             link: {
-                inline: (args) => ({
+                inline: (args, _ctx) => ({
                     type: "link",
                     url: args.text(0),
                     value: args.materializedTailTokens(1),
                 }),
             },
             code: {
-                raw: (args, content) => ({
+                raw: (args, content, _ctx) => ({
                     type: "raw-code",
                     lang: args.text(0, "text"),
                     value: content,
@@ -617,8 +617,8 @@ accessible as `unknown`. You can read them directly without a cast — just narr
 
 ```ts
 const token = tokens[0];
-if (token.type === "link" && typeof token.href === "string") {
-    console.log(token.href); // works, no cast needed
+if (token.type === "link" && typeof token.url === "string") {
+    console.log(token.url); // works, no cast needed
 }
 ```
 

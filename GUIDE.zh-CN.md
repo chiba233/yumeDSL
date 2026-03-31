@@ -456,14 +456,14 @@ const dsl = createParser({
 
         ...createPipeHandlers({
             link: {
-                inline: (args) => ({
+                inline: (args, _ctx) => ({
                     type: "link",
                     url: args.text(0),
                     value: args.materializedTailTokens(1),
                 }),
             },
             code: {
-                raw: (args, content) => ({
+                raw: (args, content, _ctx) => ({
                     type: "raw-code",
                     lang: args.text(0, "text"),
                     value: content,
@@ -598,8 +598,8 @@ interface TextToken {
 
 ```ts
 const token = tokens[0];
-if (token.type === "link" && typeof token.href === "string") {
-    console.log(token.href); // 可用，无需类型断言
+if (token.type === "link" && typeof token.url === "string") {
+    console.log(token.url); // 可用，无需类型断言
 }
 ```
 
