@@ -687,7 +687,7 @@ interface TagHandler {
 
 Implement only the forms your tag supports — unsupported forms degrade gracefully.
 
-`ctx` is guaranteed provided by the parser. Always declare it in your callbacks — it costs nothing, keeps your code ready for the upcoming required-ctx major version, and avoids ambient-state issues in concurrent environments (e.g., SSR).
+`ctx` in handler callbacks is a context object passed by the parser — you don't need to know what it is, just include it. Always declare it: it costs nothing, keeps your code ready for the upcoming required-ctx major version, and avoids ambient-state issues in concurrent environments (e.g., SSR).
 
 ### Example
 
