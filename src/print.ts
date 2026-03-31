@@ -38,6 +38,11 @@ const printNodes = (nodes: StructuralNode[], s: SyntaxInput): string => {
 /**
  * Serialize a structural parse tree back to DSL source text.
  *
+ * Always prints full tag syntax — no gating or validation is applied.
+ * If the tree contains nodes whose form is not supported by the runtime parser,
+ * they will be printed with full syntax and naturally degrade to plain text
+ * when re-parsed.
+ *
  * When the structural tree preserves the original syntax-relevant information
  * and the same syntax configuration is used, this can be used for round-trip
  * serialization of well-formed inputs.

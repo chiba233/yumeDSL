@@ -327,6 +327,7 @@ dsl.parse(text1);
 dsl.parse(text2);
 dsl.strip(text3);
 dsl.structural(text4);
+dsl.print(tree);
 ```
 
 ```ts
@@ -334,11 +335,18 @@ interface Parser {
     parse: (text: string, overrides?: ParseOptions) => TextToken[];
     strip: (text: string, overrides?: ParseOptions) => string;
     structural: (text: string, overrides?: StructuralParseOptions) => StructuralNode[];
+    print: (nodes: StructuralNode[]) => string;
 }
 ```
 
-`structural` 共享 `defaults` 中的 `handlers`、`allowForms`、`syntax`、`tagName`、`depthLimit`、`trackPositions`——
-语义专属选项（`blockTags`、`onError`、`createId`）被自然排除，因为 `StructuralParseOptions` 不继承它们。
+**方法一览：**
+
+| 方法           | 输入                  | 输出                 | 继承的 defaults 字段                                                          |
+|--------------|---------------------|--------------------|--------------------------------------------------------------------------|
+| `parse`      | DSL 文本 + overrides? | `TextToken[]`      | 全部 `ParseOptions`——`syntax`/`tagName` 的 override 会深合并                    |
+| `strip`      | DSL 文本 + overrides? | `string`           | 同 `parse`                                                                |
+| `structural` | DSL 文本 + overrides? | `StructuralNode[]` | `handlers`、`allowForms`、`syntax`、`tagName`、`depthLimit`、`trackPositions` |
+| `print`      | `StructuralNode[]`  | `string`           | 仅 `syntax`——无损序列化器，不做门控                                                  |
 
 ### `parseRichText` / `stripRichText`
 
@@ -473,6 +481,10 @@ function printStructural(nodes: StructuralNode[], options?: PrintOptions): strin
 | `nodes`          | `StructuralNode[]`     | 要序列化的结构树                                        |
 | `options.syntax` | `Partial<SyntaxInput>` | 覆盖语法 token——必须与 `parseStructural` 使用的 syntax 一致 |
 
+始终打印完整 tag 语法——不做门控或验证。如果树中包含运行时 parser 不支持的形态，
+它们会以完整语法打印，re-parse 时自然退化为纯文本。这是刻意设计：
+printer 是无损序列化器，不是验证器。
+
 也可以编程式构建树后序列化：
 
 ```ts
@@ -487,7 +499,21 @@ const tree: StructuralNode[] = [
 printStructural(tree); // "Hello $$bold(world)$$"
 ```
 
-当结构树保留了完整的原始语法信息、且 parse 与 print 使用相同的 syntax 配置时，
+**`createParser` 集成：** `parser.print(nodes)` 继承闭包中的 `syntax`：
+
+```ts
+import {createParser, createSimpleInlineHandlers} from "yume-dsl-rich-text";
+
+const dsl = createParser({
+    syntax: {tagPrefix: "@@", tagOpen: "[", tagClose: "]", endTag: "]@@"},
+    handlers: createSimpleInlineHandlers(["bold"]),
+});
+
+const tree = dsl.structural("@@bold[hello]@@");
+dsl.print(tree); // "@@bold[hello]@@"——syntax 自动继承
+```
+
+当结构树保留了完整的原始语法信息、且使用相同的 syntax 时，
 可实现良好输入的往返序列化。
 
 > 如需搜索、定位和查询结构树（`findFirst`、`findAll`、`nodeAtOffset`、`enclosingNode`），请参阅

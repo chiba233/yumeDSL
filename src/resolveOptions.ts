@@ -22,13 +22,42 @@ export interface GatingContext {
   allowInline: boolean;
 }
 
+export const filterHandlersByForms = (
+  handlers: Record<string, TagHandler>,
+  forms: ReadonlySet<TagForm>,
+): Record<string, TagHandler> => {
+  const allowInline = forms.has("inline");
+  const allowRaw = forms.has("raw");
+  const allowBlock = forms.has("block");
+
+  const result: Record<string, TagHandler> = {};
+  for (const [name, handler] of Object.entries(handlers)) {
+    const hasInline = !!handler.inline;
+    const hasRaw = !!handler.raw;
+    const hasBlock = !!handler.block;
+    const isPassthrough = !hasInline && !hasRaw && !hasBlock;
+
+    // Passthrough handlers work through the inline code path
+    if (isPassthrough) {
+      if (allowInline) result[name] = handler;
+      continue;
+    }
+
+    const filtered: TagHandler = {};
+    if (allowInline && hasInline) filtered.inline = handler.inline;
+    if (allowRaw && hasRaw) filtered.raw = handler.raw;
+    if (allowBlock && hasBlock) filtered.block = handler.block;
+
+    if (filtered.inline || filtered.raw || filtered.block) {
+      result[name] = filtered;
+    }
+  }
+  return result;
+};
+
 export const buildGatingContext = (
   handlers: Record<string, TagHandler>,
   allowForms: readonly TagForm[] | undefined,
-  filterHandlersByForms: (
-    handlers: Record<string, TagHandler>,
-    forms: ReadonlySet<TagForm>,
-  ) => Record<string, TagHandler>,
 ): GatingContext => {
   const registeredTags = new Set(Object.keys(handlers));
   const filtered = allowForms

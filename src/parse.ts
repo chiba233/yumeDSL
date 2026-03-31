@@ -9,8 +9,6 @@ import type {
   StructuralNode,
   StructuralParseOptions,
   SyntaxConfig,
-  TagForm,
-  TagHandler,
   TagNameConfig,
   TextToken,
 } from "./types.js";
@@ -19,9 +17,10 @@ import { withTagNameConfig } from "./chars.js";
 import { tryConsumeEscape, tryConsumeTagClose, tryConsumeTagStart } from "./consumers.js";
 import { emptyBuffer, appendToBuffer, finalizeUnclosedTags, flushBuffer } from "./context.js";
 import { withCreateId } from "./createToken.js";
+import { printStructural } from "./print.js";
 import { parseStructural } from "./structural.js";
 import { withSyntax } from "./syntax.js";
-import { type PositionTracker } from "./positions.js";
+import { type PositionTracker } from "./types.ts";
 import { buildGatingContext, resolveBaseOptions } from "./resolveOptions.js";
 
 const buildBlockTagLookup = (inputs: readonly BlockTagInput[]): BlockTagLookup => {
@@ -66,38 +65,8 @@ const deriveBlockTags = (handlers: Record<string, unknown>): BlockTagLookup => {
  *
  * Passthrough handlers (empty `{}`) are treated as inline-form tags.
  */
-export const filterHandlersByForms = (
-  handlers: Record<string, TagHandler>,
-  forms: ReadonlySet<TagForm>,
-): Record<string, TagHandler> => {
-  const allowInline = forms.has("inline");
-  const allowRaw = forms.has("raw");
-  const allowBlock = forms.has("block");
-
-  const result: Record<string, TagHandler> = {};
-  for (const [name, handler] of Object.entries(handlers)) {
-    const hasInline = !!handler.inline;
-    const hasRaw = !!handler.raw;
-    const hasBlock = !!handler.block;
-    const isPassthrough = !hasInline && !hasRaw && !hasBlock;
-
-    // Passthrough handlers work through the inline code path
-    if (isPassthrough) {
-      if (allowInline) result[name] = handler;
-      continue;
-    }
-
-    const filtered: TagHandler = {};
-    if (allowInline && hasInline) filtered.inline = handler.inline;
-    if (allowRaw && hasRaw) filtered.raw = handler.raw;
-    if (allowBlock && hasBlock) filtered.block = handler.block;
-
-    if (filtered.inline || filtered.raw || filtered.block) {
-      result[name] = filtered;
-    }
-  }
-  return result;
-};
+// Re-export for backward compatibility and for structural.ts which imports from here.
+export { filterHandlersByForms } from "./resolveOptions.js";
 
 const internalParse = (
   text: string,
@@ -203,7 +172,6 @@ export const parseRichText = (text: string, options: ParseOptions = {}): TextTok
   const { handlers, registeredTags, allowInline } = buildGatingContext(
     options.handlers ?? {},
     options.allowForms,
-    filterHandlersByForms,
   );
   const blockTagSet = options.blockTags
     ? buildBlockTagLookup(options.blockTags)
@@ -243,6 +211,7 @@ export interface Parser {
   parse: (text: string, overrides?: ParseOptions) => TextToken[];
   strip: (text: string, overrides?: ParseOptions) => string;
   structural: (text: string, overrides?: StructuralParseOptions) => StructuralNode[];
+  print: (nodes: StructuralNode[]) => string;
 }
 
 export const createParser = (defaults: ParseOptions): Parser => {
@@ -264,5 +233,7 @@ export const createParser = (defaults: ParseOptions): Parser => {
       stripRichText(text, overrides ? merge(overrides) : defaults),
     structural: (text, overrides) =>
       parseStructural(text, overrides ? merge(overrides) : defaults),
+    print: (nodes) =>
+      printStructural(nodes, { syntax: defaults.syntax }),
   };
 };

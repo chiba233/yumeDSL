@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { parseStructural, printStructural } from "../src/index.ts";
+import { parseStructural, printStructural, createParser } from "../src/index.ts";
 import type { StructuralNode } from "../src/types.ts";
 import type { GoldenCase } from "./testHarness.ts";
 import { runGoldenCases } from "./testHarness.ts";
@@ -163,6 +163,34 @@ const cases: GoldenCase[] = [
         { type: "text", value: "b" },
       ];
       assert.equal(printStructural(tree), "a|b");
+    },
+  },
+
+  {
+    name: "printStructural: unsupported forms print full syntax (no lossy gating)",
+    run: () => {
+      const tree: StructuralNode[] = [
+        {
+          type: "block",
+          tag: "div",
+          args: [],
+          children: [{ type: "text", value: "hello" }],
+        },
+      ];
+      // No gating in printer — full tag syntax always preserved
+      assert.equal(printStructural(tree), "$$div()*hello*end$$");
+    },
+  },
+  {
+    name: "printStructural: createParser.print inherits syntax",
+    run: () => {
+      const dsl = createParser({
+        syntax: { tagPrefix: "@@", tagOpen: "[", tagClose: "]", tagDivider: ";", endTag: "]@@", rawOpen: "]%", blockOpen: "]*", rawClose: "%end@@", blockClose: "*end@@", escapeChar: "~" },
+      });
+      const tree: StructuralNode[] = [
+        { type: "inline", tag: "bold", children: [{ type: "text", value: "ok" }] },
+      ];
+      assert.equal(dsl.print(tree), "@@bold[ok]@@");
     },
   },
 ];

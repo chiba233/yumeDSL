@@ -5,10 +5,12 @@
 ### 1.0.12
 
 - New structural print API:
-  - `printStructural(nodes, options?)` — serialize a `StructuralNode[]` tree back to DSL source text
-  - `PrintOptions` type — accepts `syntax` override for custom syntax round-trip
+  - `printStructural(nodes, options?)` — lossless serializer, always prints full tag syntax
+  - `PrintOptions` accepts `syntax` override for custom syntax round-trip
   - Supports round-trip serialization: `printStructural(parseStructural(input)) === input` for well-formed inputs
-    when the same syntax configuration is used
+    when the same syntax is used
+- `createParser` now returns a `print(nodes)` method that inherits `syntax` from the parser's closure
+- Internal: moved `filterHandlersByForms` from `parse.ts` to `resolveOptions.ts`; re-exported for backward compatibility
 - New structural query helpers:
   - `findFirst(nodes, predicate)` — depth-first pre-order search returning the first matching `StructuralNode`
   - `findAll(nodes, predicate)` — depth-first pre-order search returning all matching `StructuralNode[]`

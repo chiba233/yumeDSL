@@ -5,10 +5,12 @@
 ### 1.0.12
 
 - 新增结构打印 API：
-  - `printStructural(nodes, options?)` — 将 `StructuralNode[]` 树序列化回 DSL 源码文本
-  - `PrintOptions` 类型 — 接受 `syntax` 覆盖，用于自定义语法的往返序列化
-  - 支持往返序列化：当使用相同的 syntax 配置时，
+  - `printStructural(nodes, options?)` — 无损序列化器，始终打印完整 tag 语法
+  - `PrintOptions` 接受 `syntax` 覆盖，用于自定义语法的往返序列化
+  - 支持往返序列化：当使用相同的 syntax 时，
     `printStructural(parseStructural(input)) === input` 对良好输入成立
+- `createParser` 现在返回 `print(nodes)` 方法，自动继承闭包中的 `syntax`
+- 内部：将 `filterHandlersByForms` 从 `parse.ts` 移至 `resolveOptions.ts`；重导出以保持向后兼容
 - 新增结构查询工具：
   - `findFirst(nodes, predicate)` — 前序深度优先搜索，返回第一个匹配的 `StructuralNode`
   - `findAll(nodes, predicate)` — 前序深度优先搜索，返回所有匹配的 `StructuralNode[]`

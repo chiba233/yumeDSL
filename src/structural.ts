@@ -11,7 +11,6 @@ import { warnDeprecated } from "./deprecations.js";
 import { readEscapedSequence } from "./escape.js";
 import { supportsInlineForm } from "./consumers.js";
 import { emptyBuffer } from "./context.js";
-import { filterHandlersByForms } from "./parse.js";
 import {
   readTagStartInfo,
   getTagCloserType,
@@ -21,10 +20,7 @@ import {
   skipTagBoundary,
 } from "./scanner.js";
 import {
-  buildPositionTracker,
-  localOffsetTracker,
   makePosition,
-  offsetTracker as wrapOffsetTracker,
   type PositionTracker,
 } from "./positions.js";
 import { type GatingContext, buildGatingContext, resolveBaseOptions } from "./resolveOptions.js";
@@ -426,7 +422,7 @@ export const parseStructural = (
   });
 
   const gating = options?.handlers
-    ? buildGatingContext(options.handlers, options.allowForms, filterHandlersByForms)
+    ? buildGatingContext(options.handlers, options.allowForms)
     : null;
 
   return parseNodes(text, 0, depthLimit, gating, false, 0, tracker, syntax, tagName);

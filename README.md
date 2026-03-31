@@ -338,6 +338,7 @@ dsl.parse(text1);
 dsl.parse(text2);
 dsl.strip(text3);
 dsl.structural(text4);
+dsl.print(tree);
 ```
 
 ```ts
@@ -345,12 +346,18 @@ interface Parser {
     parse: (text: string, overrides?: ParseOptions) => TextToken[];
     strip: (text: string, overrides?: ParseOptions) => string;
     structural: (text: string, overrides?: StructuralParseOptions) => StructuralNode[];
+    print: (nodes: StructuralNode[]) => string;
 }
 ```
 
-`structural` shares `handlers`, `allowForms`, `syntax`, `tagName`, `depthLimit`, and `trackPositions`
-from `defaults` — semantic-only options (`blockTags`, `onError`, `createId`) are
-naturally excluded because `StructuralParseOptions` does not extend them.
+**Methods:**
+
+| Method       | Input                  | Output              | Inherits from defaults                                                    |
+|--------------|------------------------|---------------------|---------------------------------------------------------------------------|
+| `parse`      | DSL text + overrides?  | `TextToken[]`       | All `ParseOptions` — overrides merge one level deep for `syntax`/`tagName`|
+| `strip`      | DSL text + overrides?  | `string`            | Same as `parse`                                                           |
+| `structural` | DSL text + overrides?  | `StructuralNode[]`  | `handlers`, `allowForms`, `syntax`, `tagName`, `depthLimit`, `trackPositions` |
+| `print`      | `StructuralNode[]`     | `string`            | `syntax` only — lossless serializer, no gating                            |
 
 ### `parseRichText` / `stripRichText`
 
@@ -490,6 +497,11 @@ function printStructural(nodes: StructuralNode[], options?: PrintOptions): strin
 | `nodes`          | `StructuralNode[]`     | The structural tree to serialize                                          |
 | `options.syntax` | `Partial<SyntaxInput>` | Override syntax tokens — must match the syntax used during `parseStructural` |
 
+Always prints full tag syntax — no gating or validation is applied.
+If the tree contains nodes whose form is not supported by the runtime parser, they will be
+printed with full syntax and naturally degrade to plain text when re-parsed. This is intentional:
+the printer is a lossless serializer, not a validator.
+
 You can also build trees programmatically:
 
 ```ts
@@ -504,8 +516,22 @@ const tree: StructuralNode[] = [
 printStructural(tree); // "Hello $$bold(world)$$"
 ```
 
+**`createParser` integration:** `parser.print(nodes)` inherits `syntax` from the parser's closure:
+
+```ts
+import {createParser, createSimpleInlineHandlers} from "yume-dsl-rich-text";
+
+const dsl = createParser({
+    syntax: {tagPrefix: "@@", tagOpen: "[", tagClose: "]", endTag: "]@@"},
+    handlers: createSimpleInlineHandlers(["bold"]),
+});
+
+const tree = dsl.structural("@@bold[hello]@@");
+dsl.print(tree); // "@@bold[hello]@@" — syntax inherited
+```
+
 When the structural tree preserves the original syntax-relevant information and the same syntax
-configuration is used for both parse and print, round-trip serialization of well-formed inputs is supported.
+is used, round-trip serialization of well-formed inputs is supported.
 
 > For searching, locating, and querying structural trees (`findFirst`, `findAll`, `nodeAtOffset`,
 > `enclosingNode`), see
