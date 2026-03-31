@@ -687,7 +687,7 @@ interface TagHandler {
 
 Implement only the forms your tag supports — unsupported forms degrade gracefully.
 
-`ctx` is guaranteed provided by the parser. Declare it when your callback calls ctx-aware utilities (`parsePipeArgs`, `materializeTextTokens`, etc.); omit it when your callback doesn't need it — TypeScript allows omitting unused trailing parameters. `createPipeHandlers` callbacks follow the same rule.
+`ctx` is guaranteed provided by the parser. Declare it when your callback calls ctx-aware utilities (`parsePipeArgs`, `materializeTextTokens`, etc.); omit it when your callback doesn't need it — TypeScript allows omitting unused trailing parameters. `createPipeHandlers` callbacks follow the same rule. In concurrent environments (e.g., SSR), always declare and forward `ctx` to avoid reliance on module-level ambient state.
 
 ### Example
 
