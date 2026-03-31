@@ -22,7 +22,7 @@ you.
 - No regex backtracking — deterministic linear scan, runtime proportional to input length
 - Inline / Raw / Block — three tag forms, fully swappable syntax tokens and tag-name rules;
   built-in [escape sequences](#escape-sequences) let any syntax token appear as literal text
-- Malformed or unknown tags [degrade to plain text](#graceful-degradation) — never throws, never corrupts surrounding
+- Malformed or unknown tags [degrade to plain text](#error-handling) — never throws, never corrupts surrounding
   content
 - Framework-agnostic, DOM-free — runs in browsers, Node, Deno, Bun, game engines, or any JS runtime
 - Content-driven [stable IDs](#stable-token-ids), single-pass [position tracking](#source-position-tracking),
