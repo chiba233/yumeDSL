@@ -1123,6 +1123,144 @@ const cases: Array<{ name: string; run: () => void }> = [
       ]);
     },
   },
+
+  // --- [Inline/BlockTag] inline form normalization via blockTags ---
+  {
+    name: "[Inline/BlockTag] 字符串声明 blockTags -> inline close 后应剥掉尾部换行",
+    run: () => {
+      const tokens = parseRichText("$$bold(hello)$$\nnext", {
+        handlers: helperHandlers,
+        blockTags: declareMultilineTags(["bold"] as const),
+      });
+      assert.deepEqual(normalizeTokens(tokens), [
+        { type: "bold", value: [{ type: "text", value: "hello" }] },
+        { type: "text", value: "next" },
+      ]);
+    },
+  },
+  {
+    name: "[Inline/BlockTag] 对象声明 forms: [inline] -> inline close 后应剥掉尾部换行",
+    run: () => {
+      const tokens = parseRichText("$$bold(center text)$$\nnext line", {
+        handlers: helperHandlers,
+        blockTags: declareMultilineTags([{ tag: "bold", forms: ["inline"] }]),
+      });
+      assert.deepEqual(normalizeTokens(tokens), [
+        { type: "bold", value: [{ type: "text", value: "center text" }] },
+        { type: "text", value: "next line" },
+      ]);
+    },
+  },
+  {
+    name: "[Inline/BlockTag] 未声明 blockTags 的标签 -> inline close 后不应剥掉换行",
+    run: () => {
+      const tokens = parseRichText("$$bold(a)$$\n$$italic(b)$$\nend", {
+        handlers: helperHandlers,
+        blockTags: declareMultilineTags(["bold"] as const),
+      });
+      assert.deepEqual(normalizeTokens(tokens), [
+        { type: "bold", value: [{ type: "text", value: "a" }] },
+        { type: "italic", value: [{ type: "text", value: "b" }] },
+        { type: "text", value: "\nend" },
+      ]);
+    },
+  },
+  {
+    name: "[Inline/BlockTag] 自动推导不包含 inline -> 有 block handler 也不应剥掉 inline 尾部换行",
+    run: () => {
+      const tokens = parseRichText("$$info(hello)$$\nnext", {
+        handlers: helperHandlers,
+      });
+      // info has a block handler → auto-derived for block form,
+      // but inline normalization is NEVER auto-derived
+      assert.deepEqual(normalizeTokens(tokens), [
+        { type: "text", value: "$$info(hello)$$\nnext" },
+      ]);
+    },
+  },
+  {
+    name: "[Inline/BlockTag] inline close 后无换行 -> 应当不影响后续内容",
+    run: () => {
+      const tokens = parseRichText("$$bold(a)$$next", {
+        handlers: helperHandlers,
+        blockTags: declareMultilineTags(["bold"] as const),
+      });
+      assert.deepEqual(normalizeTokens(tokens), [
+        { type: "bold", value: [{ type: "text", value: "a" }] },
+        { type: "text", value: "next" },
+      ]);
+    },
+  },
+  {
+    name: "[Inline/BlockTag] inline close 在输入末尾 -> 尾部换行应被剥掉",
+    run: () => {
+      const tokens = parseRichText("$$bold(a)$$\n", {
+        handlers: helperHandlers,
+        blockTags: declareMultilineTags(["bold"] as const),
+      });
+      assert.deepEqual(normalizeTokens(tokens), [
+        { type: "bold", value: [{ type: "text", value: "a" }] },
+      ]);
+    },
+  },
+  {
+    name: "[Inline/BlockTag] CRLF 尾部换行 -> 应当完整剥掉 \\r\\n",
+    run: () => {
+      const tokens = parseRichText("$$bold(a)$$\r\nnext", {
+        handlers: helperHandlers,
+        blockTags: declareMultilineTags(["bold"] as const),
+      });
+      assert.deepEqual(normalizeTokens(tokens), [
+        { type: "bold", value: [{ type: "text", value: "a" }] },
+        { type: "text", value: "next" },
+      ]);
+    },
+  },
+  {
+    name: "[Inline/BlockTag] 只剥一个换行 -> 连续两个 \\n 应保留第二个",
+    run: () => {
+      const tokens = parseRichText("$$bold(a)$$\n\nnext", {
+        handlers: helperHandlers,
+        blockTags: declareMultilineTags(["bold"] as const),
+      });
+      assert.deepEqual(normalizeTokens(tokens), [
+        { type: "bold", value: [{ type: "text", value: "a" }] },
+        { type: "text", value: "\nnext" },
+      ]);
+    },
+  },
+  {
+    name: "[Inline/BlockTag] forms: [raw, block] 不含 inline -> inline close 后不应剥掉换行",
+    run: () => {
+      const tokens = parseRichText("$$bold(a)$$\nnext", {
+        handlers: helperHandlers,
+        blockTags: declareMultilineTags([{ tag: "bold", forms: ["raw", "block"] }]),
+      });
+      assert.deepEqual(normalizeTokens(tokens), [
+        { type: "bold", value: [{ type: "text", value: "a" }] },
+        { type: "text", value: "\nnext" },
+      ]);
+    },
+  },
+  {
+    name: "[Inline/BlockTag] 多标签混合声明 -> 各标签按各自声明独立生效",
+    run: () => {
+      const tokens = parseRichText("$$bold(a)$$\n$$italic(b)$$\nend", {
+        handlers: helperHandlers,
+        blockTags: declareMultilineTags([
+          "bold",
+          { tag: "italic", forms: ["raw", "block"] },
+        ]),
+      });
+      // bold: string → inline 生效 → 剥掉 \n
+      // italic: forms 不含 inline → 不剥
+      assert.deepEqual(normalizeTokens(tokens), [
+        { type: "bold", value: [{ type: "text", value: "a" }] },
+        { type: "italic", value: [{ type: "text", value: "b" }] },
+        { type: "text", value: "\nend" },
+      ]);
+    },
+  },
   {
     name: "[Block/Syntax] 自定义多字符开闭符 -> 应当正确解析 block 标签",
     run: () => {
