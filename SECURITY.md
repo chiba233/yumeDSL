@@ -1,5 +1,7 @@
 # Security Policy
 
+> **For detailed security considerations and a safe UGC tutorial, see the [Security wiki page](https://github.com/chiba233/yumeDSL/wiki/en-Security) and [Safe UGC Chat tutorial](https://github.com/chiba233/yumeDSL/wiki/en-Tutorial-Safe-UGC).**
+
 ## Supported versions
 
 | Version | Supported |
