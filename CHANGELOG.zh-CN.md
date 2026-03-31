@@ -10,7 +10,6 @@
   - 支持往返序列化：当使用相同的 syntax 时，
     `printStructural(parseStructural(input)) === input` 对良好输入成立
 - `createParser` 现在返回 `print(nodes)` 方法，自动继承闭包中的 `syntax`
-- 内部：将 `filterHandlersByForms` 从 `parse.ts` 移至 `resolveOptions.ts`；重导出以保持向后兼容
 
 ### 1.0.11
 

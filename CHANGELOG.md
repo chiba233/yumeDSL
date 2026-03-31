@@ -10,7 +10,6 @@
   - Supports round-trip serialization: `printStructural(parseStructural(input)) === input` for well-formed inputs
     when the same syntax is used
 - `createParser` now returns a `print(nodes)` method that inherits `syntax` from the parser's closure
-- Internal: moved `filterHandlersByForms` from `parse.ts` to `resolveOptions.ts`; re-exported for backward compatibility
 
 ### 1.0.11
 
