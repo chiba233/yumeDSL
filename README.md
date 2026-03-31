@@ -61,9 +61,9 @@ const RichText: FC<{ tokens: TextToken[] }> = ({tokens}) => (
 > Full rendering guides: [Vue 3](https://github.com/chiba233/yumeDSL/wiki/en-Vue-3-Rendering) ·
 > [React](https://github.com/chiba233/yumeDSL/wiki/en-React-Rendering)
 
-### [▶ Live Demo — DSL Fallback Museum](https://qwwq.org/blog/dsl-fallback-museum)
+### [▶ Live Demo Post — qwwq.org/blog](https://qwwq.org/blog/dsl-fallback-museum)
 
-Shiki code highlighting · valid tags · intentionally malformed markup · error reporting
+This blog is rendered entirely by `yume-dsl-rich-text` + [`yume-dsl-shiki-highlight`](https://github.com/chiba233/yume-dsl-shiki-highlight) — no Markdown, no HTML templates. Every heading, code block, callout, and inline style is a DSL tag.
 
 > **Version note:** if a tag supports both inline and block/raw forms, use `1.0.7+`.
 > `createParser` partial-override fix require `1.0.11+`.

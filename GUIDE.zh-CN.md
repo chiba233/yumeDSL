@@ -56,9 +56,9 @@ const RichText: FC<{ tokens: TextToken[] }> = ({tokens}) => (
 > 完整渲染指南：[Vue 3](https://github.com/chiba233/yumeDSL/wiki/zh-CN-Vue-3-%E6%B8%B2%E6%9F%93) ·
 > [React](https://github.com/chiba233/yumeDSL/wiki/zh-CN-React-%E6%B8%B2%E6%9F%93)
 
-### [▶ 在线演示 — DSL Fallback Museum](https://qwwq.org/blog/dsl-fallback-museum)
+### [▶ 实际站点演示文章 — qwwq.org/blog](https://qwwq.org/blog/dsl-fallback-museum)
 
-Shiki 代码高亮 · 合法标签 · 故意写错的标签 · 错误报告
+这个博客完全由 `yume-dsl-rich-text` + [`yume-dsl-shiki-highlight`](https://github.com/chiba233/yume-dsl-shiki-highlight) 驱动——没有 Markdown，没有 HTML 模板。每个标题、代码块、提示框、行内样式都是 DSL 标签。
 
 > **版本提醒：** 若同一标签同时支持 inline 与 block/raw，请使用 `1.0.7+`。
 > `createParser` 局部覆盖修复需要 `1.0.11+`。
