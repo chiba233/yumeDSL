@@ -65,9 +65,6 @@ const RichText: FC<{ tokens: TextToken[] }> = ({tokens}) => (
 
 This blog is rendered entirely by `yume-dsl-rich-text` + [`yume-dsl-shiki-highlight`](https://github.com/chiba233/yume-dsl-shiki-highlight) — no Markdown, no HTML templates. Every heading, code block, callout, and inline style is a DSL tag.
 
-> **Version note:** if a tag supports both inline and block/raw forms, use `1.0.7+`.
-> `createParser` partial-override fix require `1.0.11+`.
-
 ## Ecosystem
 
 | Package                                                                            | Role                                             |
@@ -101,7 +98,9 @@ This blog is rendered entirely by `yume-dsl-rich-text` + [`yume-dsl-shiki-highli
 
 ## Quick Navigation
 
-[Install](#install) · [Quick Start](#quick-start) · [DSL Syntax](#dsl-syntax) · [API](#api) · [Custom Syntax](#custom-syntax) · [Handler Helpers](#handler-helpers) · [ParseOptions](#parseoptions) · [Token Structure](#token-structure) · [Stable Token IDs](#stable-token-ids) · [Writing Tag Handlers](#writing-tag-handlers-advanced) · [Exports](#exports) · [Source Position Tracking](#source-position-tracking) · [Error Handling](#error-handling) · [Deprecated API](#deprecated-api) · [Changelog](#changelog)
+**Start here:** [Install](#install) · [Quick Start](#quick-start) · [DSL Syntax](#dsl-syntax) · [API](#api)
+
+**Go deeper:** [Custom Syntax](#custom-syntax) · [Handler Helpers](#handler-helpers) · [ParseOptions](#parseoptions) · [Stable Token IDs](#stable-token-ids) · [Source Position Tracking](#source-position-tracking) · [Error Handling](#error-handling) · [Exports](#exports) · [Deprecated API](#deprecated-api) · [Compatibility](#compatibility-notes)
 
 ---
 
@@ -375,166 +374,22 @@ or when you need full per-call control.
 
 ### `parseStructural` — structural parse
 
-`parseStructural` is for **structural consumers** — highlighting, linting, editors, source inspection, or any
-scenario where you need to know *which tag form* was used, not just the semantic result. It preserves the tag form
-(inline / raw / block) explicitly in the output tree.
-
-It shares the same language configuration (`handlers`, `allowForms`, `syntax`, `tagName`, `depthLimit`,
-`trackPositions`) as `parseRichText`, so you don't maintain two separate sets of DSL rules.
+For **structural consumers** — highlighting, linting, editors, source inspection.
+Preserves tag form (inline / raw / block) in the output tree. Shares the same language configuration as `parseRichText`.
 
 ```ts
-import {parseStructural} from "yume-dsl-rich-text";
-
 const tree = parseStructural("$$bold(hello)$$ and $$code(ts)%\nconst x = 1;\n%end$$");
 // [
 //   { type: "inline", tag: "bold", children: [{ type: "text", value: "hello" }] },
 //   { type: "text", value: " and " },
-//   { type: "raw", tag: "code",
-//     args: [{ type: "text", value: "ts" }],
-//     content: "\nconst x = 1;\n" },
+//   { type: "raw", tag: "code", args: [...], content: "\nconst x = 1;\n" },
 // ]
 ```
 
-```ts
-function parseStructural(text: string, options?: StructuralParseOptions): StructuralNode[]
-```
+**Which one do I use?** Rendering content → `parseRichText`. Analyzing source structure → `parseStructural`.
 
-`StructuralParseOptions` extends `ParserBaseOptions` — the same base shared by `ParseOptions`:
-
-```ts
-interface ParserBaseOptions {
-    handlers?: Record<string, TagHandler>;
-    allowForms?: readonly TagForm[];
-    depthLimit?: number;
-    syntax?: Partial<SyntaxInput>;
-    tagName?: Partial<TagNameConfig>;
-    baseOffset?: number;
-    tracker?: PositionTracker;
-}
-
-interface ParseOptions extends ParserBaseOptions {
-    createId?,
-    blockTags?,
-    mode?,             // deprecated
-    onError?,          // semantic-only
-    trackPositions?    // shared with StructuralParseOptions
-}
-
-interface StructuralParseOptions extends ParserBaseOptions {
-    trackPositions?: boolean;
-}
-```
-
-| Param                    | Type                         | Description                                                                                                                               |
-|--------------------------|------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------|
-| `text`                   | `string`                     | DSL source                                                                                                                                |
-| `options.handlers`       | `Record<string, TagHandler>` | Tag recognition & form gating (same rules as `parseRichText`). Omit to accept all syntactically valid tags/forms without semantic gating. |
-| `options.allowForms`     | `readonly TagForm[]`         | Restrict accepted forms (requires `handlers`)                                                                                             |
-| `options.depthLimit`     | `number`                     | Max nesting depth (default `50`)                                                                                                          |
-| `options.syntax`         | `Partial<SyntaxInput>`       | Override syntax tokens                                                                                                                    |
-| `options.tagName`        | `Partial<TagNameConfig>`     | Override tag-name character rules                                                                                                         |
-| `options.trackPositions` | `boolean`                    | Attach `position` to every node (default `false`)                                                                                         |
-
-When `handlers` is provided, tag recognition and form gating are **identical** to `parseRichText` — the same
-`supportsInlineForm` decision table and `filterHandlersByForms` logic are used (shared code, not mirrored).
-Handler functions themselves are never called; only the presence of `inline` / `raw` / `block` methods matters.
-
-When `handlers` is omitted, all syntactically valid tags in all forms are accepted.
-
-> **Deprecated:** when called inside a `withSyntax` / `withTagNameConfig` wrapper, `parseStructural` still reads the
-> ambient state, but this path is deprecated and emits a `console.warn`. Pass `options.syntax` / `options.tagName`
-> explicitly instead.
-
-**`StructuralNode` variants:**
-
-| Type        | Fields                           | Description                   |
-|-------------|----------------------------------|-------------------------------|
-| `text`      | `value: string`                  | Plain text                    |
-| `escape`    | `raw: string`                    | Escape sequence (e.g. `\)`)   |
-| `separator` | —                                | Pipe `\|` divider (args only) |
-| `inline`    | `tag`, `children`                | `$$tag(…)$$`                  |
-| `raw`       | `tag`, `args`, `content: string` | `$$tag(…)% … %end$$`          |
-| `block`     | `tag`, `args`, `children`        | `$$tag(…)* … *end$$`          |
-
-All variants carry an optional `position?: SourceSpan` when `trackPositions` is enabled.
-
-Differences from `parseRichText` (features, not bugs):
-
-|                          | `parseRichText`                                             | `parseStructural`                                                |
-|--------------------------|-------------------------------------------------------------|------------------------------------------------------------------|
-| Tag recognition          | Same (shared `ParserBaseOptions`)                           | Same (shared `ParserBaseOptions`)                                |
-| Form gating              | Same                                                        | Same                                                             |
-| Line-break normalization | Always strips (render mode)                                 | Always preserves                                                 |
-| Pipe `\|`                | Part of text                                                | `separator` node in args; text elsewhere                         |
-| Error reporting          | `onError` callback                                          | Silent degradation                                               |
-| Escape handling          | Unescaped at root level                                     | Structural `escape` nodes                                        |
-| Position tracking        | `trackPositions` on `TextToken.position` (normalized spans) | `trackPositions` on `StructuralNode.position` (raw syntax spans) |
-| Output type              | `TextToken[]`                                               | `StructuralNode[]`                                               |
-
-**Which one do I use?** If your goal is *rendering content*, use `parseRichText`.
-If your goal is *analyzing source structure*, use `parseStructural`.
-
-### `printStructural` — structural print
-
-`printStructural` is the inverse of `parseStructural` — it serializes a `StructuralNode[]` tree back to DSL source text.
-
-```ts
-import {parseStructural, printStructural} from "yume-dsl-rich-text";
-
-const input = "Hello $$bold(world)$$!";
-const tree = parseStructural(input);
-printStructural(tree); // "Hello $$bold(world)$$!"
-```
-
-```ts
-function printStructural(nodes: StructuralNode[], options?: PrintOptions): string
-```
-
-| Param            | Type                   | Description                                                                  |
-|------------------|------------------------|------------------------------------------------------------------------------|
-| `nodes`          | `StructuralNode[]`     | The structural tree to serialize                                             |
-| `options.syntax` | `Partial<SyntaxInput>` | Override syntax tokens — must match the syntax used during `parseStructural` |
-
-Always prints full tag syntax — no gating or validation is applied.
-If the tree contains nodes whose form is not supported by the runtime parser, they will be
-printed with full syntax and naturally degrade to plain text when re-parsed. This is intentional:
-the printer is a lossless serializer, not a validator.
-
-You can also build trees programmatically:
-
-```ts
-import type {StructuralNode} from "yume-dsl-rich-text";
-import {printStructural} from "yume-dsl-rich-text";
-
-const tree: StructuralNode[] = [
-    {type: "text", value: "Hello "},
-    {type: "inline", tag: "bold", children: [{type: "text", value: "world"}]},
-];
-
-printStructural(tree); // "Hello $$bold(world)$$"
-```
-
-**`createParser` integration:** `parser.print(nodes)` inherits `syntax` from the parser's closure:
-
-```ts
-import {createParser, createSimpleInlineHandlers} from "yume-dsl-rich-text";
-
-const dsl = createParser({
-    syntax: {tagPrefix: "@@", tagOpen: "[", tagClose: "]", endTag: "]@@"},
-    handlers: createSimpleInlineHandlers(["bold"]),
-});
-
-const tree = dsl.structural("@@bold[hello]@@");
-dsl.print(tree); // "@@bold[hello]@@" — syntax inherited
-```
-
-When the structural tree preserves the original syntax-relevant information and the same syntax
-is used, round-trip serialization of well-formed inputs is supported.
-
-> For searching, locating, and querying structural trees (`findFirst`, `findAll`, `nodeAtOffset`,
-> `enclosingNode`), see
-> [
-`yume-dsl-token-walker` — Structural Query](https://github.com/chiba233/yume-dsl-token-walker?tab=readme-ov-file#structural-query).
+See the [API Reference wiki page](https://github.com/chiba233/yumeDSL/wiki/en-API-Reference#parsestructural--structural-parse) for
+`StructuralNode` variants, `StructuralParseOptions`, differences from `parseRichText`, and `printStructural`.
 
 ---
 
@@ -927,9 +782,12 @@ signatures, replacements, and migration guide.
 
 ## Changelog
 
-Release history now lives in a standalone file:
-
 - [CHANGELOG](./CHANGELOG.md)
+
+### Compatibility notes
+
+- Dual inline + block/raw tags on the same name: `1.0.7+`
+- `createParser` partial-override deep merge: `1.0.11+`
 
 ---
 

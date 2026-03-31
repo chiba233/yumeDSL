@@ -60,9 +60,6 @@ const RichText: FC<{ tokens: TextToken[] }> = ({tokens}) => (
 
 这个博客完全由 `yume-dsl-rich-text` + [`yume-dsl-shiki-highlight`](https://github.com/chiba233/yume-dsl-shiki-highlight) 驱动——没有 Markdown，没有 HTML 模板。每个标题、代码块、提示框、行内样式都是 DSL 标签。
 
-> **版本提醒：** 若同一标签同时支持 inline 与 block/raw，请使用 `1.0.7+`。
-> `createParser` 局部覆盖修复需要 `1.0.11+`。
-
 ## 生态
 
 | 包                                                                                  | 角色                                   |
@@ -93,7 +90,9 @@ const RichText: FC<{ tokens: TextToken[] }> = ({tokens}) => (
 
 ## 快速导航
 
-[安装](#安装) · [快速开始](#快速开始) · [DSL 语法](#dsl-语法) · [API](#api) · [自定义语法](#自定义语法) · [处理器辅助函数](#处理器辅助函数) · [ParseOptions](#parseoptions) · [Token 结构](#token-结构) · [稳定 Token ID](#稳定-token-id) · [编写标签处理器](#编写标签处理器进阶) · [导出一览](#导出一览) · [源码位置追踪](#源码位置追踪) · [错误处理](#错误处理) · [待弃用 API](#待弃用-api) · [更新日志](#更新日志)
+**从这里开始：** [安装](#安装) · [快速开始](#快速开始) · [DSL 语法](#dsl-语法) · [API](#api)
+
+**深入了解：** [自定义语法](#自定义语法) · [处理器辅助函数](#处理器辅助函数) · [ParseOptions](#parseoptions) · [稳定 Token ID](#稳定-token-id) · [源码位置追踪](#源码位置追踪) · [错误处理](#错误处理) · [导出一览](#导出一览) · [待弃用 API](#待弃用-api) · [兼容性](#兼容性说明)
 
 ---
 
@@ -363,160 +362,21 @@ function stripRichText(text: string, options?: ParseOptions): string;
 
 ### `parseStructural` — 结构化解析
 
-`parseStructural` 用于**结构消费场景**——高亮、lint、编辑器、源码检查，或任何需要知道*使用了哪种标签形态*而不只是语义结果的场景。
-在输出树中保留标签形态（inline / raw / block）。
-
-它与 `parseRichText` 共享同一套语言配置（`handlers`、`allowForms`、`syntax`、`tagName`、`depthLimit`、
-`trackPositions`），因此你不需要维护两套不同的 DSL 规则。
+用于**结构消费场景**——高亮、lint、编辑器、源码检查。
+在输出树中保留标签形态（inline / raw / block）。与 `parseRichText` 共享同一套语言配置。
 
 ```ts
-import {parseStructural} from "yume-dsl-rich-text";
-
 const tree = parseStructural("$$bold(hello)$$ and $$code(ts)%\nconst x = 1;\n%end$$");
 // [
 //   { type: "inline", tag: "bold", children: [{ type: "text", value: "hello" }] },
 //   { type: "text", value: " and " },
-//   { type: "raw", tag: "code",
-//     args: [{ type: "text", value: "ts" }],
-//     content: "\nconst x = 1;\n" },
+//   { type: "raw", tag: "code", args: [...], content: "\nconst x = 1;\n" },
 // ]
 ```
 
-```ts
-function parseStructural(text: string, options?: StructuralParseOptions): StructuralNode[]
-```
+**怎么选？** 渲染内容 → `parseRichText`；分析源码结构 → `parseStructural`。
 
-`StructuralParseOptions` 继承自 `ParserBaseOptions`——与 `ParseOptions` 共享同一基类：
-
-```ts
-interface ParserBaseOptions {
-    handlers?: Record<string, TagHandler>;
-    allowForms?: readonly TagForm[];
-    depthLimit?: number;
-    syntax?: Partial<SyntaxInput>;
-    tagName?: Partial<TagNameConfig>;
-    baseOffset?: number;
-    tracker?: PositionTracker;
-}
-
-interface ParseOptions extends ParserBaseOptions {
-    createId?,
-    blockTags?,
-    mode?,             // 已弃用
-    onError?,          // 语义专属
-    trackPositions?    // 与 StructuralParseOptions 共享
-}
-
-interface StructuralParseOptions extends ParserBaseOptions {
-    trackPositions?: boolean;
-}
-```
-
-| 参数                       | 类型                           | 说明                                                            |
-|--------------------------|------------------------------|---------------------------------------------------------------|
-| `text`                   | `string`                     | DSL 源码                                                        |
-| `options.handlers`       | `Record<string, TagHandler>` | 标签识别与形态门控（规则与 `parseRichText` 完全一致）。省略则接受所有语法合法的标签和形态，不做语义门控。 |
-| `options.allowForms`     | `readonly TagForm[]`         | 限制接受的形态（需搭配 `handlers`）                                       |
-| `options.depthLimit`     | `number`                     | 最大嵌套深度（默认 `50`）                                               |
-| `options.syntax`         | `Partial<SyntaxInput>`       | 覆盖语法 token                                                    |
-| `options.tagName`        | `Partial<TagNameConfig>`     | 覆盖标签名字符规则                                                     |
-| `options.trackPositions` | `boolean`                    | 为每个节点附加 `position`（默认 `false`）                                |
-
-传入 `handlers` 时，标签识别和形态门控与 `parseRichText` **完全一致**——使用相同的 `supportsInlineForm` 决策表和
-`filterHandlersByForms` 逻辑（共享代码，非镜像）。handler 函数本身不会被调用，只有 `inline` / `raw` / `block` 方法的存在性影响门控。
-
-省略 `handlers` 时，所有合法标签和所有形态均被接受。
-
-> **已弃用：** 在 `withSyntax` / `withTagNameConfig` 包裹中调用 `parseStructural` 时，ambient 状态仍会被读取，但该路径已弃用并会触发
-`console.warn`。请改用 `options.syntax` / `options.tagName` 显式传入配置。
-
-**`StructuralNode` 变体：**
-
-| 类型          | 字段                               | 说明                   |
-|-------------|----------------------------------|----------------------|
-| `text`      | `value: string`                  | 纯文本                  |
-| `escape`    | `raw: string`                    | 转义序列（如 `\)`）         |
-| `separator` | —                                | 管道符 `\|` 分隔（仅参数区）    |
-| `inline`    | `tag`, `children`                | `$$tag(…)$$`         |
-| `raw`       | `tag`, `args`, `content: string` | `$$tag(…)% … %end$$` |
-| `block`     | `tag`, `args`, `children`        | `$$tag(…)* … *end$$` |
-
-启用 `trackPositions` 时，所有变体均携带可选的 `position?: SourceSpan`。
-
-与 `parseRichText` 的差异（特性，非缺陷）：
-
-|          | `parseRichText`                                  | `parseStructural`                                    |
-|----------|--------------------------------------------------|------------------------------------------------------|
-| 标签识别     | 共享（`ParserBaseOptions`）                          | 共享（`ParserBaseOptions`）                              |
-| 形态门控     | 共享                                               | 共享                                                   |
-| 换行归一化    | 始终裁剪（render 模式）                                  | 始终保留                                                 |
-| 管道符 `\|` | 文本的一部分                                           | 参数区产出 `separator`；正文中为纯文本                            |
-| 错误上报     | `onError` 回调                                     | 静默降级                                                 |
-| 转义处理     | 根级反转义                                            | 结构化 `escape` 节点                                      |
-| 位置追踪     | `trackPositions` → `TextToken.position`（归一化后的偏移） | `trackPositions` → `StructuralNode.position`（原始语法偏移） |
-| 输出类型     | `TextToken[]`                                    | `StructuralNode[]`                                   |
-
-**怎么选？** 目标是*渲染内容*，用 `parseRichText`；目标是*分析源码结构*，用 `parseStructural`。
-
-### `printStructural` — 结构打印
-
-`printStructural` 是 `parseStructural` 的逆操作——将 `StructuralNode[]` 树序列化回 DSL 源码文本。
-
-```ts
-import {parseStructural, printStructural} from "yume-dsl-rich-text";
-
-const input = "Hello $$bold(world)$$!";
-const tree = parseStructural(input);
-printStructural(tree); // "Hello $$bold(world)$$!"
-```
-
-```ts
-function printStructural(nodes: StructuralNode[], options?: PrintOptions): string
-```
-
-| 参数               | 类型                     | 说明                                              |
-|------------------|------------------------|-------------------------------------------------|
-| `nodes`          | `StructuralNode[]`     | 要序列化的结构树                                        |
-| `options.syntax` | `Partial<SyntaxInput>` | 覆盖语法 token——必须与 `parseStructural` 使用的 syntax 一致 |
-
-始终打印完整 tag 语法——不做门控或验证。如果树中包含运行时 parser 不支持的形态，
-它们会以完整语法打印，re-parse 时自然退化为纯文本。这是刻意设计：
-printer 是无损序列化器，不是验证器。
-
-也可以编程式构建树后序列化：
-
-```ts
-import type {StructuralNode} from "yume-dsl-rich-text";
-import {printStructural} from "yume-dsl-rich-text";
-
-const tree: StructuralNode[] = [
-    {type: "text", value: "Hello "},
-    {type: "inline", tag: "bold", children: [{type: "text", value: "world"}]},
-];
-
-printStructural(tree); // "Hello $$bold(world)$$"
-```
-
-**`createParser` 集成：** `parser.print(nodes)` 继承闭包中的 `syntax`：
-
-```ts
-import {createParser, createSimpleInlineHandlers} from "yume-dsl-rich-text";
-
-const dsl = createParser({
-    syntax: {tagPrefix: "@@", tagOpen: "[", tagClose: "]", endTag: "]@@"},
-    handlers: createSimpleInlineHandlers(["bold"]),
-});
-
-const tree = dsl.structural("@@bold[hello]@@");
-dsl.print(tree); // "@@bold[hello]@@"——syntax 自动继承
-```
-
-当结构树保留了完整的原始语法信息、且使用相同的 syntax 时，
-可实现良好输入的往返序列化。
-
-> 如需搜索、定位和查询结构树（`findFirst`、`findAll`、`nodeAtOffset`、`enclosingNode`），请参阅
-> [
-`yume-dsl-token-walker` — 结构查询](https://github.com/chiba233/yume-dsl-token-walker?tab=readme-ov-file#structural-query)。
+详见 [API 参考 wiki 页面](https://github.com/chiba233/yumeDSL/wiki/zh-CN-API-%E5%8F%82%E8%80%83)：`StructuralNode` 变体、`StructuralParseOptions`、与 `parseRichText` 的差异、`printStructural`。
 
 ---
 
@@ -891,9 +751,12 @@ parseRichText("$$bold(unclosed", {
 
 ## 更新日志
 
-版本历史已拆分到独立文件：
-
 - [更新日志](./CHANGELOG.zh-CN.md)
+
+### 兼容性说明
+
+- 同一标签同时支持 inline 与 block/raw：`1.0.7+`
+- `createParser` 局部覆盖深合并：`1.0.11+`
 
 ---
 
