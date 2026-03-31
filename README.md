@@ -408,7 +408,7 @@ const tokens = parseRichText("@@bold(hello)@@", {
     syntax,
     handlers: {
         bold: {
-            inline: (tokens, _ctx) => ({type: "bold", value: tokens}),
+            inline: (tokens, ctx) => ({type: "bold", value: tokens}),
         },
     },
 });
@@ -699,7 +699,7 @@ const dsl = createParser({
 
         // Manual handler: only when you need custom logic
         code: {
-            raw: (arg, content, _ctx) => ({
+            raw: (arg, content, ctx) => ({
                 type: "code-block",
                 lang: arg ?? "text",
                 value: content,
@@ -736,7 +736,7 @@ Pass `trackPositions: true` to attach a `position` (source span) to every output
 
 ```ts
 const tokens = parseRichText("hello $$bold(world)$$", {
-    handlers: {bold: {inline: (t, _ctx) => ({type: "bold", value: t})}},
+    handlers: {bold: {inline: (t, ctx) => ({type: "bold", value: t})}},
     trackPositions: true,
 });
 // tokens[0].position → { start: {offset:0, line:1, column:1}, end: {offset:6, line:1, column:7} }
