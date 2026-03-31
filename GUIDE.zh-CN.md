@@ -305,7 +305,7 @@ dsl.parse(text, {onError: (e) => console.warn(e)});
 | `allowForms`     | 限制接受的标签形式（默认：全部启用）                 |
 | `depthLimit`     | 嵌套深度限制 — 很少需要逐次修改                  |
 | `createId`       | 自定义 token id 生成器（仍可按次覆盖）           |
-| `blockTags`      | 需要 block 换行归一化的标签                  |
+| `blockTags`      | 块级换行规范化——详见 [`declareMultilineTags`](#declaremultilinetags-names--块级换行规范化) |
 | `onError`        | 默认错误处理器（仍可按次覆盖）                    |
 | `trackPositions` | 为所有输出节点附加源码位置（仍可按次覆盖）              |
 
@@ -482,21 +482,45 @@ const dsl = createParser({
 | 管道参数（`$$link(url \| text)$$`） | `createPipeHandlers`         |
 | 多形态（inline + block + raw）     | `createPipeHandlers`         |
 
-### `declareMultilineTags(names)`
+### `declareMultilineTags(names)` — 块级换行规范化
 
-声明哪些标签需要换行符修剪（剥离 `)*` / `)%` 后的前导 `\n` 和 `*end$$` / `%end$$` 前的尾随 `\n`）。
-**不**创建处理器——配合上面的辅助函数一起使用。
+具有**块级/容器渲染语义**的标签——对话框、代码块、信息面板、居中标题——需要剥掉首尾边界换行。
+否则，DSL 自然的多行写法：
+
+```text
+$$speaker(Alice)*
+Hello!
+*end$$
+```
+
+……会让内容变成 `"\nHello!\n"` 而不是 `"Hello!"`，渲染时**凭空多出空行**——一种极其隐蔽且难以排查的视觉 bug。
+
+`declareMultilineTags` 告诉解析器哪些标签需要规范化。**不**创建处理器——配合上面的辅助函数一起使用。
+
+**各形式的规范化行为：**
+
+| 形式 | 剥离什么 | 适用场景 |
+|------|---------|---------|
+| `raw` / `block` | `)*` / `)%` 后的前导 `\n`，`*end$$` / `%end$$` 前的尾随 `\n` | 多行 block/raw 标签 |
+| `inline` | inline close `$$` 后紧跟的 `\n` | 虽然用 inline 语法但渲染为块级元素的标签（如 `$$center(...)$$`） |
+
+**用法：**
 
 ```ts
-// 基础——所有多行形式均修剪
-blockTags: declareMultilineTags(["info", "warning", "code"])
+// 传字符串——三种形式全部规范化（raw + block + inline）
+blockTags: declareMultilineTags(["info", "warning", "center"])
 
-// 细粒度——限定到特定形式
+// 传对象——精细控制到特定形式
 blockTags: declareMultilineTags([
-    "info",                            // raw 和 block 均修剪
-    {tag: "code", forms: ["raw"]},   // 仅 raw 形式修剪
+    "info",                                // 字符串：三种形式全部规范化
+    { tag: "code", forms: ["raw"] },       // 仅 raw 形式
+    { tag: "center", forms: ["inline"] },  // 仅 inline 形式
 ])
 ```
+
+**自动推导：** 省略 `blockTags` 时，解析器从 handler 方法自动推导 raw/block 规范化（有 `raw` → raw 形式，有 `block` → block 形式）。**inline 规范化永远不会自动推导**——解析器无法知道一个 inline 标签是否渲染为块级元素，必须显式声明。
+
+**经验法则：** 如果你的标签渲染为块级元素，确保它出现在 `blockTags` 中。否则边界换行会混入内容，渲染时产生多余空行。
 
 详见 [处理器辅助函数 wiki 页面](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%A4%84%E7%90%86%E5%99%A8%E8%BE%85%E5%8A%A9%E5%87%BD%E6%95%B0)
 ：完整 API 签名、`PipeHandlerDefinition` 接口、各形态回调细节。
@@ -544,7 +568,7 @@ interface StructuralParseOptions extends ParserBaseOptions {
 ### `ParseOptions` 专属字段
 
 - `createId`：覆盖本次解析的 token id 生成策略
-- `blockTags`：需要 block 换行规范化的标签 — 接受纯字符串或 `{ tag, forms }` 对象以按形式控制
+- `blockTags`：块级换行规范化——纯字符串启用全部形式（raw + block + inline），`{ tag, forms }` 限定到特定形式。详见 [`declareMultilineTags`](#declaremultilinetags-names--块级换行规范化)
 - `mode`：已弃用——详见[待弃用 API](#待弃用-api)
 - `onError`：解析错误回调
 - `trackPositions`：为每个 `TextToken` 附加源码位置信息 `position`（默认 `false`）。详见[源码位置追踪](#源码位置追踪)

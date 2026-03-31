@@ -95,22 +95,22 @@ export interface DslContext {
 
 export type TagForm = "inline" | "raw" | "block";
 
-/**
- * Forms that support multiline (block-level) line-break normalization.
- * Inline form is excluded because it is inherently single-line.
- */
-export type MultilineForm = "raw" | "block";
+/** @internal Alias — same union, used for line-break normalization context. */
+export type MultilineForm = TagForm;
 
 /**
- * Entry for `blockTags` — either a plain tag name (all multiline forms)
+ * Entry for `blockTags` — either a plain tag name (all forms: raw + block + inline)
  * or an object restricting normalization to specific forms.
  *
  * @example
- * // Both raw and block get normalization (backward compatible)
- * "info"
+ * // All forms get normalization (raw + block + inline)
+ * "center"
  *
  * // Only raw form gets normalization
  * { tag: "code", forms: ["raw"] }
+ *
+ * // Only inline form gets normalization (block-level rendering via inline syntax)
+ * { tag: "center", forms: ["inline"] }
  */
 export type BlockTagInput = string | { tag: string; forms?: readonly MultilineForm[] };
 

@@ -49,16 +49,24 @@ export const createSimpleInlineHandlers = <const T extends readonly string[]>(
 };
 
 /**
- * Declare which already-registered tags are multiline types.
+ * Declare which already-registered tags need line-break normalization.
  * Returns a `BlockTagInput[]` to pass as `ParseOptions.blockTags`.
  *
- * Tags listed here receive line-break normalization:
- * the parser strips the leading `\n` after `)*` / `)%` openers
- * and the trailing `\n` before `*end$$` / `%end$$` closers.
+ * Normalization per form:
+ * - **`raw` / `block`** — strips the leading `\n` after `)*` / `)%` openers
+ *   and the trailing `\n` before `*end$$` / `%end$$` closers.
+ * - **`inline`** — strips the trailing `\n` immediately after the inline
+ *   close `$$`. Useful for tags that render as block-level elements
+ *   despite using inline syntax (e.g. `$$center(...)$$`).
  *
- * Each entry is either a plain tag name (normalization for **both**
- * raw and block forms — backward compatible) or an object with a
- * `forms` array to restrict normalization to specific multiline forms.
+ * Each entry is either:
+ * - A **plain string** — normalization for **all three** forms (raw + block + inline).
+ * - An **object** with a `forms` array — restrict normalization to specific forms.
+ *   When `forms` is omitted in object form, defaults to `["raw", "block"]`.
+ *
+ * Auto-derivation (when `blockTags` is omitted) only covers raw and block
+ * forms based on handler methods. Inline normalization is **never auto-derived**
+ * — it must be explicitly declared.
  *
  * This does NOT register tags or create handlers — use
  * `createSimpleInlineHandlers`, `createSimpleRawHandlers`,
@@ -67,17 +75,18 @@ export const createSimpleInlineHandlers = <const T extends readonly string[]>(
  * @example
  * const dsl = createParser({
  *   handlers: { ... },
- *   // backward compatible — all multiline forms normalized
- *   blockTags: declareMultilineTags(["info", "warning", "collapse"]),
+ *   // string — all three forms normalized (raw + block + inline)
+ *   blockTags: declareMultilineTags(["info", "warning", "center"]),
  * });
  *
  * @example
  * const dsl = createParser({
  *   handlers: { ... },
- *   // granular — code only normalizes in raw form
+ *   // granular — code only normalizes in raw form, center only inline
  *   blockTags: declareMultilineTags([
  *     "info",
  *     { tag: "code", forms: ["raw"] },
+ *     { tag: "center", forms: ["inline"] },
  *   ]),
  * });
  */

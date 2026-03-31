@@ -259,6 +259,14 @@ export const tryConsumeTagClose = (ctx: ParseContext): boolean => {
   finalizeClosedNode(ctx, node);
 
   ctx.i += endTag.length;
+  ctx.i = consumeBlockTagTrailingLineBreak(
+    node.tag,
+    ctx.text,
+    ctx.i,
+    ctx.mode,
+    ctx.blockTagSet,
+    "inline",
+  );
 
   return true;
 };

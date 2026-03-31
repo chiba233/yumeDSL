@@ -2,6 +2,17 @@
 
 # 更新日志
 
+### 1.0.14
+
+- `declareMultilineTags` 新增 `"inline"` 形式支持——剥掉 inline close `$$` 后紧跟的 `\n`，
+  适用于虽然用 inline 语法但渲染为块级元素的标签（如 `$$center(...)$$`）
+- 传**字符串**给 `declareMultilineTags` 现在启用三种形式全部规范化（raw + block + inline）。
+  对象形式不写 `forms` 时仍默认 `["raw", "block"]`，保持向后兼容
+- `MultilineForm` 类型扩展为 `"raw" | "block" | "inline"`（现在是 `TagForm` 的别名）
+- inline 规范化**永远不会自动推导**——必须通过 `blockTags` 显式声明
+- 文档：README、GUIDE 及 wiki 各页面的 `declareMultilineTags` 章节全面升格，
+  补充问题说明、per-form 表格、自动推导规则和最佳实践
+
 ### 1.0.13
 
 - 文档

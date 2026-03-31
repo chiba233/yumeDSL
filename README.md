@@ -316,7 +316,7 @@ Most of the time you only need to bind `handlers`. The rest just tags along for 
 | `allowForms`     | Restrict accepted tag forms (default: all forms enabled)                 |
 | `depthLimit`     | Nesting limit — rarely changes per call                                  |
 | `createId`       | Custom token id generator (can be overridden per call)                   |
-| `blockTags`      | Tags that receive block-level line-break normalization                   |
+| `blockTags`      | Block-level line-break normalization — see [`declareMultilineTags`](#declaremultilinetags-names--block-level-line-break-normalization) |
 | `onError`        | Default error handler (can still be overridden per call)                 |
 | `trackPositions` | Attach source positions to all output nodes (can be overridden per call) |
 
@@ -495,21 +495,50 @@ const dsl = createParser({
 | Pipe parameters (`$$link(url \| text)$$`) | `createPipeHandlers`         |
 | Multiple forms (inline + block + raw)     | `createPipeHandlers`         |
 
-### `declareMultilineTags(names)`
+### `declareMultilineTags(names)` — block-level line-break normalization
 
-Declares which tags need line-break normalization (stripping `\n` after `)*` / `)%` and before `*end$$` / `%end$$`).
-Does **not** register tags — use it alongside the handler helpers above.
+Tags with **block-level / container rendering semantics** — dialogue boxes, code blocks, info panels, centered
+headings — need their boundary line breaks stripped. Without this, the natural way of writing multiline DSL:
+
+```text
+$$speaker(Alice)*
+Hello!
+*end$$
+```
+
+…produces content `"\nHello!\n"` instead of `"Hello!"`, and the rendered output shows **extra blank lines** above
+and below — an extremely subtle and hard-to-debug visual bug.
+
+`declareMultilineTags` tells the parser which tags to normalize. It does **not** register tags — use it alongside
+the handler helpers above.
+
+**Normalization per form:**
+
+| Form | What gets stripped | When to use |
+|------|--------------------|-------------|
+| `raw` / `block` | Leading `\n` after `)*` / `)%`, trailing `\n` before `*end$$` / `%end$$` | Multiline block/raw tags |
+| `inline` | Trailing `\n` immediately after the inline close `$$` | Tags that render as block-level elements despite using inline syntax (e.g. `$$center(...)$$`) |
+
+**Usage:**
 
 ```ts
-// Basic — all multiline forms normalized
-blockTags: declareMultilineTags(["info", "warning", "code"])
+// String — all three forms normalized (raw + block + inline)
+blockTags: declareMultilineTags(["info", "warning", "center"])
 
-// Granular — restrict to specific forms
+// Object — restrict to specific forms
 blockTags: declareMultilineTags([
-    "info",                            // both raw & block
-    {tag: "code", forms: ["raw"]},   // only raw form
+    "info",                              // string: all forms
+    { tag: "code", forms: ["raw"] },     // only raw form
+    { tag: "center", forms: ["inline"] }, // only inline form
 ])
 ```
+
+**Auto-derivation:** when `blockTags` is omitted, the parser auto-derives raw/block normalization from handler
+methods (`raw` → raw form, `block` → block form). **Inline normalization is never auto-derived** — the parser
+cannot know whether an inline tag renders as block-level. You must declare it explicitly.
+
+**Rule of thumb:** if your tag renders as a block-level element, make sure it appears in `blockTags`. Otherwise
+boundary line breaks leak into the content and produce extra blank lines at render time.
 
 See the [Handler Helpers wiki page](https://github.com/chiba233/yumeDSL/wiki/en-Handler-Helpers) for full API
 signatures, `PipeHandlerDefinition` interface, and form-specific callback details.
@@ -557,8 +586,8 @@ interface StructuralParseOptions extends ParserBaseOptions {
 ### Fields — `ParseOptions` only
 
 - `createId`: override token id generation for this parse
-- `blockTags`: tags treated as block-level for line-break normalization — accepts plain strings or `{ tag, forms }`
-  objects for per-form control
+- `blockTags`: tags that receive line-break normalization — plain strings enable all forms (raw + block + inline);
+  `{ tag, forms }` objects restrict to specific forms. See [`declareMultilineTags`](#declaremultilinetags-names--block-level-line-break-normalization)
 - `mode`: deprecated — see [Deprecated API](#deprecated-api)
 - `onError`: callback for parse errors
 - `trackPositions`: attach source position info (`position`) to every `TextToken` (default `false`).
@@ -789,6 +818,7 @@ signatures, replacements, and migration guide.
 
 - Dual inline + block/raw tags on the same name: `1.0.7+`
 - `createParser` partial-override deep merge: `1.0.11+`
+- `declareMultilineTags` inline form support (`MultilineForm: "inline"`): `1.0.14+`
 
 ---
 

@@ -26,21 +26,24 @@ import { buildGatingContext, resolveBaseOptions } from "./resolveOptions.js";
 const buildBlockTagLookup = (inputs: readonly BlockTagInput[]): BlockTagLookup => {
   const rawSet = new Set<string>();
   const blockSet = new Set<string>();
+  const inlineSet = new Set<string>();
   for (const input of inputs) {
     if (typeof input === "string") {
       rawSet.add(input);
       blockSet.add(input);
+      inlineSet.add(input);
     } else {
       const forms: readonly MultilineForm[] = input.forms ?? ["raw", "block"];
       for (const form of forms) {
         if (form === "raw") rawSet.add(input.tag);
-        else blockSet.add(input.tag);
+        else if (form === "block") blockSet.add(input.tag);
+        else inlineSet.add(input.tag);
       }
     }
   }
   return {
     has: (tag: string, form: MultilineForm) =>
-      form === "raw" ? rawSet.has(tag) : blockSet.has(tag),
+      form === "raw" ? rawSet.has(tag) : form === "block" ? blockSet.has(tag) : inlineSet.has(tag),
   };
 };
 
@@ -52,9 +55,11 @@ const deriveBlockTags = (handlers: Record<string, unknown>): BlockTagLookup => {
     if (h.raw) rawSet.add(tag);
     if (h.block) blockSet.add(tag);
   }
+  // inline is never auto-derived — the parser cannot know rendering intent.
+  // Users must explicitly declare inline normalization via blockTags.
   return {
     has: (tag: string, form: MultilineForm) =>
-      form === "raw" ? rawSet.has(tag) : blockSet.has(tag),
+      form === "raw" ? rawSet.has(tag) : form === "block" ? blockSet.has(tag) : false,
   };
 };
 

@@ -2,6 +2,19 @@
 
 # Changelog
 
+### 1.0.14
+
+- `declareMultilineTags` now supports `"inline"` form — strips the trailing `\n` immediately after
+  inline close `$$` for tags that render as block-level elements despite using inline syntax
+  (e.g. `$$center(...)$$`)
+- Passing a **string** to `declareMultilineTags` now enables normalization for all three forms
+  (raw + block + inline). Object form without `forms` remains `["raw", "block"]` for backward
+  compatibility
+- `MultilineForm` type extended to `"raw" | "block" | "inline"` (now an alias of `TagForm`)
+- Inline normalization is **never auto-derived** — must be explicitly declared via `blockTags`
+- Documentation: `declareMultilineTags` section upgraded across README, GUIDE, and wiki pages
+  with problem explanation, per-form table, auto-derivation rules, and best practices
+
 ### 1.0.13
 
 - Documentation
