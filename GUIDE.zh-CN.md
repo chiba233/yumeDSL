@@ -376,7 +376,7 @@ const tree = parseStructural("$$bold(hello)$$ and $$code(ts)%\nconst x = 1;\n%en
 
 **怎么选？** 渲染内容 → `parseRichText`；分析源码结构 → `parseStructural`。
 
-详见 [API 参考 wiki 页面](https://github.com/chiba233/yumeDSL/wiki/zh-CN-API-%E5%8F%82%E8%80%83)：`StructuralNode` 变体、`StructuralParseOptions`、与 `parseRichText` 的差异、`printStructural`。
+详见 [API 参考 wiki 页面](https://github.com/chiba233/yumeDSL/wiki/zh-CN-API-%E5%8F%82%E8%80%83#parsestructuraltext-options----%E7%BB%93%E6%9E%84%E5%8C%96%E8%A7%A3%E6%9E%90)：`StructuralNode` 变体、`StructuralParseOptions`、与 `parseRichText` 的差异、`printStructural`。
 
 ---
 
