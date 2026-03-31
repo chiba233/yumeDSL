@@ -11,12 +11,6 @@
     `printStructural(parseStructural(input)) === input` 对良好输入成立
 - `createParser` 现在返回 `print(nodes)` 方法，自动继承闭包中的 `syntax`
 - 内部：将 `filterHandlersByForms` 从 `parse.ts` 移至 `resolveOptions.ts`；重导出以保持向后兼容
-- 新增结构查询工具：
-  - `findFirst(nodes, predicate)` — 前序深度优先搜索，返回第一个匹配的 `StructuralNode`
-  - `findAll(nodes, predicate)` — 前序深度优先搜索，返回所有匹配的 `StructuralNode[]`
-  - `nodeAtOffset(nodes, offset)` — 返回包含给定源码 offset 的最深结构节点
-  - `enclosingNode(nodes, offset)` — 返回包含给定源码 offset 的最深标签节点（`inline` / `raw` / `block`）
-  - `StructuralVisitContext` / `StructuralPredicate` 类型 — 为结构遍历提供类型化回调上下文
 
 ### 1.0.11
 

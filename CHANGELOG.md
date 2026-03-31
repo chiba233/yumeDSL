@@ -11,12 +11,6 @@
     when the same syntax is used
 - `createParser` now returns a `print(nodes)` method that inherits `syntax` from the parser's closure
 - Internal: moved `filterHandlersByForms` from `parse.ts` to `resolveOptions.ts`; re-exported for backward compatibility
-- New structural query helpers:
-  - `findFirst(nodes, predicate)` — depth-first pre-order search returning the first matching `StructuralNode`
-  - `findAll(nodes, predicate)` — depth-first pre-order search returning all matching `StructuralNode[]`
-  - `nodeAtOffset(nodes, offset)` — returns the deepest structural node containing the given source offset
-  - `enclosingNode(nodes, offset)` — returns the deepest enclosing tag node (`inline` / `raw` / `block`)
-  - `StructuralVisitContext` / `StructuralPredicate` types — typed callback context for structural traversal
 
 ### 1.0.11
 
