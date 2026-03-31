@@ -555,16 +555,91 @@ const tokens = parseRichText("@@bold(hello)@@", {
 
 辅助函数让你批量注册标签处理器，无需重复编写样板代码。
 
-| 辅助函数                         | 适用场景                     |
-|------------------------------|--------------------------|
-| `createSimpleInlineHandlers` | 简单 inline（bold、italic 等） |
-| `createSimpleBlockHandlers`  | 简单 block（info、warning 等） |
-| `createSimpleRawHandlers`    | 简单 raw（code、math 等）      |
-| `createPipeHandlers`         | 管道参数、多形态、自定义逻辑           |
-| `declareMultilineTags`       | 声明 block 换行符修剪           |
+### `createSimpleInlineHandlers` / `createSimpleBlockHandlers` / `createSimpleRawHandlers`
+
+```ts
+import {
+    createParser,
+    createSimpleInlineHandlers,
+    createSimpleBlockHandlers,
+    createSimpleRawHandlers,
+    declareMultilineTags,
+} from "yume-dsl-rich-text";
+
+const dsl = createParser({
+    handlers: {
+        ...createSimpleInlineHandlers(["bold", "italic", "underline", "strike", "code"]),
+        ...createSimpleBlockHandlers(["info", "warning"]),
+        ...createSimpleRawHandlers(["math"]),
+    },
+    blockTags: declareMultilineTags(["info", "warning", "math"]),
+});
+```
+
+| 辅助函数                         | 输出 Token 结构                                      |
+|------------------------------|--------------------------------------------------|
+| `createSimpleInlineHandlers` | `{ type: tagName, value: materializedTokens }`   |
+| `createSimpleBlockHandlers`  | `{ type: tagName, arg, value: content }`         |
+| `createSimpleRawHandlers`    | `{ type: tagName, arg, value: content }`（string） |
+
+### `createPipeHandlers(definitions)`
+
+**推荐的处理器辅助函数**，适用于需要管道参数、多形态、或自定义逻辑的标签。
+每个 handler 接收预解析的 `PipeArgs`——无需手动调用 `parsePipeArgs`。
+
+```ts
+import {createParser, createPipeHandlers, createSimpleInlineHandlers} from "yume-dsl-rich-text";
+
+const dsl = createParser({
+    handlers: {
+        ...createSimpleInlineHandlers(["bold", "italic"]),
+
+        ...createPipeHandlers({
+            link: {
+                inline: (args) => ({
+                    type: "link",
+                    url: args.text(0),
+                    value: args.materializedTailTokens(1),
+                }),
+            },
+            code: {
+                raw: (args, content) => ({
+                    type: "raw-code",
+                    lang: args.text(0, "text"),
+                    value: content,
+                }),
+            },
+        }),
+    },
+});
+```
+
+| 场景                            | 使用                           |
+|-------------------------------|------------------------------|
+| 简单 inline（bold、italic 等）      | `createSimpleInlineHandlers` |
+| 简单 block（info、warning 等）      | `createSimpleBlockHandlers`  |
+| 简单 raw（code、math 等）           | `createSimpleRawHandlers`    |
+| 管道参数（`$$link(url \| text)$$`） | `createPipeHandlers`         |
+| 多形态（inline + block + raw）     | `createPipeHandlers`         |
+
+### `declareMultilineTags(names)`
+
+声明哪些标签需要换行符修剪（剥离 `)*` / `)%` 后的前导 `\n` 和 `*end$$` / `%end$$` 前的尾随 `\n`）。
+**不**创建处理器——配合上面的辅助函数一起使用。
+
+```ts
+// 基础——所有多行形式均修剪
+blockTags: declareMultilineTags(["info", "warning", "code"])
+
+// 细粒度——限定到特定形式
+blockTags: declareMultilineTags([
+    "info",                            // raw 和 block 均修剪
+    {tag: "code", forms: ["raw"]},   // 仅 raw 形式修剪
+])
+```
 
 详见 [处理器辅助函数 wiki 页面](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%A4%84%E7%90%86%E5%99%A8%E8%BE%85%E5%8A%A9%E5%87%BD%E6%95%B0)
-：完整 API 签名、`PipeHandlerDefinition` 接口、各形态回调细节及示例。
+：完整 API 签名、`PipeHandlerDefinition` 接口、各形态回调细节。
 
 ## ParseOptions
 
@@ -601,10 +676,10 @@ interface StructuralParseOptions extends ParserBaseOptions {
 - `depthLimit`：最大嵌套深度，默认 `50`
 - `syntax`：覆盖默认语法符号
 - `tagName`：覆盖标签名字符规则
-- `baseOffset`：启用 `trackPositions` 时，将所有 `offset` 偏移此量（默认 `0`）。
-  详见[子串解析：baseOffset 与 tracker](#子串解析baseoffset-与-tracker)
+- `baseOffset`：子串解析时偏移所有 `offset`（默认 `0`）。
+  详见 [源码位置追踪 wiki](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E6%BA%90%E7%A0%81%E4%BD%8D%E7%BD%AE%E8%BF%BD%E8%B8%AA#%E8%A7%A3%E6%9E%90%E5%AD%90%E5%AD%97%E7%AC%A6%E4%B8%B2baseoffset-%E5%92%8C-tracker)
 - `tracker`：基于原始完整文档预构建的 `PositionTracker`，同时保证 `line`/`column` 正确。
-  详见[子串解析：baseOffset 与 tracker](#子串解析baseoffset-与-tracker)
+  详见 [源码位置追踪 wiki](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E6%BA%90%E7%A0%81%E4%BD%8D%E7%BD%AE%E8%BF%BD%E8%B8%AA#%E8%A7%A3%E6%9E%90%E5%AD%90%E5%AD%97%E7%AC%A6%E4%B8%B2baseoffset-%E5%92%8C-tracker)
 
 ### `ParseOptions` 专属字段
 
@@ -681,58 +756,16 @@ interface TokenDraft {
 
 ### 强类型
 
-对于简单场景，可以通过 `typeof` 收窄直接访问额外字段，无需类型断言。
-
-如需对整个 token schema 实现完整的类型安全，定义继承 `TextToken` 的类型接口，并在调用处做一次类型断言：
+定义继承 `TextToken` 的类型接口，在调用处做一次断言，然后通过可辨识联合收窄：
 
 ```ts
-import {parseRichText, type TextToken} from "yume-dsl-rich-text";
-
-// 1. 定义你的 token 类型 — 继承 TextToken 以保持兼容性
-interface PlainText extends TextToken {
-    type: "text";
-    value: string;
-}
-
-interface BoldToken extends TextToken {
-    type: "bold";
-    value: MyToken[];
-}
-
-interface LinkToken extends TextToken {
-    type: "link";
-    url: string;
-    value: MyToken[];
-}
-
-interface CodeBlockToken extends TextToken {
-    type: "code-block";
-    lang: string;
-    value: string;
-}
-
+interface LinkToken extends TextToken { type: "link"; url: string; value: MyToken[]; }
 type MyToken = PlainText | BoldToken | LinkToken | CodeBlockToken;
 
-// 2. 在调用处做一次类型断言
 const tokens = parseRichText(input, options) as MyToken[];
-
-// 3. 通过可辨识联合类型收窄
-function render(token: MyToken): string {
-    switch (token.type) {
-        case "text":
-            return token.value; // string
-        case "bold":
-            return `<b>${token.value.map(render).join("")}</b>`;
-        case "link":
-            return `<a href="${token.url}">${token.value.map(render).join("")}</a>`;
-        case "code-block":
-            return `<pre data-lang="${token.lang}">${token.value}</pre>`;
-    }
-}
 ```
 
-只要处理器返回的 draft 与联合类型匹配，类型断言就是安全的。
-增删标签时相应更新联合类型，TypeScript 会在穷举 switch 中标记未处理的 `type`。
+详见 [强类型 wiki 章节](https://github.com/chiba233/yumeDSL/wiki/zh-CN-Token-%E7%BB%93%E6%9E%84#%E5%BC%BA%E7%B1%BB%E5%9E%8B)：完整的 render 示例与可辨识联合用法。
 
 ---
 

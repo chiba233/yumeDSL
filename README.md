@@ -38,10 +38,10 @@ CMS & blogs, documentation pipelines, localization workflows (translators edit t
 
 ```tsx
 // React — render tokens recursively
-const RichText: FC<{tokens: TextToken[]}> = ({tokens}) => (
+const RichText: FC<{ tokens: TextToken[] }> = ({tokens}) => (
     <>{tokens.map(t =>
         t.type === "text" ? <span key={t.id}>{t.value as string}</span>
-        : <strong key={t.id}><RichText tokens={t.value as TextToken[]} /></strong>
+            : <strong key={t.id}><RichText tokens={t.value as TextToken[]}/></strong>
     )}</>
 );
 ```
@@ -51,7 +51,9 @@ const RichText: FC<{tokens: TextToken[]}> = ({tokens}) => (
 <template>
   <template v-for="t in tokens" :key="t.id">
     <span v-if="t.type === 'text'">{{ t.value }}</span>
-    <strong v-else><RichText :tokens="t.value" /></strong>
+    <strong v-else>
+      <RichText :tokens="t.value"/>
+    </strong>
   </template>
 </template>
 ```
@@ -181,9 +183,12 @@ First-time users:
 
 **Hands-on tutorials** — step-by-step guides on the [Wiki](https://github.com/chiba233/yumeDSL/wiki#tutorials):
 
-- [Building a Link Tag from Scratch](https://github.com/chiba233/yumeDSL/wiki/en-Tutorial-Link-Tag) — from zero to a working `$$link(url | text)$$`
-- [Game Dialogue Tags](https://github.com/chiba233/yumeDSL/wiki/en-Tutorial-Game-Dialogue) — shake / color / wait tags for a visual novel typewriter
-- [Safe UGC Chat](https://github.com/chiba233/yumeDSL/wiki/en-Tutorial-Safe-UGC) — whitelist inline tags, block dangerous forms, handle errors
+- [Building a Link Tag from Scratch](https://github.com/chiba233/yumeDSL/wiki/en-Tutorial-Link-Tag) — from zero to a
+  working `$$link(url | text)$$`
+- [Game Dialogue Tags](https://github.com/chiba233/yumeDSL/wiki/en-Tutorial-Game-Dialogue) — shake / color / wait tags
+  for a visual novel typewriter
+- [Safe UGC Chat](https://github.com/chiba233/yumeDSL/wiki/en-Tutorial-Safe-UGC) — whitelist inline tags, block
+  dangerous forms, handle errors
 
 ---
 
@@ -345,12 +350,12 @@ interface Parser {
 
 **Methods:**
 
-| Method       | Input                  | Output              | Inherits from defaults                                                    |
-|--------------|------------------------|---------------------|---------------------------------------------------------------------------|
-| `parse`      | DSL text + overrides?  | `TextToken[]`       | All `ParseOptions` — overrides merge one level deep for `syntax`/`tagName`|
-| `strip`      | DSL text + overrides?  | `string`            | Same as `parse`                                                           |
-| `structural` | DSL text + overrides?  | `StructuralNode[]`  | `handlers`, `allowForms`, `syntax`, `tagName`, `depthLimit`, `trackPositions` |
-| `print`      | `StructuralNode[]`     | `string`            | `syntax` only — lossless serializer, no gating                            |
+| Method       | Input                 | Output             | Inherits from defaults                                                        |
+|--------------|-----------------------|--------------------|-------------------------------------------------------------------------------|
+| `parse`      | DSL text + overrides? | `TextToken[]`      | All `ParseOptions` — overrides merge one level deep for `syntax`/`tagName`    |
+| `strip`      | DSL text + overrides? | `string`           | Same as `parse`                                                               |
+| `structural` | DSL text + overrides? | `StructuralNode[]` | `handlers`, `allowForms`, `syntax`, `tagName`, `depthLimit`, `trackPositions` |
+| `print`      | `StructuralNode[]`    | `string`           | `syntax` only — lossless serializer, no gating                                |
 
 ### `parseRichText` / `stripRichText`
 
@@ -485,9 +490,9 @@ printStructural(tree); // "Hello $$bold(world)$$!"
 function printStructural(nodes: StructuralNode[], options?: PrintOptions): string
 ```
 
-| Param            | Type                   | Description                                                               |
-|------------------|------------------------|---------------------------------------------------------------------------|
-| `nodes`          | `StructuralNode[]`     | The structural tree to serialize                                          |
+| Param            | Type                   | Description                                                                  |
+|------------------|------------------------|------------------------------------------------------------------------------|
+| `nodes`          | `StructuralNode[]`     | The structural tree to serialize                                             |
 | `options.syntax` | `Partial<SyntaxInput>` | Override syntax tokens — must match the syntax used during `parseStructural` |
 
 Always prints full tag syntax — no gating or validation is applied.
@@ -528,7 +533,8 @@ is used, round-trip serialization of well-formed inputs is supported.
 
 > For searching, locating, and querying structural trees (`findFirst`, `findAll`, `nodeAtOffset`,
 > `enclosingNode`), see
-> [`yume-dsl-token-walker` — Structural Query](https://github.com/chiba233/yume-dsl-token-walker?tab=readme-ov-file#structural-query).
+> [
+`yume-dsl-token-walker` — Structural Query](https://github.com/chiba233/yume-dsl-token-walker?tab=readme-ov-file#structural-query).
 
 ---
 
@@ -567,16 +573,91 @@ for `createTagNameConfig`, `DEFAULT_TAG_NAME`, and examples for colons, digits, 
 
 Handler helpers let you register tags in bulk without writing repetitive handler objects.
 
-| Helper | Use case |
-|---|---|
-| `createSimpleInlineHandlers` | Simple inline (bold, italic, etc.) |
-| `createSimpleBlockHandlers` | Simple block (info, warning, etc.) |
-| `createSimpleRawHandlers` | Simple raw (code, math, etc.) |
-| `createPipeHandlers` | Pipe parameters, multiple forms, custom logic |
-| `declareMultilineTags` | Declare block-level line-break normalization |
+### `createSimpleInlineHandlers` / `createSimpleBlockHandlers` / `createSimpleRawHandlers`
+
+```ts
+import {
+    createParser,
+    createSimpleInlineHandlers,
+    createSimpleBlockHandlers,
+    createSimpleRawHandlers,
+    declareMultilineTags,
+} from "yume-dsl-rich-text";
+
+const dsl = createParser({
+    handlers: {
+        ...createSimpleInlineHandlers(["bold", "italic", "underline", "strike", "code"]),
+        ...createSimpleBlockHandlers(["info", "warning"]),
+        ...createSimpleRawHandlers(["math"]),
+    },
+    blockTags: declareMultilineTags(["info", "warning", "math"]),
+});
+```
+
+| Helper                       | Token shape                                       |
+|------------------------------|---------------------------------------------------|
+| `createSimpleInlineHandlers` | `{ type: tagName, value: materializedTokens }`    |
+| `createSimpleBlockHandlers`  | `{ type: tagName, arg, value: content }`          |
+| `createSimpleRawHandlers`    | `{ type: tagName, arg, value: content }` (string) |
+
+### `createPipeHandlers(definitions)`
+
+The **recommended helper** for tags that need pipe parameters, multiple forms, or any custom logic.
+Each handler receives pre-parsed `PipeArgs` — no manual `parsePipeArgs` boilerplate needed.
+
+```ts
+import {createParser, createPipeHandlers, createSimpleInlineHandlers} from "yume-dsl-rich-text";
+
+const dsl = createParser({
+    handlers: {
+        ...createSimpleInlineHandlers(["bold", "italic"]),
+
+        ...createPipeHandlers({
+            link: {
+                inline: (args) => ({
+                    type: "link",
+                    url: args.text(0),
+                    value: args.materializedTailTokens(1),
+                }),
+            },
+            code: {
+                raw: (args, content) => ({
+                    type: "raw-code",
+                    lang: args.text(0, "text"),
+                    value: content,
+                }),
+            },
+        }),
+    },
+});
+```
+
+| Scenario                                  | Use                          |
+|-------------------------------------------|------------------------------|
+| Simple inline (bold, italic, etc.)        | `createSimpleInlineHandlers` |
+| Simple block (info, warning, etc.)        | `createSimpleBlockHandlers`  |
+| Simple raw (code, math, etc.)             | `createSimpleRawHandlers`    |
+| Pipe parameters (`$$link(url \| text)$$`) | `createPipeHandlers`         |
+| Multiple forms (inline + block + raw)     | `createPipeHandlers`         |
+
+### `declareMultilineTags(names)`
+
+Declares which tags need line-break normalization (stripping `\n` after `)*` / `)%` and before `*end$$` / `%end$$`).
+Does **not** register tags — use it alongside the handler helpers above.
+
+```ts
+// Basic — all multiline forms normalized
+blockTags: declareMultilineTags(["info", "warning", "code"])
+
+// Granular — restrict to specific forms
+blockTags: declareMultilineTags([
+    "info",                            // both raw & block
+    {tag: "code", forms: ["raw"]},   // only raw form
+])
+```
 
 See the [Handler Helpers wiki page](https://github.com/chiba233/yumeDSL/wiki/en-Handler-Helpers) for full API
-signatures, `PipeHandlerDefinition` interface, form-specific callback details, and examples.
+signatures, `PipeHandlerDefinition` interface, and form-specific callback details.
 
 ## ParseOptions
 
@@ -613,10 +694,10 @@ interface StructuralParseOptions extends ParserBaseOptions {
 - `depthLimit`: maximum nesting depth, default `50`
 - `syntax`: override default syntax tokens
 - `tagName`: override tag-name character rules
-- `baseOffset`: base offset for position tracking when parsing substrings (default `0`).
-  See [Parsing substrings with baseOffset and tracker](#parsing-substrings-with-baseoffset-and-tracker)
+- `baseOffset`: shift all offsets by this amount for substring parsing (default `0`).
+  See [Source Position Tracking wiki](https://github.com/chiba233/yumeDSL/wiki/en-Source-Position-Tracking#parsing-substrings-baseoffset-and-tracker)
 - `tracker`: pre-built `PositionTracker` from the original full document for correct `line`/`column`.
-  See [Parsing substrings with baseOffset and tracker](#parsing-substrings-with-baseoffset-and-tracker)
+  See [Source Position Tracking wiki](https://github.com/chiba233/yumeDSL/wiki/en-Source-Position-Tracking#parsing-substrings-baseoffset-and-tracker)
 
 ### Fields — `ParseOptions` only
 
@@ -699,56 +780,16 @@ interface TokenDraft {
 
 ### Strong Typing
 
-For simple use cases, you can access extra fields directly via `typeof` narrowing — no cast needed.
-
-For full type safety across your entire token schema, define typed interfaces that extend `TextToken` and cast once at
-the call site:
+Define typed interfaces that extend `TextToken`, cast once, then narrow with discriminated unions:
 
 ```ts
-import {parseRichText, type TextToken} from "yume-dsl-rich-text";
-
-// 1. Define your token types — extend TextToken for compatibility
-interface PlainText extends TextToken {
-    type: "text";
-    value: string;
-}
-
-interface BoldToken extends TextToken {
-    type: "bold";
-    value: MyToken[];
-}
-
-interface LinkToken extends TextToken {
-    type: "link";
-    url: string;
-    value: MyToken[];
-}
-
-interface CodeBlockToken extends TextToken {
-    type: "code-block";
-    lang: string;
-    value: string;
-}
-
+interface LinkToken extends TextToken { type: "link"; url: string; value: MyToken[]; }
 type MyToken = PlainText | BoldToken | LinkToken | CodeBlockToken;
 
-// 2. Cast once at the call site
 const tokens = parseRichText(input, options) as MyToken[];
-
-// 3. Narrow with discriminated unions
-function render(token: MyToken): string {
-    switch (token.type) {
-        case "text":
-            return token.value; // string
-        case "bold":
-            return `<b>${token.value.map(render).join("")}</b>`;
-        case "link":
-            return `<a href="${token.url}">${token.value.map(render).join("")}</a>`;
-        case "code-block":
-            return `<pre data-lang="${token.lang}">${token.value}</pre>`;
-    }
-}
 ```
+
+See the [Strong Typing wiki section](https://github.com/chiba233/yumeDSL/wiki/en-Token-Structure#strong-typing) for a full render example with discriminated unions.
 
 The cast is safe as long as your handlers return drafts that match the union.
 If you add or remove tags, update the union accordingly — TypeScript will flag any unhandled `type` in exhaustive
@@ -820,17 +861,18 @@ const tokens = dsl.parse(input);
 
 ## Exports
 
-| Category | Exports |
-|---|---|
-| **Core** | `parseRichText`, `stripRichText`, `createParser`, `parseStructural`, `printStructural` |
-| **Configuration** | `DEFAULT_SYNTAX`, `createEasySyntax`, `createSyntax`, `DEFAULT_TAG_NAME`, `createTagNameConfig`, `createEasyStableId` |
-| **Handler Helpers** | `createPipeHandlers`, `createSimpleInlineHandlers`, `createSimpleBlockHandlers`, `createSimpleRawHandlers`, `declareMultilineTags` |
-| **Handler Utilities** | `parsePipeArgs`, `parsePipeTextArgs`, `parsePipeTextList`, `extractText`, `createTextToken`, `splitTokensByPipe`, `materializeTextTokens`, `unescapeInline`, `readEscapedSequence`, `createToken` |
-| **Token Traversal** | `walkTokens`, `mapTokens` |
-| **Position Tracking** | `buildPositionTracker` |
-| **Types** | `TextToken`, `TokenDraft`, `CreateId`, `DslContext`, `TagHandler`, `TagForm`, `ParseOptions`, `ParserBaseOptions`, `StructuralParseOptions`, `Parser`, `SyntaxInput`, `SyntaxConfig`, `TagNameConfig`, `BlockTagInput`, `MultilineForm`, `ErrorCode`, `ParseError`, `StructuralNode`, `SourcePosition`, `SourceSpan`, `PositionTracker`, `PipeArgs`, `PipeHandlerDefinition`, `EasyStableIdOptions`, `PrintOptions`, `TokenVisitContext`, `WalkVisitor`, `MapVisitor` |
+| Category              | Exports                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+|-----------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Core**              | `parseRichText`, `stripRichText`, `createParser`, `parseStructural`, `printStructural`                                                                                                                                                                                                                                                                                                                                                                                |
+| **Configuration**     | `DEFAULT_SYNTAX`, `createEasySyntax`, `createSyntax`, `DEFAULT_TAG_NAME`, `createTagNameConfig`, `createEasyStableId`                                                                                                                                                                                                                                                                                                                                                 |
+| **Handler Helpers**   | `createPipeHandlers`, `createSimpleInlineHandlers`, `createSimpleBlockHandlers`, `createSimpleRawHandlers`, `declareMultilineTags`                                                                                                                                                                                                                                                                                                                                    |
+| **Handler Utilities** | `parsePipeArgs`, `parsePipeTextArgs`, `parsePipeTextList`, `extractText`, `createTextToken`, `splitTokensByPipe`, `materializeTextTokens`, `unescapeInline`, `readEscapedSequence`, `createToken`                                                                                                                                                                                                                                                                     |
+| **Token Traversal**   | `walkTokens`, `mapTokens`                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| **Position Tracking** | `buildPositionTracker`                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| **Types**             | `TextToken`, `TokenDraft`, `CreateId`, `DslContext`, `TagHandler`, `TagForm`, `ParseOptions`, `ParserBaseOptions`, `StructuralParseOptions`, `Parser`, `SyntaxInput`, `SyntaxConfig`, `TagNameConfig`, `BlockTagInput`, `MultilineForm`, `ErrorCode`, `ParseError`, `StructuralNode`, `SourcePosition`, `SourceSpan`, `PositionTracker`, `PipeArgs`, `PipeHandlerDefinition`, `EasyStableIdOptions`, `PrintOptions`, `TokenVisitContext`, `WalkVisitor`, `MapVisitor` |
 
-See the [Exports wiki page](https://github.com/chiba233/yumeDSL/wiki/en-Exports) for full signatures and detailed documentation.
+See the [Exports wiki page](https://github.com/chiba233/yumeDSL/wiki/en-Exports) for full signatures and detailed
+documentation.
 
 ## Source Position Tracking
 
