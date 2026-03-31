@@ -35,6 +35,29 @@ game dialogue & visual novels (typewriter / shake / color tags you invent),
 chat & comments (safe UGC with graceful degradation),
 CMS & blogs, documentation pipelines, localization workflows (translators edit text, not markup)
 
+```tsx
+// React — render tokens recursively
+const RichText: FC<{tokens: TextToken[]}> = ({tokens}) => (
+    <>{tokens.map(t =>
+        t.type === "text" ? <span key={t.id}>{t.value as string}</span>
+        : <strong key={t.id}><RichText tokens={t.value as TextToken[]} /></strong>
+    )}</>
+);
+```
+
+```vue
+<!-- Vue 3 — same idea, template syntax -->
+<template>
+  <template v-for="t in tokens" :key="t.id">
+    <span v-if="t.type === 'text'">{{ t.value }}</span>
+    <strong v-else><RichText :tokens="t.value" /></strong>
+  </template>
+</template>
+```
+
+> Full rendering guides: [Vue 3](https://github.com/chiba233/yumeDSL/wiki/en-Vue-3-Rendering) ·
+> [React](https://github.com/chiba233/yumeDSL/wiki/en-React-Rendering)
+
 ### [▶ Live Demo — DSL Fallback Museum](https://qwwq.org/blog/dsl-fallback-museum)
 
 Shiki code highlighting · valid tags · intentionally malformed markup · error reporting
@@ -57,49 +80,6 @@ Shiki code highlighting · valid tags · intentionally malformed markup · error
 - **Interpret token trees into arbitrary output nodes** → add `yume-dsl-token-walker`
 - **Source-level highlighting or TextMate grammar** → add `yume-dsl-shiki-highlight`
 - **Render DSL inside Markdown (markdown-it)** → add `yume-dsl-markdown-it`
-
----
-
-## Table of Contents
-
-- [Design Philosophy](#design-philosophy)
-- [Install](#install)
-- [Quick Start](#quick-start)
-- [DSL Syntax](#dsl-syntax)
-    - [Inline](#inline)
-    - [Raw](#raw)
-    - [Block](#block)
-    - [Pipe Parameters](#pipe-parameters)
-    - [Escape Sequences](#escape-sequences)
-- [API](#api)
-    - [createParser](#createparserdefaults--recommended-entry-point)
-    - [parseRichText / stripRichText](#parserichtext--striprichtext)
-    - [parseStructural](#parsestructural--structural-parse)
-    - [printStructural](#printstructural--structural-print)
-- [Custom Syntax](#custom-syntax)
-    - [Default Syntax](#default-syntax)
-    - [createEasySyntax](#createeasysyntax-recommended)
-    - [createSyntax](#createsyntax-low-level)
-- [Custom Tag Name Characters](#custom-tag-name-characters)
-- [Handler Helpers](#handler-helpers)
-    - [createPipeHandlers](#createpipehandlersdefinitions)
-    - [createSimpleInlineHandlers / createSimpleBlockHandlers / createSimpleRawHandlers](#createsimpleinlinehandlersnames--createsimpleblockhandlersnames--createsimplerawhandlersnames)
-    - [declareMultilineTags](#declaremultilinetagsnames)
-- [ParseOptions](#parseoptions)
-- [Token Structure](#token-structure)
-    - [Strong Typing](#strong-typing)
-- [Stable Token IDs](#stable-token-ids)
-- [Writing Tag Handlers (advanced)](#writing-tag-handlers-advanced)
-    - [PipeArgs / parsePipeTextList](#pipeargs--parsepipetextlist)
-- [Exports](#exports)
-    - [DslContext](#dslcontext)
-- [Source Position Tracking](#source-position-tracking)
-- [Error Handling](#error-handling)
-- [Graceful Degradation](#graceful-degradation)
-- [Vue 3 Rendering](#vue-3-rendering)
-- [Deprecated API](#deprecated-api)
-- [Changelog](#Changelog)
-- [License](#license)
 
 ---
 
@@ -1821,6 +1801,12 @@ Without `onError`, the same recovery happens silently — no error is thrown.
 See the [Vue 3 Rendering wiki page](https://github.com/chiba233/yumeDSL/wiki/en-Vue-3-Rendering) for a full drop-in
 recursive component, tag-map setup, URL sanitization, and UI library integration.
 
+---
+
+## React Rendering
+
+See the [React Rendering wiki page](https://github.com/chiba233/yumeDSL/wiki/en-React-Rendering) for a full drop-in
+recursive component, tag-renderer pattern, `useMemo` integration, and Material UI / Ant Design examples.
 
 ---
 

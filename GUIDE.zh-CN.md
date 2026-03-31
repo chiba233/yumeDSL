@@ -30,6 +30,29 @@
 聊天与评论（UGC 安全降级），
 CMS 与博客、文档管线、本地化工作流（翻译人员只碰文本，不碰标记）
 
+```tsx
+// React — 递归渲染 token 树
+const RichText: FC<{tokens: TextToken[]}> = ({tokens}) => (
+    <>{tokens.map(t =>
+        t.type === "text" ? <span key={t.id}>{t.value as string}</span>
+        : <strong key={t.id}><RichText tokens={t.value as TextToken[]} /></strong>
+    )}</>
+);
+```
+
+```vue
+<!-- Vue 3 — 同样的思路，模板语法 -->
+<template>
+  <template v-for="t in tokens" :key="t.id">
+    <span v-if="t.type === 'text'">{{ t.value }}</span>
+    <strong v-else><RichText :tokens="t.value" /></strong>
+  </template>
+</template>
+```
+
+> 完整渲染指南：[Vue 3](https://github.com/chiba233/yumeDSL/wiki/zh-CN-Vue-3-%E6%B8%B2%E6%9F%93) ·
+> [React](https://github.com/chiba233/yumeDSL/wiki/zh-CN-React-%E6%B8%B2%E6%9F%93)
+
 ### [▶ 在线演示 — DSL Fallback Museum](https://qwwq.org/blog/dsl-fallback-museum)
 
 Shiki 代码高亮 · 合法标签 · 故意写错的标签 · 错误报告
@@ -52,49 +75,6 @@ Shiki 代码高亮 · 合法标签 · 故意写错的标签 · 错误报告
 - **把 token 树解释为任意输出节点** → 再配合 `yume-dsl-token-walker`
 - **源码级高亮或 TextMate 语法支持** → 再配合 `yume-dsl-shiki-highlight`
 - **在 Markdown 中渲染 DSL（markdown-it）** → 再配合 `yume-dsl-markdown-it`
-
----
-
-## 目录
-
-- [设计理念](#设计理念)
-- [安装](#安装)
-- [快速开始](#快速开始)
-- [DSL 语法](#dsl-语法)
-    - [Inline 标签](#inline-标签)
-    - [Raw 标签](#raw-标签)
-    - [Block 标签](#block-标签)
-    - [管道参数](#管道参数)
-    - [转义序列](#转义序列)
-- [API](#api)
-    - [createParser](#createparserdefaults--推荐入口)
-    - [parseRichText / stripRichText](#parserichtext--striprichtext)
-    - [parseStructural](#parsestructural--结构化解析)
-    - [printStructural](#printstructural--结构打印)
-- [自定义语法](#自定义语法)
-    - [默认语法](#默认语法)
-    - [createEasySyntax](#createeasysyntax推荐)
-    - [createSyntax](#createsyntax底层)
-- [自定义标签名字符规则](#自定义标签名字符规则)
-- [处理器辅助函数](#处理器辅助函数)
-    - [createPipeHandlers](#createpipehandlersdefinitions)
-    - [createSimpleInlineHandlers / createSimpleBlockHandlers / createSimpleRawHandlers](#createsimpleinlinehandlersnames--createsimpleblockhandlersnames--createsimplerawhandlersnames)
-    - [declareMultilineTags](#declaremultilinetagsnames)
-- [ParseOptions](#parseoptions)
-- [Token 结构](#token-结构)
-    - [强类型](#强类型)
-- [稳定 Token ID](#稳定-token-id)
-- [编写标签处理器（进阶）](#编写标签处理器进阶)
-    - [PipeArgs / parsePipeTextList](#pipeargs--parsepipetextlist)
-- [导出一览](#导出一览)
-    - [DslContext](#dslcontext)
-- [源码位置追踪](#源码位置追踪)
-- [错误处理](#错误处理)
-- [优雅降级](#优雅降级)
-- [Vue 3 渲染](#vue-3-渲染)
-- [待弃用 API](#待弃用-api)
-- [更新日志](#更新日志)
-- [许可证](#许可证)
 
 ---
 
@@ -1766,6 +1746,12 @@ dsl.parse("Hello $$bold(world", {onError: (e) => errors.push(e)});
 ## Vue 3 渲染
 
 详细示例请访问 [Vue 3 渲染 wiki 页面](https://github.com/chiba233/yumeDSL/wiki/zh-CN-Vue-3-%E6%B8%B2%E6%9F%93)。
+
+---
+
+## React 渲染
+
+详细示例请访问 [React 渲染 wiki 页面](https://github.com/chiba233/yumeDSL/wiki/zh-CN-React-%E6%B8%B2%E6%9F%93)。
 
 ---
 
