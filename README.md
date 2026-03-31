@@ -464,26 +464,26 @@ Each handler receives pre-parsed `PipeArgs` — no manual `parsePipeArgs` boiler
 import {createParser, createPipeHandlers, createSimpleInlineHandlers} from "yume-dsl-rich-text";
 
 const dsl = createParser({
-    handlers: {
-        ...createSimpleInlineHandlers(["bold", "italic"]),
+  handlers: {
+    ...createSimpleInlineHandlers(["bold", "italic"]),
 
-        ...createPipeHandlers({
-            link: {
-                inline: (args, ctx) => ({
-                    type: "link",
-                    url: args.text(0),
-                    value: args.materializedTailTokens(1),
-                }),
-            },
-            code: {
-                raw: (args, content, ctx) => ({
-                    type: "raw-code",
-                    lang: args.text(0, "text"),
-                    value: content,
-                }),
-            },
+    ...createPipeHandlers({
+      link: {
+        inline: (args, ctx) => ({
+          type: "link",
+          url: args.text(0),
+          value: args.materializedTailTokens(1),
         }),
-    },
+      },
+      code: {
+        raw: (args, content, ctx) => ({
+          type: "raw-code",
+          lang: args.text(0, "text"),
+          value: content,
+        }),
+      },
+    }),
+  },
 });
 ```
 

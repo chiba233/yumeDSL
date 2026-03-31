@@ -58,7 +58,8 @@ const RichText: FC<{ tokens: TextToken[] }> = ({tokens}) => (
 
 ### [▶ 实际站点演示文章 — qwwq.org/blog](https://qwwq.org/blog/dsl-fallback-museum)
 
-这个博客完全由 `yume-dsl-rich-text` + [`yume-dsl-shiki-highlight`](https://github.com/chiba233/yume-dsl-shiki-highlight) 驱动——没有 Markdown，没有 HTML 模板。每个标题、代码块、提示框、行内样式都是 DSL 标签。
+这个博客完全由 `yume-dsl-rich-text` + [`yume-dsl-shiki-highlight`](https://github.com/chiba233/yume-dsl-shiki-highlight)
+驱动——没有 Markdown，没有 HTML 模板。每个标题、代码块、提示框、行内样式都是 DSL 标签。
 
 ## 生态
 
@@ -92,7 +93,8 @@ const RichText: FC<{ tokens: TextToken[] }> = ({tokens}) => (
 
 **从这里开始：** [安装](#安装) · [快速开始](#快速开始) · [DSL 语法](#dsl-语法) · [API](#api)
 
-**深入了解：** [自定义语法](#自定义语法) · [处理器辅助函数](#处理器辅助函数) · [ParseOptions](#parseoptions) · [稳定 Token ID](#稳定-token-id) · [源码位置追踪](#源码位置追踪) · [错误处理](#错误处理) · [导出一览](#导出一览) · [待弃用 API](#待弃用-api) · [兼容性](#兼容性说明)
+**深入了解：
+** [自定义语法](#自定义语法) · [处理器辅助函数](#处理器辅助函数) · [ParseOptions](#parseoptions) · [稳定 Token ID](#稳定-token-id) · [源码位置追踪](#源码位置追踪) · [错误处理](#错误处理) · [导出一览](#导出一览) · [待弃用 API](#待弃用-api) · [兼容性](#兼容性说明)
 
 ---
 
@@ -297,17 +299,17 @@ dsl.parse(text, {onError: (e) => console.warn(e)});
 
 大多数场景下，`createParser` 主要是为了绑定 `handlers`；其余选项只是顺手一起固化到实例上。
 
-| 选项               | 预绑定后的效果                            |
-|------------------|------------------------------------|
-| **`handlers`**   | **标签定义 — 使用 `createParser` 的主要理由** |
-| `syntax`         | 自定义语法符号（如覆盖 `$$` 前缀等）              |
-| `tagName`        | 自定义标签名字符规则                         |
-| `allowForms`     | 限制接受的标签形式（默认：全部启用）                 |
-| `depthLimit`     | 嵌套深度限制 — 很少需要逐次修改                  |
-| `createId`       | 自定义 token id 生成器（仍可按次覆盖）           |
+| 选项               | 预绑定后的效果                                                                    |
+|------------------|----------------------------------------------------------------------------|
+| **`handlers`**   | **标签定义 — 使用 `createParser` 的主要理由**                                         |
+| `syntax`         | 自定义语法符号（如覆盖 `$$` 前缀等）                                                      |
+| `tagName`        | 自定义标签名字符规则                                                                 |
+| `allowForms`     | 限制接受的标签形式（默认：全部启用）                                                         |
+| `depthLimit`     | 嵌套深度限制 — 很少需要逐次修改                                                          |
+| `createId`       | 自定义 token id 生成器（仍可按次覆盖）                                                   |
 | `blockTags`      | 块级换行规范化——详见 [`declareMultilineTags`](#declaremultilinetags-names--块级换行规范化) |
-| `onError`        | 默认错误处理器（仍可按次覆盖）                    |
-| `trackPositions` | 为所有输出节点附加源码位置（仍可按次覆盖）              |
+| `onError`        | 默认错误处理器（仍可按次覆盖）                                                            |
+| `trackPositions` | 为所有输出节点附加源码位置（仍可按次覆盖）                                                      |
 
 **不用 `createParser` 的话**，每次调用都需要传入完整选项：
 
@@ -376,7 +378,8 @@ const tree = parseStructural("$$bold(hello)$$ and $$code(ts)%\nconst x = 1;\n%en
 
 **怎么选？** 渲染内容 → `parseRichText`；分析源码结构 → `parseStructural`。
 
-详见 [API 参考 wiki 页面](https://github.com/chiba233/yumeDSL/wiki/zh-CN-API-%E5%8F%82%E8%80%83#parsestructuraltext-options----%E7%BB%93%E6%9E%84%E5%8C%96%E8%A7%A3%E6%9E%90)：`StructuralNode` 变体、`StructuralParseOptions`、与 `parseRichText` 的差异、`printStructural`。
+详见 [API 参考 wiki 页面](https://github.com/chiba233/yumeDSL/wiki/zh-CN-API-%E5%8F%82%E8%80%83#parsestructuraltext-options----%E7%BB%93%E6%9E%84%E5%8C%96%E8%A7%A3%E6%9E%90)：
+`StructuralNode` 变体、`StructuralParseOptions`、与 `parseRichText` 的差异、`printStructural`。
 
 ---
 
@@ -499,10 +502,10 @@ Hello!
 
 **各形式的规范化行为：**
 
-| 形式 | 剥离什么 | 适用场景 |
-|------|---------|---------|
-| `raw` / `block` | `)*` / `)%` 后的前导 `\n`，`*end$$` / `%end$$` 前的尾随 `\n` | 多行 block/raw 标签 |
-| `inline` | inline close `$$` 后紧跟的 `\n` | 虽然用 inline 语法但渲染为块级元素的标签（如 `$$center(...)$$`） |
+| 形式              | 剥离什么                                                | 适用场景                                          |
+|-----------------|-----------------------------------------------------|-----------------------------------------------|
+| `raw` / `block` | `)*` / `)%` 后的前导 `\n`，`*end$$` / `%end$$` 前的尾随 `\n` | 多行 block/raw 标签                               |
+| `inline`        | inline close `$$` 后紧跟的 `\n`                         | 虽然用 inline 语法但渲染为块级元素的标签（如 `$$center(...)$$`） |
 
 **用法：**
 
@@ -513,12 +516,13 @@ blockTags: declareMultilineTags(["info", "warning", "center"])
 // 传对象——精细控制到特定形式
 blockTags: declareMultilineTags([
     "info",                                // 字符串：三种形式全部规范化
-    { tag: "code", forms: ["raw"] },       // 仅 raw 形式
-    { tag: "center", forms: ["inline"] },  // 仅 inline 形式
+    {tag: "code", forms: ["raw"]},       // 仅 raw 形式
+    {tag: "center", forms: ["inline"]},  // 仅 inline 形式
 ])
 ```
 
-**自动推导：** 省略 `blockTags` 时，解析器从 handler 方法自动推导 raw/block 规范化（有 `raw` → raw 形式，有 `block` → block 形式）。**inline 规范化永远不会自动推导**——解析器无法知道一个 inline 标签是否渲染为块级元素，必须显式声明。
+**自动推导：** 省略 `blockTags` 时，解析器从 handler 方法自动推导 raw/block 规范化（有 `raw` → raw 形式，有 `block` → block
+形式）。**inline 规范化永远不会自动推导**——解析器无法知道一个 inline 标签是否渲染为块级元素，必须显式声明。
 
 **经验法则：** 如果你的标签渲染为块级元素，确保它出现在 `blockTags` 中。否则边界换行会混入内容，渲染时产生多余空行。
 
@@ -568,7 +572,8 @@ interface StructuralParseOptions extends ParserBaseOptions {
 ### `ParseOptions` 专属字段
 
 - `createId`：覆盖本次解析的 token id 生成策略
-- `blockTags`：块级换行规范化——纯字符串启用全部形式（raw + block + inline），`{ tag, forms }` 限定到特定形式。详见 [`declareMultilineTags`](#declaremultilinetags-names--块级换行规范化)
+- `blockTags`：块级换行规范化——纯字符串启用全部形式（raw + block + inline），`{ tag, forms }` 限定到特定形式。详见 [
+  `declareMultilineTags`](#declaremultilinetags-names--块级换行规范化)
 - `mode`：已弃用——详见[待弃用 API](#待弃用-api)
 - `onError`：解析错误回调
 - `trackPositions`：为每个 `TextToken` 附加源码位置信息 `position`（默认 `false`）。详见[源码位置追踪](#源码位置追踪)
@@ -643,13 +648,19 @@ interface TokenDraft {
 定义继承 `TextToken` 的类型接口，在调用处做一次断言，然后通过可辨识联合收窄：
 
 ```ts
-interface LinkToken extends TextToken { type: "link"; url: string; value: MyToken[]; }
+interface LinkToken extends TextToken {
+    type: "link";
+    url: string;
+    value: MyToken[];
+}
+
 type MyToken = PlainText | BoldToken | LinkToken | CodeBlockToken;
 
 const tokens = parseRichText(input, options) as MyToken[];
 ```
 
-详见 [强类型 wiki 章节](https://github.com/chiba233/yumeDSL/wiki/zh-CN-Token-%E7%BB%93%E6%9E%84#%E5%BC%BA%E7%B1%BB%E5%9E%8B)：完整的 render 示例与可辨识联合用法。
+详见 [强类型 wiki 章节](https://github.com/chiba233/yumeDSL/wiki/zh-CN-Token-%E7%BB%93%E6%9E%84#%E5%BC%BA%E7%B1%BB%E5%9E%8B)
+：完整的 render 示例与可辨识联合用法。
 
 ---
 
@@ -687,7 +698,8 @@ interface TagHandler {
 
 只实现标签支持的形式即可，不支持的形式会优雅降级。
 
-回调里的 `ctx` 是解析器传给你的上下文对象，不需要知道它是什么，写上就行。建议在所有回调中都声明 ctx——没有额外开销，兼容未来 ctx 必填的大版本，并避免并发环境（如 SSR）下的模块级状态问题。
+回调里的 `ctx` 是解析器传给你的上下文对象，不需要知道它是什么，写上就行。建议在所有回调中都声明 ctx——没有额外开销，兼容未来
+ctx 必填的大版本，并避免并发环境（如 SSR）下的模块级状态问题。
 
 ### 示例
 
@@ -770,7 +782,8 @@ parseRichText("$$bold(unclosed", {
 `withSyntax`、`getSyntax`、`withTagNameConfig`、`withCreateId`、`resetTokenIdSeed`、
 `createPipeBlockHandlers`、`createPipeRawHandlers`、`createPassthroughTags`、`ParseOptions.mode`
 
-详见 [待弃用 API wiki 页面](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%BE%85%E5%BC%83%E7%94%A8-API)：签名、替代方案及迁移指南。
+详见 [待弃用 API wiki 页面](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%BE%85%E5%BC%83%E7%94%A8-API)
+：签名、替代方案及迁移指南。
 
 ---
 

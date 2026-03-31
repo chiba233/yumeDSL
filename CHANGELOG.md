@@ -18,39 +18,39 @@
 ### 1.0.13
 
 - Documentation
-  - Add inline Vue 3 and React rendering snippets to README / GUIDE intro — first-time users can see
-    how rendering works before scrolling
-  - Add [Wiki](https://github.com/chiba233/yumeDSL/wiki/) with full API documentation, in-depth
-    handler utility reference, and three step-by-step tutorials:
-    - [Building a Link Tag from Scratch](https://github.com/chiba233/yumeDSL/wiki/en-Tutorial-Link-Tag)
-    - [Game Dialogue Tags](https://github.com/chiba233/yumeDSL/wiki/en-Tutorial-Game-Dialogue)
-    - [Safe UGC Chat](https://github.com/chiba233/yumeDSL/wiki/en-Tutorial-Safe-UGC)
-  - Add [React Rendering](https://github.com/chiba233/yumeDSL/wiki/en-React-Rendering) wiki page —
-    drop-in recursive component, `useMemo` integration, Material UI / Ant Design / syntax-highlighter examples
-  - Move Vue 3 rendering demo from README to
-    [Wiki](https://github.com/chiba233/yumeDSL/wiki/en-Vue-3-Rendering) — README now links to wiki
-  - Remove Table of Contents from README / GUIDE (redundant with wiki navigation)
-  - Add Wiki badge to README / GUIDE header
-  - Add wiki cross-reference links to Handler Utilities, Exports, Error Handling, and Security sections
+    - Add inline Vue 3 and React rendering snippets to README / GUIDE intro — first-time users can see
+      how rendering works before scrolling
+    - Add [Wiki](https://github.com/chiba233/yumeDSL/wiki/) with full API documentation, in-depth
+      handler utility reference, and three step-by-step tutorials:
+        - [Building a Link Tag from Scratch](https://github.com/chiba233/yumeDSL/wiki/en-Tutorial-Link-Tag)
+        - [Game Dialogue Tags](https://github.com/chiba233/yumeDSL/wiki/en-Tutorial-Game-Dialogue)
+        - [Safe UGC Chat](https://github.com/chiba233/yumeDSL/wiki/en-Tutorial-Safe-UGC)
+    - Add [React Rendering](https://github.com/chiba233/yumeDSL/wiki/en-React-Rendering) wiki page —
+      drop-in recursive component, `useMemo` integration, Material UI / Ant Design / syntax-highlighter examples
+    - Move Vue 3 rendering demo from README to
+      [Wiki](https://github.com/chiba233/yumeDSL/wiki/en-Vue-3-Rendering) — README now links to wiki
+    - Remove Table of Contents from README / GUIDE (redundant with wiki navigation)
+    - Add Wiki badge to README / GUIDE header
+    - Add wiki cross-reference links to Handler Utilities, Exports, Error Handling, and Security sections
 
 ### 1.0.12
 
 - New structural print API:
-  - `printStructural(nodes, options?)` — lossless serializer, always prints full tag syntax
-  - `PrintOptions` accepts `syntax` override for custom syntax round-trip
-  - Supports round-trip serialization: `printStructural(parseStructural(input)) === input` for well-formed inputs
-    when the same syntax is used
+    - `printStructural(nodes, options?)` — lossless serializer, always prints full tag syntax
+    - `PrintOptions` accepts `syntax` override for custom syntax round-trip
+    - Supports round-trip serialization: `printStructural(parseStructural(input)) === input` for well-formed inputs
+      when the same syntax is used
 - `createParser` now returns a `print(nodes)` method that inherits `syntax` from the parser's closure
 
 ### 1.0.11
 
 - New token traversal utilities:
-  - `walkTokens(tokens, visitor)` — depth-first pre-order read-only visitor; accepts a generic callback
-    or a `Record<type, fn>` for type-based dispatch
-  - `mapTokens(tokens, visitor)` — depth-first post-order immutable transform; return a replacement token,
-    an array to expand one token into multiple siblings, or `null` to remove; children are mapped before
-    the visitor sees the parent
-  - `TokenVisitContext` — `{ parent, depth, index }` provided to every callback
+    - `walkTokens(tokens, visitor)` — depth-first pre-order read-only visitor; accepts a generic callback
+      or a `Record<type, fn>` for type-based dispatch
+    - `mapTokens(tokens, visitor)` — depth-first post-order immutable transform; return a replacement token,
+      an array to expand one token into multiple siblings, or `null` to remove; children are mapped before
+      the visitor sees the parent
+    - `TokenVisitContext` — `{ parent, depth, index }` provided to every callback
 - Fix: `createParser(defaults)` now deep-merges `syntax` and `tagName` when overrides are passed to
   `parse()` / `strip()` / `structural()`. Previously, a partial override like `{ syntax: { escapeChar: "~" } }`
   would clobber the entire default `syntax` object instead of merging into it
@@ -63,15 +63,15 @@
 
 - New public export: `createEasyStableId(options?)` — parse-session scoped, stateful `CreateId`
   generator that derives deterministic, content-based token IDs instead of sequential counters
-  - Default fingerprint: `type` + `value` (recursive); pass a custom `fingerprint` closure for full control
-  - Duplicate fingerprints auto-disambiguated with numeric suffixes (`s-abc`, `s-abc-1`, …)
-  - Configurable `prefix` (default `"s"`)
+    - Default fingerprint: `type` + `value` (recursive); pass a custom `fingerprint` closure for full control
+    - Duplicate fingerprints auto-disambiguated with numeric suffixes (`s-abc`, `s-abc-1`, …)
+    - Configurable `prefix` (default `"s"`)
 - New public type: `EasyStableIdOptions`
 - Documentation
-  - New **Stable Token IDs** section in README / GUIDE with usage, scope, and disambiguation examples
-  - Added **Handler Utilities** demo — one handler covering all 10 utility functions from the export table
-  - Updated intro: use cases (game dialogue, chat/UGC, CMS, localization), graceful degradation,
-    framework-agnostic runtime, `parseStructural` + `parseSlice` pipeline
+    - New **Stable Token IDs** section in README / GUIDE with usage, scope, and disambiguation examples
+    - Added **Handler Utilities** demo — one handler covering all 10 utility functions from the export table
+    - Updated intro: use cases (game dialogue, chat/UGC, CMS, localization), graceful degradation,
+      framework-agnostic runtime, `parseStructural` + `parseSlice` pipeline
 
 ### 1.0.8
 
@@ -81,12 +81,14 @@
 - `parseRichText` passes `{ suppressDeprecation: true }` to its internal `with*` calls directly
 - Deprecation output now prefers `process.stderr.write` over `console.warn` where available
 - Refactored internals for human readability:
-  - Collapsed the three-layer `withSyntax`/`withTagNameConfig`/`withCreateId` nesting in `parseRichText` into a single `withLegacyAmbientState` helper
-  - Replaced `tryParseComplexTag`'s 14 positional parameters with a `ComplexTagContext` object
-  - Replaced boolean flags in `scanInlineBoundary` with a named `InlineBoundaryMode` object
-  - Extracted `bufferAndAdvance` helper to deduplicate repeated append-and-advance patterns in `tryConsumeDepthLimitedTag`
-  - Extracted `pushNode` helper to deduplicate conditional position assignment across `structural.ts`
-  - Deduplicated `createPipeBlockHandlers` / `createPipeRawHandlers` via shared `createPipeFormHandlers`
+    - Collapsed the three-layer `withSyntax`/`withTagNameConfig`/`withCreateId` nesting in `parseRichText` into a single
+      `withLegacyAmbientState` helper
+    - Replaced `tryParseComplexTag`'s 14 positional parameters with a `ComplexTagContext` object
+    - Replaced boolean flags in `scanInlineBoundary` with a named `InlineBoundaryMode` object
+    - Extracted `bufferAndAdvance` helper to deduplicate repeated append-and-advance patterns in
+      `tryConsumeDepthLimitedTag`
+    - Extracted `pushNode` helper to deduplicate conditional position assignment across `structural.ts`
+    - Deduplicated `createPipeBlockHandlers` / `createPipeRawHandlers` via shared `createPipeFormHandlers`
 
 ### 1.0.7
 
@@ -100,81 +102,82 @@
 - New public export: `buildPositionTracker(text)` — build a reusable `PositionTracker` from any text
 - New public type: `PositionTracker` — precomputed line-offset table for resolving offsets to line/column
 - `ParserBaseOptions` now accepts two new optional fields for substring parsing:
-  - `baseOffset?: number` — shift all `offset` values by this amount (default `0`)
-  - `tracker?: PositionTracker` — pre-built tracker from the original full document;
-    when provided, `line` and `column` are also resolved against the original document
-  - Both require `trackPositions: true` to have any effect
-  - Without `tracker`, only `offset` is shifted; `line`/`column` remain local to the substring
-  - With `tracker`, all three fields (`offset`, `line`, `column`) are fully correct
+    - `baseOffset?: number` — shift all `offset` values by this amount (default `0`)
+    - `tracker?: PositionTracker` — pre-built tracker from the original full document;
+      when provided, `line` and `column` are also resolved against the original document
+    - Both require `trackPositions: true` to have any effect
+    - Without `tracker`, only `offset` is shifted; `line`/`column` remain local to the substring
+    - With `tracker`, all three fields (`offset`, `line`, `column`) are fully correct
 - These options apply to both `parseRichText` and `parseStructural`
 - No breaking changes — all new fields are optional with backward-compatible defaults
 
 ### 1.0.5
 
 - New helper: `createPipeHandlers(definitions)`
-  - Unified pipe-aware handler builder for any combination of `inline`, `raw`, and `block`
-  - `inline` handlers receive parsed `PipeArgs` from inline tokens
-  - `raw` / `block` handlers receive parsed `PipeArgs` from `arg`, while still preserving the original `rawArg`
+    - Unified pipe-aware handler builder for any combination of `inline`, `raw`, and `block`
+    - `inline` handlers receive parsed `PipeArgs` from inline tokens
+    - `raw` / `block` handlers receive parsed `PipeArgs` from `arg`, while still preserving the original `rawArg`
 - New utility: `createTextToken(value, ctx?)`
-  - Shorthand for creating `{ type: "text", value }` tokens with parse-local `createId` support
+    - Shorthand for creating `{ type: "text", value }` tokens with parse-local `createId` support
 - `PipeArgs` now includes convenience readers for custom handler code
-  - `has(index)`
-  - `text(index, fallback?)`
-  - `materializedTokens(index, fallback?)`
-  - `materializedTailTokens(startIndex, fallback?)`
+    - `has(index)`
+    - `text(index, fallback?)`
+    - `materializedTokens(index, fallback?)`
+    - `materializedTailTokens(startIndex, fallback?)`
 - `createPipeBlockHandlers` and `createPipeRawHandlers` are now thin shorthands over `createPipeHandlers`
 - Deprecation warnings for legacy ambient-state APIs (each warning fires once per runtime)
-  - `withSyntax()`, `getSyntax()`, `withTagNameConfig()`, `withCreateId()`, `resetTokenIdSeed()` now emit a
-    one-time `console.warn` when called by user code
-  - Internal calls from `parseRichText` are suppressed via `withInternalCaller` — no warning noise during normal parsing
-  - `parseStructural()` warns specifically when it detects ambient `withSyntax()` / `withTagNameConfig()` state that
-    differs from defaults; normal calls without ambient wrapping do not warn
-  - Warnings are suppressed when `NODE_ENV=production`
+    - `withSyntax()`, `getSyntax()`, `withTagNameConfig()`, `withCreateId()`, `resetTokenIdSeed()` now emit a
+      one-time `console.warn` when called by user code
+    - Internal calls from `parseRichText` are suppressed via `withInternalCaller` — no warning noise during normal
+      parsing
+    - `parseStructural()` warns specifically when it detects ambient `withSyntax()` / `withTagNameConfig()` state that
+      differs from defaults; normal calls without ambient wrapping do not warn
+    - Warnings are suppressed when `NODE_ENV=production`
 - Deprecated exports formally documented in a new **Deprecated API** section:
   `createPipeBlockHandlers`, `createPipeRawHandlers`, `createPassthroughTags`, `withSyntax`, `getSyntax`,
   `withTagNameConfig`, `withCreateId`, `resetTokenIdSeed`, `ParseOptions.mode`
 - Deprecated APIs will **not** be removed before September 2026
 - Documentation refresh
-  - Promoted `createPipeHandlers` as the main pipe-aware helper
-  - Reorganized handler helper docs into recommended / shorthand / advanced sections
-  - Updated utility examples to use `createTextToken(...)` where appropriate
-  - Consolidated same-family helpers into shared sections for better information density
+    - Promoted `createPipeHandlers` as the main pipe-aware helper
+    - Reorganized handler helper docs into recommended / shorthand / advanced sections
+    - Updated utility examples to use `createTextToken(...)` where appropriate
+    - Consolidated same-family helpers into shared sections for better information density
 
 ### 1.0.4
 
 - **Refactor:** Eliminate all remaining module-level implicit state reads from internal parse code
-  - `ParseContext` now carries `syntax`, `tagName`, and `createId` directly — internal functions read these instead of
-    calling `getSyntax()` / `getTagNameConfig()` / relying on `activeCreateId`
-  - All scanner functions (`findTagArgClose`, `readTagStartInfo`, `findInlineClose`, `findBlockClose`, `findRawClose`,
-    `getTagCloserType`, `skipTagBoundary`, `skipDegradedInline`) receive explicit `syntax` / `tagName` parameters
-  - `parseStructural` threads `syntax` / `tagName` / `tracker` explicitly through `parseNodes` — no `withSyntax` /
-    `withTagNameConfig` wrappers needed internally. Ambient `getSyntax()` / `getTagNameConfig()` are captured once at
-    entry when no explicit overrides are provided
-  - `parseRichText` still wraps with `withSyntax` / `withTagNameConfig` / `withCreateId` at entry for backward
-    compatibility — user handlers calling public utilities (`parsePipeArgs`, `createToken`, `unescapeInline`, etc.)
-    continue to work without changes
+    - `ParseContext` now carries `syntax`, `tagName`, and `createId` directly — internal functions read these instead of
+      calling `getSyntax()` / `getTagNameConfig()` / relying on `activeCreateId`
+    - All scanner functions (`findTagArgClose`, `readTagStartInfo`, `findInlineClose`, `findBlockClose`, `findRawClose`,
+      `getTagCloserType`, `skipTagBoundary`, `skipDegradedInline`) receive explicit `syntax` / `tagName` parameters
+    - `parseStructural` threads `syntax` / `tagName` / `tracker` explicitly through `parseNodes` — no `withSyntax` /
+      `withTagNameConfig` wrappers needed internally. Ambient `getSyntax()` / `getTagNameConfig()` are captured once at
+      entry when no explicit overrides are provided
+    - `parseRichText` still wraps with `withSyntax` / `withTagNameConfig` / `withCreateId` at entry for backward
+      compatibility — user handlers calling public utilities (`parsePipeArgs`, `createToken`, `unescapeInline`, etc.)
+      continue to work without changes
 - New type: `DslContext { syntax, createId? }` — lightweight context for public utility functions
-  - Builder utilities (`splitTokensByPipe`, `parsePipeArgs`, `parsePipeTextArgs`, `parsePipeTextList`,
-    `materializeTextTokens`) accept `ctx?: DslContext`
-  - Escape utilities (`readEscapedSequence`, `readEscaped`, `unescapeInline`) accept `ctx?: DslContext | SyntaxConfig`
-    — `DslContext` for user code, bare `SyntaxConfig` for internal scanner calls
-  - `createToken(..., ctx?)` accepts `ctx?: DslContext | CreateId` — `DslContext` for user code, bare `CreateId` for
-    internal context threading
-  - Syntax resolution (`resolveSyntax`) and createId resolution (`resolveCreateId`) are each centralized in one place
-  - When `ctx` is omitted, all utilities fall back to module-level defaults (`getSyntax()` / `activeCreateId`) —
-    existing code continues to work unchanged
-  - A future major version will tighten this toward required `DslContext`
+    - Builder utilities (`splitTokensByPipe`, `parsePipeArgs`, `parsePipeTextArgs`, `parsePipeTextList`,
+      `materializeTextTokens`) accept `ctx?: DslContext`
+    - Escape utilities (`readEscapedSequence`, `readEscaped`, `unescapeInline`) accept `ctx?: DslContext | SyntaxConfig`
+      — `DslContext` for user code, bare `SyntaxConfig` for internal scanner calls
+    - `createToken(..., ctx?)` accepts `ctx?: DslContext | CreateId` — `DslContext` for user code, bare `CreateId` for
+      internal context threading
+    - Syntax resolution (`resolveSyntax`) and createId resolution (`resolveCreateId`) are each centralized in one place
+    - When `ctx` is omitted, all utilities fall back to module-level defaults (`getSyntax()` / `activeCreateId`) —
+      existing code continues to work unchanged
+    - A future major version will tighten this toward required `DslContext`
 - `TagHandler` callback signatures now receive an optional `ctx?: DslContext` as the last parameter
-  - `inline?: (tokens, ctx?) => TokenDraft`
-  - `raw?: (arg, content, ctx?) => TokenDraft`
-  - `block?: (arg, content, ctx?) => TokenDraft`
-  - The parser passes `DslContext` when calling handlers — existing handlers that don't accept `ctx` are unaffected
-    (JS safely ignores extra arguments)
-  - Handlers that opt in can pass `ctx` through to utility functions, eliminating all implicit global state dependency
+    - `inline?: (tokens, ctx?) => TokenDraft`
+    - `raw?: (arg, content, ctx?) => TokenDraft`
+    - `block?: (arg, content, ctx?) => TokenDraft`
+    - The parser passes `DslContext` when calling handlers — existing handlers that don't accept `ctx` are unaffected
+      (JS safely ignores extra arguments)
+    - Handlers that opt in can pass `ctx` through to utility functions, eliminating all implicit global state dependency
 - Built-in handler helpers now propagate `ctx` through the full call chain
-  - `createSimpleInlineHandlers` → `materializeTextTokens(tokens, ctx)`
-  - `createPipeBlockHandlers` → `parsePipeTextList(arg, ctx)`
-  - `createPipeRawHandlers` → `parsePipeTextList(arg, ctx)`
+    - `createSimpleInlineHandlers` → `materializeTextTokens(tokens, ctx)`
+    - `createPipeBlockHandlers` → `parsePipeTextList(arg, ctx)`
+    - `createPipeRawHandlers` → `parsePipeTextList(arg, ctx)`
 - `parseStructural` reuses `emptyBuffer()` from `context.ts` for buffer initialization and reset
 - All existing exports and signatures remain backward compatible; `DslContext` and optional `ctx` parameters are
   additive (non-breaking)
@@ -182,30 +185,30 @@
 ### 1.0.3
 
 - **Refactor:** Position tracker moved from module-level implicit state to explicit parameter threading
-  - `ParseContext` now carries `tracker: PositionTracker | null` directly
-  - `parseStructural` passes tracker explicitly through `parseNodes` — no hidden globals
-  - `emitError` / `getErrorContext` receive tracker as a parameter instead of reading module state
-  - `complex.ts` receives tracker explicitly; inner-parse offset adjustment uses `offsetTracker` (replaces
-    `withBaseOffset` + `withPositionTracker`)
+    - `ParseContext` now carries `tracker: PositionTracker | null` directly
+    - `parseStructural` passes tracker explicitly through `parseNodes` — no hidden globals
+    - `emitError` / `getErrorContext` receive tracker as a parameter instead of reading module state
+    - `complex.ts` receives tracker explicitly; inner-parse offset adjustment uses `offsetTracker` (replaces
+      `withBaseOffset` + `withPositionTracker`)
 - **Refactor:** Buffer accumulation state consolidated into `BufferState` object
-  - `ParseContext.buffer` / `bufferStart` / `bufferSourceEnd` merged into `ParseContext.buf: BufferState`
-  - `emptyBuffer()` factory for initialization and reset
+    - `ParseContext.buffer` / `bufferStart` / `bufferSourceEnd` merged into `ParseContext.buf: BufferState`
+    - `emptyBuffer()` factory for initialization and reset
 - **Refactor:** Block content normalization + offset mapping encapsulated as `prepareBlockContent`
-  - Returns `{ content, baseOffset }` — callers no longer manually combine `normalizeBlockTagContent` +
-    `leadingTrim` + `contentStart`
+    - Returns `{ content, baseOffset }` — callers no longer manually combine `normalizeBlockTagContent` +
+      `leadingTrim` + `contentStart`
 - No public API changes; all changes are internal
 
 ### 1.0.2
 
 - Add opt-in source position tracking (`trackPositions: true`) for both `parseRichText` and `parseStructural`
-  - New types: `SourcePosition`, `SourceSpan`
-  - `TextToken.position?` and `StructuralNode.position?` — present only when enabled
-  - Pre-computed line-offset table with O(log n) binary search for line/column resolution
-  - Negligible overhead when disabled (default) — no table allocation, no position objects produced
-  - `parseRichText` block/raw token spans include trailing line-break normalization; `parseStructural` keeps raw
-    syntax spans
-  - Nested block content positions map back to the original source via base-offset adjustment
-  - Error reporting reuses the line-offset table when position tracking is active
+    - New types: `SourcePosition`, `SourceSpan`
+    - `TextToken.position?` and `StructuralNode.position?` — present only when enabled
+    - Pre-computed line-offset table with O(log n) binary search for line/column resolution
+    - Negligible overhead when disabled (default) — no table allocation, no position objects produced
+    - `parseRichText` block/raw token spans include trailing line-break normalization; `parseStructural` keeps raw
+      syntax spans
+    - Nested block content positions map back to the original source via base-offset adjustment
+    - Error reporting reuses the line-offset table when position tracking is active
 - `normalizeBlockTagContent` now returns `{ content, leadingTrim }` instead of a plain string (internal change,
   not part of the public API)
 
@@ -237,10 +240,10 @@
 
 - Add `parseStructural(text, options?)` — structural parser that preserves tag form
   (inline / raw / block) in the output tree as `StructuralNode[]`
-  - Shares `ParserBaseOptions` with `parseRichText` — identical tag recognition and form gating when `handlers` is
-    provided
-  - Omit `handlers` to accept all tags and forms (highlight mode)
-  - Inherits active `withSyntax` / `withTagNameConfig` context when called without explicit overrides
+    - Shares `ParserBaseOptions` with `parseRichText` — identical tag recognition and form gating when `handlers` is
+      provided
+    - Omit `handlers` to accept all tags and forms (highlight mode)
+    - Inherits active `withSyntax` / `withTagNameConfig` context when called without explicit overrides
 - Extract `ParserBaseOptions` — shared base for `ParseOptions` and `StructuralParseOptions`
   (`handlers`, `allowForms`, `depthLimit`, `syntax`, `tagName`)
 - Add `parser.structural()` to `createParser` return type — shares base config with `parse()` / `strip()`
