@@ -63,7 +63,9 @@ const RichText: FC<{ tokens: TextToken[] }> = ({tokens}) => (
 
 ### [▶ Live Demo Post — qwwq.org/blog](https://qwwq.org/blog/dsl-fallback-museum)
 
-This blog is rendered entirely by `yume-dsl-rich-text` + [`yume-dsl-shiki-highlight`](https://github.com/chiba233/yume-dsl-shiki-highlight) — no Markdown, no HTML templates. Every heading, code block, callout, and inline style is a DSL tag.
+This blog is rendered entirely by `yume-dsl-rich-text` + [
+`yume-dsl-shiki-highlight`](https://github.com/chiba233/yume-dsl-shiki-highlight) — no Markdown, no HTML templates.
+Every heading, code block, callout, and inline style is a DSL tag.
 
 ## Ecosystem
 
@@ -100,7 +102,8 @@ This blog is rendered entirely by `yume-dsl-rich-text` + [`yume-dsl-shiki-highli
 
 **Start here:** [Install](#install) · [Quick Start](#quick-start) · [DSL Syntax](#dsl-syntax) · [API](#api)
 
-**Go deeper:** [Custom Syntax](#custom-syntax) · [Handler Helpers](#handler-helpers) · [ParseOptions](#parseoptions) · [Stable Token IDs](#stable-token-ids) · [Source Position Tracking](#source-position-tracking) · [Error Handling](#error-handling) · [Exports](#exports) · [Deprecated API](#deprecated-api) · [Compatibility](#compatibility-notes)
+**Go deeper:
+** [Custom Syntax](#custom-syntax) · [Handler Helpers](#handler-helpers) · [ParseOptions](#parseoptions) · [Stable Token IDs](#stable-token-ids) · [Source Position Tracking](#source-position-tracking) · [Error Handling](#error-handling) · [Exports](#exports) · [Deprecated API](#deprecated-api) · [Compatibility](#compatibility-notes)
 
 ---
 
@@ -308,17 +311,17 @@ dsl.parse(text, {onError: (e) => console.warn(e)});
 
 Most of the time you only need to bind `handlers`. The rest just tags along for convenience.
 
-| Option           | What it does when pre-bound                                              |
-|------------------|--------------------------------------------------------------------------|
-| **`handlers`**   | **Your tag definitions — the main reason to use `createParser`**         |
-| `syntax`         | Custom syntax tokens (if you override `$$` prefix, etc.)                 |
-| `tagName`        | Custom tag-name character rules                                          |
-| `allowForms`     | Restrict accepted tag forms (default: all forms enabled)                 |
-| `depthLimit`     | Nesting limit — rarely changes per call                                  |
-| `createId`       | Custom token id generator (can be overridden per call)                   |
-| `blockTags`      | Block-level line-break normalization — see [`declareMultilineTags`](#declaremultilinetags-names--block-level-line-break-normalization) |
-| `onError`        | Default error handler (can still be overridden per call)                 |
-| `trackPositions` | Attach source positions to all output nodes (can be overridden per call) |
+| Option           | What it does when pre-bound                                                                                                                                |
+|------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **`handlers`**   | **Your tag definitions — the main reason to use `createParser`**                                                                                           |
+| `syntax`         | Custom syntax tokens (if you override `$$` prefix, etc.)                                                                                                   |
+| `tagName`        | Custom tag-name character rules                                                                                                                            |
+| `allowForms`     | Restrict accepted tag forms (default: all forms enabled)                                                                                                   |
+| `depthLimit`     | Nesting limit — rarely changes per call                                                                                                                    |
+| `createId`       | Custom token id generator (can be overridden per call)                                                                                                     |
+| `blockTags`      | Block-level line-break normalization — see [`declareMultilineTags`](https://github.com/chiba233/yumeDSL/wiki/en-Handler-Helpers#declaremultilinetagsnames) |
+| `onError`        | Default error handler (can still be overridden per call)                                                                                                   |
+| `trackPositions` | Attach source positions to all output nodes (can be overridden per call)                                                                                   |
 
 **Without `createParser`** you must pass the full options object on every call:
 
@@ -388,7 +391,9 @@ const tree = parseStructural("$$bold(hello)$$ and $$code(ts)%\nconst x = 1;\n%en
 
 **Which one do I use?** Rendering content → `parseRichText`. Analyzing source structure → `parseStructural`.
 
-See the [API Reference wiki page](https://github.com/chiba233/yumeDSL/wiki/en-API-Reference#parsestructural--structural-parse) for
+See
+the [API Reference wiki page](https://github.com/chiba233/yumeDSL/wiki/en-API-Reference#parsestructural--structural-parse)
+for
 `StructuralNode` variants, `StructuralParseOptions`, differences from `parseRichText`, and `printStructural`.
 
 ---
@@ -464,26 +469,26 @@ Each handler receives pre-parsed `PipeArgs` — no manual `parsePipeArgs` boiler
 import {createParser, createPipeHandlers, createSimpleInlineHandlers} from "yume-dsl-rich-text";
 
 const dsl = createParser({
-  handlers: {
-    ...createSimpleInlineHandlers(["bold", "italic"]),
+    handlers: {
+        ...createSimpleInlineHandlers(["bold", "italic"]),
 
-    ...createPipeHandlers({
-      link: {
-        inline: (args, ctx) => ({
-          type: "link",
-          url: args.text(0),
-          value: args.materializedTailTokens(1),
+        ...createPipeHandlers({
+            link: {
+                inline: (args, ctx) => ({
+                    type: "link",
+                    url: args.text(0),
+                    value: args.materializedTailTokens(1),
+                }),
+            },
+            code: {
+                raw: (args, content, ctx) => ({
+                    type: "raw-code",
+                    lang: args.text(0, "text"),
+                    value: content,
+                }),
+            },
         }),
-      },
-      code: {
-        raw: (args, content, ctx) => ({
-          type: "raw-code",
-          lang: args.text(0, "text"),
-          value: content,
-        }),
-      },
-    }),
-  },
+    },
 });
 ```
 
@@ -514,10 +519,10 @@ the handler helpers above.
 
 **Normalization per form:**
 
-| Form | What gets stripped | When to use |
-|------|--------------------|-------------|
-| `raw` / `block` | Leading `\n` after `)*` / `)%`, trailing `\n` before `*end$$` / `%end$$` | Multiline block/raw tags |
-| `inline` | Trailing `\n` immediately after the inline close `$$` | Tags that render as block-level elements despite using inline syntax (e.g. `$$center(...)$$`) |
+| Form            | What gets stripped                                                       | When to use                                                                                   |
+|-----------------|--------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------|
+| `raw` / `block` | Leading `\n` after `)*` / `)%`, trailing `\n` before `*end$$` / `%end$$` | Multiline block/raw tags                                                                      |
+| `inline`        | Trailing `\n` immediately after the inline close `$$`                    | Tags that render as block-level elements despite using inline syntax (e.g. `$$center(...)$$`) |
 
 **Usage:**
 
@@ -528,8 +533,8 @@ blockTags: declareMultilineTags(["info", "warning", "center"])
 // Object — restrict to specific forms
 blockTags: declareMultilineTags([
     "info",                              // string: all forms
-    { tag: "code", forms: ["raw"] },     // only raw form
-    { tag: "center", forms: ["inline"] }, // only inline form
+    {tag: "code", forms: ["raw"]},     // only raw form
+    {tag: "center", forms: ["inline"]}, // only inline form
 ])
 ```
 
@@ -587,7 +592,8 @@ interface StructuralParseOptions extends ParserBaseOptions {
 
 - `createId`: override token id generation for this parse
 - `blockTags`: tags that receive line-break normalization — plain strings enable all forms (raw + block + inline);
-  `{ tag, forms }` objects restrict to specific forms. See [`declareMultilineTags`](#declaremultilinetags-names--block-level-line-break-normalization)
+  `{ tag, forms }` objects restrict to specific forms. See [
+  `declareMultilineTags`](https://github.com/chiba233/yumeDSL/wiki/en-Handler-Helpers#declaremultilinetagsnames)
 - `mode`: deprecated — see [Deprecated API](#deprecated-api)
 - `onError`: callback for parse errors
 - `trackPositions`: attach source position info (`position`) to every `TextToken` (default `false`).
@@ -667,13 +673,19 @@ interface TokenDraft {
 Define typed interfaces that extend `TextToken`, cast once, then narrow with discriminated unions:
 
 ```ts
-interface LinkToken extends TextToken { type: "link"; url: string; value: MyToken[]; }
+interface LinkToken extends TextToken {
+    type: "link";
+    url: string;
+    value: MyToken[];
+}
+
 type MyToken = PlainText | BoldToken | LinkToken | CodeBlockToken;
 
 const tokens = parseRichText(input, options) as MyToken[];
 ```
 
-See the [Strong Typing wiki section](https://github.com/chiba233/yumeDSL/wiki/en-Token-Structure#strong-typing) for a full render example with discriminated unions.
+See the [Strong Typing wiki section](https://github.com/chiba233/yumeDSL/wiki/en-Token-Structure#strong-typing) for a
+full render example with discriminated unions.
 
 The cast is safe as long as your handlers return drafts that match the union.
 If you add or remove tags, update the union accordingly — TypeScript will flag any unhandled `type` in exhaustive
@@ -716,7 +728,9 @@ interface TagHandler {
 
 Implement only the forms your tag supports — unsupported forms degrade gracefully.
 
-`ctx` in handler callbacks is a context object passed by the parser — you don't need to know what it is, just include it. Always declare it: it costs nothing, keeps your code ready for the upcoming required-ctx major version, and avoids ambient-state issues in concurrent environments (e.g., SSR).
+`ctx` in handler callbacks is a context object passed by the parser — you don't need to know what it is, just include
+it. Always declare it: it costs nothing, keeps your code ready for the upcoming required-ctx major version, and avoids
+ambient-state issues in concurrent environments (e.g., SSR).
 
 ### Example
 

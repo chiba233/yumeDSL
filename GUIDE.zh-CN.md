@@ -299,17 +299,17 @@ dsl.parse(text, {onError: (e) => console.warn(e)});
 
 大多数场景下，`createParser` 主要是为了绑定 `handlers`；其余选项只是顺手一起固化到实例上。
 
-| 选项               | 预绑定后的效果                                                                    |
-|------------------|----------------------------------------------------------------------------|
-| **`handlers`**   | **标签定义 — 使用 `createParser` 的主要理由**                                         |
-| `syntax`         | 自定义语法符号（如覆盖 `$$` 前缀等）                                                      |
-| `tagName`        | 自定义标签名字符规则                                                                 |
-| `allowForms`     | 限制接受的标签形式（默认：全部启用）                                                         |
-| `depthLimit`     | 嵌套深度限制 — 很少需要逐次修改                                                          |
-| `createId`       | 自定义 token id 生成器（仍可按次覆盖）                                                   |
-| `blockTags`      | 块级换行规范化——详见 [`declareMultilineTags`](#declaremultilinetags-names--块级换行规范化) |
-| `onError`        | 默认错误处理器（仍可按次覆盖）                                                            |
-| `trackPositions` | 为所有输出节点附加源码位置（仍可按次覆盖）                                                      |
+| 选项               | 预绑定后的效果                                                                                                                                                                        |
+|------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **`handlers`**   | **标签定义 — 使用 `createParser` 的主要理由**                                                                                                                                             |
+| `syntax`         | 自定义语法符号（如覆盖 `$$` 前缀等）                                                                                                                                                          |
+| `tagName`        | 自定义标签名字符规则                                                                                                                                                                     |
+| `allowForms`     | 限制接受的标签形式（默认：全部启用）                                                                                                                                                             |
+| `depthLimit`     | 嵌套深度限制 — 很少需要逐次修改                                                                                                                                                              |
+| `createId`       | 自定义 token id 生成器（仍可按次覆盖）                                                                                                                                                       |
+| `blockTags`      | 块级换行规范化——详见 [`declareMultilineTags`](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%A4%84%E7%90%86%E5%99%A8%E8%BE%85%E5%8A%A9%E5%87%BD%E6%95%B0#declaremultilinetagsnames) |
+| `onError`        | 默认错误处理器（仍可按次覆盖）                                                                                                                                                                |
+| `trackPositions` | 为所有输出节点附加源码位置（仍可按次覆盖）                                                                                                                                                          |
 
 **不用 `createParser` 的话**，每次调用都需要传入完整选项：
 
@@ -573,7 +573,7 @@ interface StructuralParseOptions extends ParserBaseOptions {
 
 - `createId`：覆盖本次解析的 token id 生成策略
 - `blockTags`：块级换行规范化——纯字符串启用全部形式（raw + block + inline），`{ tag, forms }` 限定到特定形式。详见 [
-  `declareMultilineTags`](#declaremultilinetags-names--块级换行规范化)
+  `declareMultilineTags`](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%A4%84%E7%90%86%E5%99%A8%E8%BE%85%E5%8A%A9%E5%87%BD%E6%95%B0#declaremultilinetagsnames)
 - `mode`：已弃用——详见[待弃用 API](#待弃用-api)
 - `onError`：解析错误回调
 - `trackPositions`：为每个 `TextToken` 附加源码位置信息 `position`（默认 `false`）。详见[源码位置追踪](#源码位置追踪)
