@@ -880,30 +880,12 @@ parseRichText("$$bold(unclosed", {
 
 ## 待弃用 API
 
-**核心解析 API 已趋于稳定。** 部分工具函数和 ambient-state API 处于迁移过渡期。
-如有破坏性调整，会在 major 版本中明确说明。
+以下将在未来 major 版本中移除（2026 年 9 月前不会移除）：
 
-以下导出将在未来 major 版本中移除。当前仍可正常使用，保留用于向后兼容。
+`withSyntax`、`getSyntax`、`withTagNameConfig`、`withCreateId`、`resetTokenIdSeed`、
+`createPipeBlockHandlers`、`createPipeRawHandlers`、`createPassthroughTags`、`ParseOptions.mode`
 
-Ambient-state API（`withSyntax`、`getSyntax`、`withTagNameConfig`、`withCreateId`、`resetTokenIdSeed`）被用户代码
-调用时会发出一次性 `console.warn`。`parseRichText` 内部调用自动屏蔽，不产生告警噪音。`parseStructural` 仅在检测到
-ambient 状态被 `withSyntax` / `withTagNameConfig` 改变时告警；没有 ambient 包裹的正常调用不会告警。
-
-`NODE_ENV=production` 时告警被静默。
-
-这些 API 在 **2026 年 9 月前不会被移除**。
-
-| 导出                        | 签名                                                         | 替代方案                          | 告警 | 原因                                    |
-|---------------------------|------------------------------------------------------------|-------------------------------|----|---------------------------------------|
-| `withSyntax`              | `<T>(syntax: SyntaxConfig, fn: () => T) => T`              | `DslContext`                  | 是  | 模块级隐式状态；应显式传 `DslContext`             |
-| `getSyntax`               | `() => SyntaxConfig`                                       | `DslContext`                  | 是  | 同上                                    |
-| `withTagNameConfig`       | `<T>(config: TagNameConfig, fn: () => T) => T`             | 通过 `ParseOptions` 传 `tagName` | 是  | 同上                                    |
-| `withCreateId`            | `<T>(createId: CreateId, fn: () => T) => T`                | `DslContext`                  | 是  | 同上                                    |
-| `resetTokenIdSeed`        | `() => void`                                               | `DslContext.createId`         | 是  | 仅在依赖模块级 id 计数器时需要                     |
-| `createPipeBlockHandlers` | `(names: readonly string[]) => Record<string, TagHandler>` | `createPipeHandlers`          | 否  | 冗余 helper；`createPipeHandlers` 覆盖全部场景 |
-| `createPipeRawHandlers`   | `(names: readonly string[]) => Record<string, TagHandler>` | `createPipeHandlers`          | 否  | 同上                                    |
-| `createPassthroughTags`   | `(names: readonly string[]) => Record<string, TagHandler>` | `createSimpleInlineHandlers`  | 否  | 隐式行为；显式 handler 更清晰                   |
-| `ParseOptions.mode`       | `"render"`                                                 | *（移除）*                        | 否  | 只有一个值（`"render"`），不再有意义               |
+详见 [待弃用 API wiki 页面](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%BE%85%E5%BC%83%E7%94%A8-API)：签名、替代方案及迁移指南。
 
 ---
 

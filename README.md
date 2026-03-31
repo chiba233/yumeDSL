@@ -915,31 +915,13 @@ all error codes with triggers, and detailed degradation scenarios with examples.
 
 ## Deprecated API
 
-**Core parsing API is stable.** Some utility and ambient-state APIs are transitional.
-Breaking changes, if any, will land in major versions with explicit migration notes.
+The following will be removed in a future major version (not before September 2026):
 
-The following exports will be removed in a future major version. They remain functional for backward compatibility.
+`withSyntax`, `getSyntax`, `withTagNameConfig`, `withCreateId`, `resetTokenIdSeed`,
+`createPipeBlockHandlers`, `createPipeRawHandlers`, `createPassthroughTags`, `ParseOptions.mode`
 
-Ambient-state APIs (`withSyntax`, `getSyntax`, `withTagNameConfig`, `withCreateId`, `resetTokenIdSeed`) emit a
-one-time `console.warn` when called by user code. Internal calls from `parseRichText` are suppressed automatically.
-`parseStructural` warns only when it detects that ambient state has been changed via `withSyntax` /
-`withTagNameConfig`; normal calls without ambient wrapping do not warn.
-
-Warnings are suppressed when `NODE_ENV=production`.
-
-These APIs will **not** be removed before September 2026.
-
-| Export                    | Signature                                                  | Use instead                       | Warns | Reason                                                    |
-|---------------------------|------------------------------------------------------------|-----------------------------------|-------|-----------------------------------------------------------|
-| `withSyntax`              | `<T>(syntax: SyntaxConfig, fn: () => T) => T`              | `DslContext`                      | Yes   | Module-level implicit state; pass `DslContext` explicitly |
-| `getSyntax`               | `() => SyntaxConfig`                                       | `DslContext`                      | Yes   | Same as above                                             |
-| `withTagNameConfig`       | `<T>(config: TagNameConfig, fn: () => T) => T`             | Pass `tagName` via `ParseOptions` | Yes   | Same as above                                             |
-| `withCreateId`            | `<T>(createId: CreateId, fn: () => T) => T`                | `DslContext`                      | Yes   | Same as above                                             |
-| `resetTokenIdSeed`        | `() => void`                                               | `DslContext.createId`             | Yes   | Only needed when relying on module-level id counter       |
-| `createPipeBlockHandlers` | `(names: readonly string[]) => Record<string, TagHandler>` | `createPipeHandlers`              | No    | Redundant helper; `createPipeHandlers` covers all cases   |
-| `createPipeRawHandlers`   | `(names: readonly string[]) => Record<string, TagHandler>` | `createPipeHandlers`              | No    | Same as above                                             |
-| `createPassthroughTags`   | `(names: readonly string[]) => Record<string, TagHandler>` | `createSimpleInlineHandlers`      | No    | Implicit behavior; explicit handlers are clearer          |
-| `mode` in `ParseOptions`  | `"render"`                                                 | *(remove)*                        | No    | Only one value (`"render"`); no longer meaningful         |
+See the [Deprecated API wiki page](https://github.com/chiba233/yumeDSL/wiki/en-Deprecated-API) for
+signatures, replacements, and migration guide.
 
 ---
 
