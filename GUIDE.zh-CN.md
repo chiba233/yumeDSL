@@ -456,14 +456,14 @@ const dsl = createParser({
 
         ...createPipeHandlers({
             link: {
-                inline: (args, _ctx) => ({
+                inline: (args) => ({
                     type: "link",
                     url: args.text(0),
                     value: args.materializedTailTokens(1),
                 }),
             },
             code: {
-                raw: (args, content, _ctx) => ({
+                raw: (args, content) => ({
                     type: "raw-code",
                     lang: args.text(0, "text"),
                     value: content,
