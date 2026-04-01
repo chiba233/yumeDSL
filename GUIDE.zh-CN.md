@@ -27,11 +27,12 @@
   `yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker) 的 `parseSlice`，跳到任意区域拿到带完整位置的
   `TextToken[]`，不用重新解析整个文档
 
+### **[▶ 在线体验——输入 DSL，即时查看 token 树](https://demo.qwwq.org/)**
+
+**实时编辑标签、开关 handler、边打字边看 token 树更新。**
+
 > **200 KB 实测（鲲鹏 920 / Node v24.14.0）：** 全量 `parseRichText` ~1382 ms → `parseStructural` ~41 ms（快 34 倍）→
 `nodeAtOffset` + `parseSlice` **~0.17 ms**（快 **8000 倍**）。改一个 36 字符的标签，20 万字的文档只解析那 36 个字符。
-
-### **[在线演示](https://demo.qwwq.org/)** — Vue 3 + CodeMirror 编辑器，实时展示 `parseStructural` + `parseSlice`
-**局部重解析、handler 开关、语法高亮。**
 
 **适用场景：**
 游戏对话与视觉小说（打字机 / 抖动 / 变色——标签你自己发明），
@@ -739,7 +740,7 @@ const dsl = createParser({
 | **处理器工具函数**  | `parsePipeArgs`、`parsePipeTextArgs`、`parsePipeTextList`、`extractText`、`createTextToken`、`splitTokensByPipe`、`materializeTextTokens`、`unescapeInline`、`readEscapedSequence`、`createToken`                                                                                                                                                                                                                                                   |
 | **Token 遍历** | `walkTokens`、`mapTokens`                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | **位置追踪**     | `buildPositionTracker`                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| **类型**       | `TextToken`、`TokenDraft`、`CreateId`、`DslContext`、`TagHandler`、`TagForm`、`ParseOptions`、`ParserBaseOptions`、`StructuralParseOptions`、`Parser`、`SyntaxInput`、`SyntaxConfig`、`TagNameConfig`、`BlockTagInput`、`MultilineForm`、`ErrorCode`、`ParseError`、`StructuralNode`、`SourcePosition`、`SourceSpan`、`PositionTracker`、`PipeArgs`、`PipeHandlerDefinition`、`EasyStableIdOptions`、`PrintOptions`、`TokenVisitContext`、`WalkVisitor`、`MapVisitor` |
+| **类型**       | `TextToken`、`TokenDraft`、`CreateId`、`DslContext`、`TagHandler`、`TagForm`、`ParseOptions`、`ParserBaseOptions`、`StructuralParseOptions`、`Parser`、`SyntaxInput`、`SyntaxConfig`、`TagNameConfig`、`BlockTagInput`、`MultilineForm`、`ErrorCode`、`ParseError`、`StructuralNode`、`SourcePosition`、`SourceSpan`、`PositionTracker`、`PipeArgs`、`PipeHandlerDefinition`、`EasyStableIdOptions`、`PrintOptions`、`TokenVisitContext`、`WalkVisitor`、`MapVisitor`、`Zone` |
 
 详见 [导出一览 wiki 页面](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%AF%BC%E5%87%BA%E4%B8%80%E8%A7%88)
 ：完整签名及详细文档。
