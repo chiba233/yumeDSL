@@ -5,9 +5,11 @@ import type {
   StructuralNode,
   SyntaxConfig,
   TextToken,
+  Zone,
 } from "yume-dsl-rich-text";
 import {
   buildPositionTracker,
+  buildZones,
   createEasySyntax,
   createParser,
   createPipeHandlers,
@@ -120,3 +122,12 @@ const parserNodes = parser.structural("@@link<<a || b>>@@", {
   baseOffset: 6,
 });
 void parserNodes;
+
+const distZones: Zone[] = buildZones(structuralNodes);
+const distZone: Zone = distZones[0];
+const _distStart: number = distZone.startOffset;
+const _distEnd: number = distZone.endOffset;
+const _distNodes: StructuralNode[] = distZone.nodes;
+void _distStart;
+void _distEnd;
+void _distNodes;

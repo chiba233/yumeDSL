@@ -12,8 +12,11 @@
   `%end$$`. This newline is required by the syntax (closers must be on their own line) and is not
   content. Previously, `$$note()*\ncontent\n*end$$` produced `"content\n"`; now produces `"content"`.
   Consecutive block tags no longer have a spurious blank line between them
-- Tests: 8 new zone test cases (grouping, breaker isolation, boundary alignment, coverage,
-  empty input, no-position skip, type smoke)
+- Improve: `buildZones()` now throws a descriptive error when nodes lack `position` (forgot
+  `trackPositions: true`), instead of silently returning an empty array
+- Tests: 8 zone test cases (grouping, breaker isolation, boundary alignment, coverage,
+  empty input, no-position error, type smoke); dist smoke and type assertions now cover
+  `buildZones` / `Zone` exports (ESM + CJS)
 - Documentation:
     - README / GUIDE: 200 KB benchmark headline, live demo link, exports table updated
     - Source Position Tracking wiki: updated to 200 KB benchmarks, added `parseSlice` section

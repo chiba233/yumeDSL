@@ -6,8 +6,8 @@ const isZoneBreaker = (node: StructuralNode): boolean =>
 /**
  * Group a top-level `StructuralNode[]` into contiguous zones.
  *
- * Requires nodes parsed with `trackPositions: true` — nodes without
- * `position` are silently skipped.
+ * Requires nodes parsed with `trackPositions: true`.
+ * Throws if the first node has no `position` (likely forgot `trackPositions`).
  *
  * Rules:
  * - Adjacent text / escape / separator / inline nodes merge into one zone
@@ -23,6 +23,13 @@ const isZoneBreaker = (node: StructuralNode): boolean =>
  * ```
  */
 export const buildZones = (nodes: readonly StructuralNode[]): Zone[] => {
+  if (nodes.length > 0 && !nodes[0].position) {
+    throw new Error(
+      "buildZones(): nodes have no position info. " +
+        "Parse with { trackPositions: true } before calling buildZones().",
+    );
+  }
+
   const zones: Zone[] = [];
   let pending: StructuralNode[] = [];
   let pendingStart = -1;

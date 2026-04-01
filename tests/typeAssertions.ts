@@ -3,12 +3,15 @@ import type {
   DslContext,
   ParseOptions,
   PipeHandlerDefinition,
+  StructuralNode,
   SyntaxConfig,
   TagHandler,
   TagNameConfig,
   TextToken,
+  Zone,
 } from "../src/index.ts";
 import {
+  buildZones,
   createSyntax,
   createPassthroughTags,
   createPipeHandlers,
@@ -24,6 +27,7 @@ import {
   parsePipeArgs,
   parsePipeTextArgs,
   parsePipeTextList,
+  parseStructural,
   readEscapedSequence,
   unescapeInline,
   withSyntax,
@@ -57,6 +61,8 @@ const pipeHandlers = createPipeHandlers({
     }),
   },
 });
+
+void pipeHandlers;
 
 const pipeDefinition: PipeHandlerDefinition = {
   inline: (args, ctx) => ({ type: "demo", value: args.materializedTokens(0, [createTextToken("x", ctx)]) }),
@@ -176,6 +182,19 @@ const legacyCompatHandler: TagHandler = {
   },
 };
 void legacyCompatHandler;
+
+const structuralNodes: StructuralNode[] = parseStructural("$$bold(hi)$$", {
+  handlers: inlineHandlers,
+  trackPositions: true,
+});
+const zones: Zone[] = buildZones(structuralNodes);
+const zone: Zone = zones[0];
+const _startOffset: number = zone.startOffset;
+const _endOffset: number = zone.endOffset;
+const _zoneNodes: StructuralNode[] = zone.nodes;
+void _startOffset;
+void _endOffset;
+void _zoneNodes;
 
 // @ts-expect-error invalid form should be rejected
 const invalidOptions: ParseOptions = { allowForms: ["inline", "weird"] };

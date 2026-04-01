@@ -11,7 +11,10 @@
 - 修复：block / raw 标签内容不再包含 `*end$$` / `%end$$` 前面的结构性尾部 `\n`。这个换行是语法要求
   （closer 必须独占一行），不是内容。此前 `$$note()*\ncontent\n*end$$` 产出 `"content\n"`，
   现在产出 `"content"`。连续 block 标签之间不再出现多余空行
-- 测试：新增 8 个 zone 测试用例（分组、breaker 隔离、边界对齐、覆盖、空输入、无 position 跳过、类型 smoke）
+- 改进：`buildZones()` 在节点缺少 `position` 时（忘记开启 `trackPositions: true`）抛出明确错误，
+  不再静默返回空数组
+- 测试：8 个 zone 测试用例（分组、breaker 隔离、边界对齐、覆盖、空输入、无 position 报错、类型 smoke）；
+  dist smoke 和类型断言新增 `buildZones` / `Zone` 导出覆盖（ESM + CJS）
 - 文档：
     - README / GUIDE：特性列表新增 200 KB 基准数据、在线演示链接、导出表更新
     - 源码位置追踪 wiki：基准数据更新为 200 KB，新增 `parseSlice` 章节含实测数据（中英双语）

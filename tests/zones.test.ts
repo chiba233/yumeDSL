@@ -1,14 +1,12 @@
 import assert from "node:assert/strict";
 import {
-  createParser,
   createSimpleInlineHandlers,
   createSimpleBlockHandlers,
   createSimpleRawHandlers,
-  declareMultilineTags,
   parseStructural,
   buildZones,
 } from "../src/index.ts";
-import type { Zone, StructuralNode } from "../src/index.ts";
+import type { Zone } from "../src/index.ts";
 import { runGoldenCases, type GoldenCase } from "./testHarness.ts";
 
 // ── Shared setup ──
@@ -80,12 +78,11 @@ const cases: GoldenCase[] = [
     },
   },
   {
-    name: "[Zone/NoPosition] 无 position 的节点应被跳过",
+    name: "[Zone/NoPosition] 无 position 的节点应抛出错误",
     run: () => {
       // parseStructural without trackPositions → no position
       const tree = parseStructural("$$bold(x)$$", { handlers });
-      const zones = buildZones(tree);
-      assert.equal(zones.length, 0);
+      assert.throws(() => buildZones(tree), /trackPositions/);
     },
   },
   {

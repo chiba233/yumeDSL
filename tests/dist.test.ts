@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { runGoldenCases } from "./testHarness.ts";
 import { testHandlers } from "./handlers.ts";
-import type { DslContext, PipeArgs, TextToken, TokenDraft } from "../src/index.ts";
+import type { DslContext, PipeArgs, TextToken, TokenDraft, Zone } from "../src/index.ts";
 
 // ── Load both module formats ──
 
@@ -64,6 +64,7 @@ const smokeTest = (mod: DistModule, label: string) => {
         assert.equal(typeof mod.createPassthroughTags, "function");
         assert.equal(typeof mod.declareMultilineTags, "function");
         assert.equal(typeof mod.createEasyStableId, "function");
+        assert.equal(typeof mod.buildZones, "function");
         assert.ok(mod.DEFAULT_SYNTAX);
       },
     },
@@ -538,6 +539,30 @@ const smokeTest = (mod: DistModule, label: string) => {
             value: "1",
           },
         ]);
+      },
+    },
+
+    // ── buildZones ──
+    {
+      name: `[${label}] buildZones 基础分组`,
+      run: () => {
+        const nodes = mod.parseStructural(
+          "text\n$$code(ts)%\nx\n%end$$\nend",
+          {
+            handlers: {
+              ...mod.createSimpleInlineHandlers(["bold"]),
+              ...mod.createSimpleRawHandlers(["code"]),
+            },
+            trackPositions: true,
+          },
+        );
+        const zones: Zone[] = mod.buildZones(nodes);
+        assert.equal(zones.length, 3);
+        assert.equal(zones[0].nodes[0].type, "text");
+        assert.equal(zones[1].nodes[0].type, "raw");
+        assert.equal(zones[2].nodes[0].type, "text");
+        assert.equal(typeof zones[0].startOffset, "number");
+        assert.equal(typeof zones[0].endOffset, "number");
       },
     },
   ];
