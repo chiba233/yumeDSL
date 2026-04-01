@@ -30,8 +30,7 @@
 > **200 KB 实测（鲲鹏 920 / Node v24.14.0）：** 全量 `parseRichText` ~1382 ms → `parseStructural` ~41 ms（快 34 倍）→
 `nodeAtOffset` + `parseSlice` **~0.17 ms**（快 **8000 倍**）。改一个 36 字符的标签，20 万字的文档只解析那 36 个字符。
 
-**[在线演示](https://demo.qwwq.org/)** — Vue 3 + CodeMirror 编辑器，实时展示 `parseStructural` + `parseSlice`
-局部重解析、handler 开关、语法高亮。
+### [▶ 实际站点演示文章 — qwwq.org/blog](https://qwwq.org/blog/dsl-fallback-museum)
 
 **适用场景：**
 游戏对话与视觉小说（打字机 / 抖动 / 变色——标签你自己发明），
@@ -63,10 +62,8 @@ const RichText: FC<{ tokens: TextToken[] }> = ({tokens}) => (
 > 完整渲染指南：[Vue 3](https://github.com/chiba233/yumeDSL/wiki/zh-CN-Vue-3-%E6%B8%B2%E6%9F%93) ·
 > [React](https://github.com/chiba233/yumeDSL/wiki/zh-CN-React-%E6%B8%B2%E6%9F%93)
 
-### [▶ 实际站点演示文章 — qwwq.org/blog](https://qwwq.org/blog/dsl-fallback-museum)
 
-这个博客完全由 `yume-dsl-rich-text` + [`yume-dsl-shiki-highlight`](https://github.com/chiba233/yume-dsl-shiki-highlight)
-驱动——没有 Markdown，没有 HTML 模板。每个标题、代码块、提示框、行内样式都是 DSL 标签。
+
 
 ## 生态
 

@@ -69,12 +69,6 @@ const RichText: FC<{ tokens: TextToken[] }> = ({tokens}) => (
 > Full rendering guides: [Vue 3](https://github.com/chiba233/yumeDSL/wiki/en-Vue-3-Rendering) ·
 > [React](https://github.com/chiba233/yumeDSL/wiki/en-React-Rendering)
 
-### [▶ Live Demo Post — qwwq.org/blog](https://qwwq.org/blog/dsl-fallback-museum)
-
-This blog is rendered entirely by `yume-dsl-rich-text` + [
-`yume-dsl-shiki-highlight`](https://github.com/chiba233/yume-dsl-shiki-highlight) — no Markdown, no HTML templates.
-Every heading, code block, callout, and inline style is a DSL tag.
-
 ## Ecosystem
 
 | Package                                                                            | Role                                             |
@@ -110,8 +104,7 @@ Every heading, code block, callout, and inline style is a DSL tag.
 
 **Start here:** [Install](#install) · [Quick Start](#quick-start) · [DSL Syntax](#dsl-syntax) · [API](#api)
 
-**Go deeper:
-** [Custom Syntax](#custom-syntax) · [Handler Helpers](#handler-helpers) · [ParseOptions](#parseoptions) · [Stable Token IDs](#stable-token-ids) · [Source Position Tracking](#source-position-tracking) · [Error Handling](#error-handling) · [Exports](#exports) · [Deprecated API](#deprecated-api) · [Compatibility](#compatibility-notes)
+**Go deeper:** [Custom Syntax](#custom-syntax) · [Handler Helpers](#handler-helpers) · [ParseOptions](#parseoptions) · [Stable Token IDs](#stable-token-ids) · [Source Position Tracking](#source-position-tracking) · [Error Handling](#error-handling) · [Exports](#exports) · [Deprecated API](#deprecated-api) · [Compatibility](#compatibility-notes)
 
 ---
 
