@@ -36,7 +36,7 @@ you.
 > faster) → `nodeAtOffset` + `parseSlice` **~0.17 ms** (**8000x faster**). Edit a 36-char tag in a 200K-char document —
 > only those 36 characters get parsed.
 
-**[Live demo](https://demo.qwwq.org/)** — Vue 3 + CodeMirror editor with real-time `parseStructural` + `parseSlice`
+### **[▶Live demo](https://demo.qwwq.org/)** — Vue 3 + CodeMirror editor with real-time `parseStructural` + `parseSlice`
 visualization, handler registry toggle, and syntax highlighting.
 
 **Use cases:**

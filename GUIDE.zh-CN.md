@@ -30,7 +30,8 @@
 > **200 KB 实测（鲲鹏 920 / Node v24.14.0）：** 全量 `parseRichText` ~1382 ms → `parseStructural` ~41 ms（快 34 倍）→
 `nodeAtOffset` + `parseSlice` **~0.17 ms**（快 **8000 倍**）。改一个 36 字符的标签，20 万字的文档只解析那 36 个字符。
 
-### [▶ 实际站点演示文章 — qwwq.org/blog](https://qwwq.org/blog/dsl-fallback-museum)
+### **[在线演示](https://demo.qwwq.org/)** — Vue 3 + CodeMirror 编辑器，实时展示 `parseStructural` + `parseSlice`
+局部重解析、handler 开关、语法高亮。
 
 **适用场景：**
 游戏对话与视觉小说（打字机 / 抖动 / 变色——标签你自己发明），
