@@ -37,7 +37,7 @@ you.
 > only those 36 characters get parsed.
 
 ### **[▶Live demo](https://demo.qwwq.org/)** — Vue 3 + CodeMirror editor with real-time `parseStructural` + `parseSlice`
-visualization, handler registry toggle, and syntax highlighting.
+**visualization, handler registry toggle, and syntax highlighting.**
 
 **Use cases:**
 game dialogue & visual novels (typewriter / shake / color tags you invent),
