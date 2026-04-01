@@ -255,13 +255,12 @@ const cases: Array<{ name: string; run: () => void }> = [
               codeLang: "typescript",
               title: "Code:",
               label: "",
-              value: "const a = 1\n",
+              value: "const a = 1",
             },
             {
               type: "bold",
               value: [{ type: "text", value: "x" }],
             },
-            { type: "text", value: "\n" },
           ],
         },
       ]);
@@ -807,7 +806,7 @@ const cases: Array<{ name: string; run: () => void }> = [
       ]);
 
       assert.deepEqual(normalizeTokens(parser.parse("$$code(ts)%\nraw\n%end$$")), [
-        { type: "code", arg: "ts", value: "raw\n" },
+        { type: "code", arg: "ts", value: "raw" },
       ]);
       assert.deepEqual(normalizeStructuralNodes(parser.structural("$$code(ts)%\nraw\n%end$$")), [
         {
@@ -916,7 +915,7 @@ const cases: Array<{ name: string; run: () => void }> = [
           codeLang: "typescript",
           title: "demo",
           label: "",
-          value: "const a = 1\n",
+          value: "const a = 1",
         },
       ]);
     },
@@ -932,7 +931,7 @@ const cases: Array<{ name: string; run: () => void }> = [
           codeLang: "typescript",
           title: "Demo",
           label: "Label",
-          value: "a%end$$\n",
+          value: "a%end$$",
         },
       ]);
     },
@@ -985,7 +984,7 @@ const cases: Array<{ name: string; run: () => void }> = [
         {
           type: "info",
           title: "标题",
-          value: [{ type: "text", value: "正文\n" }],
+          value: [{ type: "text", value: "正文" }],
         },
       ]);
     },
@@ -998,7 +997,7 @@ const cases: Array<{ name: string; run: () => void }> = [
         {
           type: "warning",
           title: "标题",
-          value: [{ type: "text", value: "正文\n" }],
+          value: [{ type: "text", value: "正文" }],
         },
       ]);
     },
@@ -1011,7 +1010,7 @@ const cases: Array<{ name: string; run: () => void }> = [
         {
           type: "collapse",
           title: "标题",
-          value: [{ type: "text", value: "正文\n" }],
+          value: [{ type: "text", value: "正文" }],
         },
       ]);
     },
@@ -1033,7 +1032,7 @@ const cases: Array<{ name: string; run: () => void }> = [
         {
           type: "code",
           arg: "ts",
-          value: "const x = 1\n",
+          value: "const x = 1",
         },
       ]);
     },
@@ -1064,7 +1063,7 @@ const cases: Array<{ name: string; run: () => void }> = [
         },
       });
       assert.deepEqual(normalizeTokens(tokens), [
-        { type: "code", arg: "ts", value: "const x = 1\n" },
+        { type: "code", arg: "ts", value: "const x = 1" },
       ]);
     },
   },
@@ -1084,7 +1083,6 @@ const cases: Array<{ name: string; run: () => void }> = [
           value: [
             { type: "text", value: "A " },
             { type: "italic", value: [{ type: "text", value: "B" }] },
-            { type: "text", value: "\n" },
           ],
         },
       ]);
@@ -1101,7 +1099,7 @@ const cases: Array<{ name: string; run: () => void }> = [
         {
           type: "info",
           arg: "Title",
-          value: [{ type: "text", value: "line\n" }],
+          value: [{ type: "text", value: "line" }],
         },
         { type: "text", value: "next" },
       ]);
@@ -1294,7 +1292,6 @@ const cases: Array<{ name: string; run: () => void }> = [
           value: [
             { type: "text", value: "A " },
             { type: "bold", value: [{ type: "text", value: "B" }] },
-            { type: "text", value: "\n" },
           ],
         },
       ]);
@@ -1396,8 +1393,8 @@ const cases: Array<{ name: string; run: () => void }> = [
       assert.deepEqual(normalizeTokens(tokens), [
         { type: "multi-inline", value: [{ type: "text", value: "i" }] },
         { type: "text", value: "\n" },
-        { type: "multi-raw", arg: "r", value: "raw\n" },
-        { type: "multi-block", arg: "b", value: [{ type: "text", value: "block\n" }] },
+        { type: "multi-raw", arg: "r", value: "raw" },
+        { type: "multi-block", arg: "b", value: [{ type: "text", value: "block" }] },
       ]);
     },
   },
@@ -1427,8 +1424,8 @@ const cases: Array<{ name: string; run: () => void }> = [
 
       assert.deepEqual(normalizeTokens(tokens), [
         { type: "text", value: "$$multi(i)$$\n" },
-        { type: "multi-raw", arg: "r", value: "raw\n" },
-        { type: "multi-block", arg: "b", value: [{ type: "text", value: "block\n" }] },
+        { type: "multi-raw", arg: "r", value: "raw" },
+        { type: "multi-block", arg: "b", value: [{ type: "text", value: "block" }] },
       ]);
     },
   },
@@ -1518,13 +1515,13 @@ const cases: Array<{ name: string; run: () => void }> = [
           type: "code",
           arg: "ts | Demo",
           args: ["ts", "Demo"],
-          value: "const x = 1\n",
+          value: "const x = 1",
         },
         {
           type: "panel",
           arg: "a | b | c",
           args: ["a", "b", "c"],
-          value: [{ type: "text", value: "body\n" }],
+          value: [{ type: "text", value: "body" }],
         },
       ]);
     },
@@ -1541,7 +1538,7 @@ const cases: Array<{ name: string; run: () => void }> = [
           type: "panel",
           arg: "a | b | c",
           args: ["a", "b", "c"],
-          value: [{ type: "text", value: "body\n" }],
+          value: [{ type: "text", value: "body" }],
         },
       ]);
     },
@@ -1558,7 +1555,7 @@ const cases: Array<{ name: string; run: () => void }> = [
           type: "code",
           arg: "ts | Demo | Label",
           args: ["ts", "Demo", "Label"],
-          value: "const x = 1\n",
+          value: "const x = 1",
         },
       ]);
     },

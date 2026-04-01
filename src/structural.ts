@@ -89,7 +89,15 @@ const tryInlineFallback = (
   };
 };
 
-const parseNodes = (
+/**
+ * Core structural scanning loop.
+ *
+ * Exported for internal reuse (e.g. zone grouping) — not part of the
+ * public API surface. Call {@link parseStructural} for normal use.
+ *
+ * @internal
+ */
+export const parseNodes = (
   text: string,
   depth: number,
   depthLimit: number,

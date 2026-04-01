@@ -44,7 +44,7 @@
             {
               "type": "collapse",
               "title": "B",
-              "value": [{ "type": "text", "value": "$$collapse(C)*\nhello\n*end$$\n" }]
+              "value": [{ "type": "text", "value": "$$collapse(C)*\nhello\n*end$$" }]
             }
           ]
         }

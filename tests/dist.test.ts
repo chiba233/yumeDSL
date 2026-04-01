@@ -113,7 +113,7 @@ const smokeTest = (mod: DistModule, label: string) => {
             codeLang: "typescript",
             title: "Code:",
             label: "",
-            value: "const x = 1\n",
+            value: "const x = 1",
           },
         ]);
       },
@@ -126,7 +126,7 @@ const smokeTest = (mod: DistModule, label: string) => {
           {
             type: "collapse",
             title: "Title",
-            value: [{ type: "text", value: "content\n" }],
+            value: [{ type: "text", value: "content" }],
           },
         ]);
       },
@@ -508,7 +508,7 @@ const smokeTest = (mod: DistModule, label: string) => {
             type: "panel",
             arg: "a | b",
             args: ["a", "b"],
-            value: [{ type: "text", value: "body\n" }],
+            value: [{ type: "text", value: "body" }],
           },
         ]);
       },
@@ -529,13 +529,13 @@ const smokeTest = (mod: DistModule, label: string) => {
             type: "panel",
             arg: "a | b",
             args: ["a", "b"],
-            value: [{ type: "text", value: "body\n" }],
+            value: [{ type: "text", value: "body" }],
           },
           {
             type: "code",
             arg: "ts | demo",
             args: ["ts", "demo"],
-            value: "1\n",
+            value: "1",
           },
         ]);
       },

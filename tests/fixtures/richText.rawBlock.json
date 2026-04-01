@@ -10,7 +10,7 @@
           "codeLang": "typescript",
           "title": "标题",
           "label": "标签",
-          "value": "代码\n"
+          "value": "代码"
         }
       ]
     },
@@ -24,7 +24,7 @@
           "codeLang": "typescript",
           "title": "Code:",
           "label": "",
-          "value": "A | B\n"
+          "value": "A | B"
         }
       ]
     },
@@ -36,7 +36,7 @@
         {
           "type": "collapse",
           "title": "点我展开",
-          "value": [{ "type": "text", "value": "hello\n" }]
+          "value": [{ "type": "text", "value": "hello" }]
         }
       ]
     },
@@ -60,7 +60,7 @@
         {
           "type": "collapse",
           "title": "Title",
-          "value": [{ "type": "text", "value": "a*end$$\n" }]
+          "value": [{ "type": "text", "value": "a*end$$" }]
         }
       ]
     },
@@ -84,7 +84,7 @@
         {
           "type": "info",
           "title": "标题 | 正文",
-          "value": [{ "type": "text", "value": "内容\n" }]
+          "value": [{ "type": "text", "value": "内容" }]
         }
       ]
     },
@@ -96,7 +96,7 @@
         {
           "type": "info",
           "title": "标题",
-          "value": [{ "type": "text", "value": "A | B\n" }]
+          "value": [{ "type": "text", "value": "A | B" }]
         }
       ]
     },

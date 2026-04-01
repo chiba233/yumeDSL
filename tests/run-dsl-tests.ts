@@ -29,3 +29,6 @@ await import("./typecheck.test.ts");
 
 console.log("=== Print / Formatter ===");
 await import("./print.test.ts");
+
+console.log("=== Zones ===");
+await import("./zones.test.ts");

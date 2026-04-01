@@ -64,6 +64,33 @@ const deriveBlockTags = (handlers: Record<string, unknown>): BlockTagLookup => {
 };
 
 /**
+ * Merge user-declared blockTags on top of auto-derived ones.
+ *
+ * - Auto-derivation always runs as the base.
+ * - For tags explicitly listed in `userTags`, the user's declaration
+ *   completely replaces auto-derivation for that tag.
+ * - Tags not mentioned in `userTags` keep auto-derived behavior.
+ */
+const resolveBlockTags = (
+  handlers: Record<string, unknown>,
+  userTags: readonly BlockTagInput[] | undefined,
+): BlockTagLookup => {
+  const derived = deriveBlockTags(handlers);
+  if (!userTags || userTags.length === 0) return derived;
+
+  const userLookup = buildBlockTagLookup(userTags);
+  const userDeclared = new Set<string>();
+  for (const input of userTags) {
+    userDeclared.add(typeof input === "string" ? input : input.tag);
+  }
+
+  return {
+    has: (tag: string, form: MultilineForm) =>
+      userDeclared.has(tag) ? userLookup.has(tag, form) : derived.has(tag, form),
+  };
+};
+
+/**
  * Filter handler methods by allowed tag forms.
  * Handlers that have no remaining methods after filtering are removed entirely,
  * so the parser treats those tags as unrecognized (graceful degradation).
@@ -178,9 +205,7 @@ export const parseRichText = (text: string, options: ParseOptions = {}): TextTok
     options.handlers ?? {},
     options.allowForms,
   );
-  const blockTagSet = options.blockTags
-    ? buildBlockTagLookup(options.blockTags)
-    : deriveBlockTags(handlers);
+  const blockTagSet = resolveBlockTags(handlers, options.blockTags);
   const { syntax, tagName, depthLimit, tracker } = resolveBaseOptions(text, options);
   let seed = 0;
   const createId = options.createId ?? (() => `rt-${seed++}`);

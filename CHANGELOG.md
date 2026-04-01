@@ -2,6 +2,25 @@
 
 # Changelog
 
+### 1.0.15
+
+- New: `buildZones(nodes)` — groups a `StructuralNode[]` (with `trackPositions: true`) into
+  contiguous `Zone[]`. Adjacent text / escape / separator / inline nodes merge into one zone;
+  each raw or block node gets a dedicated zone. Useful for zone-level caching in editors
+- New: `Zone` type exported
+- Fix: block and raw tag content no longer includes the structural trailing `\n` before `*end$$` /
+  `%end$$`. This newline is required by the syntax (closers must be on their own line) and is not
+  content. Previously, `$$note()*\ncontent\n*end$$` produced `"content\n"`; now produces `"content"`.
+  Consecutive block tags no longer have a spurious blank line between them
+- Tests: 8 new zone test cases (grouping, breaker isolation, boundary alignment, coverage,
+  empty input, no-position skip, type smoke)
+- Documentation:
+    - README / GUIDE: 200 KB benchmark headline, live demo link, exports table updated
+    - Source Position Tracking wiki: updated to 200 KB benchmarks, added `parseSlice` section
+      with measured data (EN + ZH)
+    - Stable Token IDs wiki: added `createEasyStableId` performance section (EN + ZH)
+    - token-walker README: added `parseSlice` performance section with wiki links (EN + ZH)
+
 ### 1.0.14
 
 - `declareMultilineTags` now supports `"inline"` form — strips the trailing `\n` immediately after

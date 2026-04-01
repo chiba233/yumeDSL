@@ -9,6 +9,7 @@
 [![CI](https://github.com/chiba233/yumeDSL/actions/workflows/publish-dsl.yml/badge.svg)](https://github.com/chiba233/yumeDSL/actions/workflows/publish-dsl.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Wiki](https://img.shields.io/badge/Wiki-docs-6A57D5?logo=gitbook&logoColor=white)](https://github.com/chiba233/yumeDSL/wiki/)
+[![Demo](https://img.shields.io/badge/Demo-live-ff6b6b?logo=vue.js&logoColor=white)](https://demo.qwwq.org/)
 [![Contributing](https://img.shields.io/badge/Contributing-guide-blue.svg)](./CONTRIBUTING.md)
 [![Security](https://img.shields.io/badge/Security-policy-red.svg)](./SECURITY.md)
 
@@ -30,6 +31,13 @@ you.
 - [`parseStructural`](#parsestructural--structural-parse) gives you a lightweight map of the document; paired with [
   `yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker)'s `parseSlice`, you jump to any region and
   get fully positioned `TextToken[]` without re-parsing the whole document
+
+> **200 KB benchmark (Kunpeng 920 / Node v24.14.0):** full `parseRichText` ~1382 ms → `parseStructural` ~41 ms (34x
+> faster) → `nodeAtOffset` + `parseSlice` **~0.17 ms** (**8000x faster**). Edit a 36-char tag in a 200K-char document —
+> only those 36 characters get parsed.
+
+**[Live demo](https://demo.qwwq.org/)** — Vue 3 + CodeMirror editor with real-time `parseStructural` + `parseSlice`
+visualization, handler registry toggle, and syntax highlighting.
 
 **Use cases:**
 game dialogue & visual novels (typewriter / shake / color tags you invent),
@@ -538,9 +546,10 @@ blockTags: declareMultilineTags([
 ])
 ```
 
-**Auto-derivation:** when `blockTags` is omitted, the parser auto-derives raw/block normalization from handler
-methods (`raw` → raw form, `block` → block form). **Inline normalization is never auto-derived** — the parser
-cannot know whether an inline tag renders as block-level. You must declare it explicitly.
+**Auto-derivation:** the parser always auto-derives raw/block normalization from handler methods (`raw` → raw form,
+`block` → block form). When you pass `blockTags`, overrides are **per-tag**: tags you list completely replace
+auto-derivation for that tag; tags you don't mention keep auto-derived behavior. **Inline normalization is never
+auto-derived** — the parser cannot know whether an inline tag renders as block-level. You must declare it explicitly.
 
 **Rule of thumb:** if your tag renders as a block-level element, make sure it appears in `blockTags`. Otherwise
 boundary line breaks leak into the content and produce extra blank lines at render time.
@@ -762,7 +771,7 @@ const tokens = dsl.parse(input);
 
 | Category              | Exports                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 |-----------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Core**              | `parseRichText`, `stripRichText`, `createParser`, `parseStructural`, `printStructural`                                                                                                                                                                                                                                                                                                                                                                                |
+| **Core**              | `parseRichText`, `stripRichText`, `createParser`, `parseStructural`, `printStructural`, `buildZones`                                                                                                                                                                                                                                                                                                                                                                  |
 | **Configuration**     | `DEFAULT_SYNTAX`, `createEasySyntax`, `createSyntax`, `DEFAULT_TAG_NAME`, `createTagNameConfig`, `createEasyStableId`                                                                                                                                                                                                                                                                                                                                                 |
 | **Handler Helpers**   | `createPipeHandlers`, `createSimpleInlineHandlers`, `createSimpleBlockHandlers`, `createSimpleRawHandlers`, `declareMultilineTags`                                                                                                                                                                                                                                                                                                                                    |
 | **Handler Utilities** | `parsePipeArgs`, `parsePipeTextArgs`, `parsePipeTextList`, `extractText`, `createTextToken`, `splitTokensByPipe`, `materializeTextTokens`, `unescapeInline`, `readEscapedSequence`, `createToken`                                                                                                                                                                                                                                                                     |

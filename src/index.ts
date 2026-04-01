@@ -95,8 +95,11 @@ export type {
   SourceSpan,
 } from "./types.js";
 
+// ── Zone grouping ──
+export { buildZones } from "./zones.js";
+
 // ── Types: structural ──
-export type { StructuralNode, StructuralParseOptions } from "./types.js";
+export type { StructuralNode, StructuralParseOptions, Zone } from "./types.js";
 
 export type { PipeArgs } from "./builders.js";
 export type { PipeHandlerDefinition } from "./handlerHelpers.js";

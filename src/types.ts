@@ -226,6 +226,25 @@ export interface PositionTracker {
   resolve(offset: number): SourcePosition;
 }
 
+// ── Zone types ──
+
+/**
+ * A contiguous group of top-level structural nodes.
+ *
+ * Adjacent text / escape / separator / inline nodes merge into one zone.
+ * Each top-level raw or block node gets a dedicated zone.
+ *
+ * Built by {@link buildZones}.
+ */
+export interface Zone {
+  /** Start offset in the source text (inclusive). */
+  startOffset: number;
+  /** End offset in the source text (exclusive). */
+  endOffset: number;
+  /** The structural nodes belonging to this zone. */
+  nodes: StructuralNode[];
+}
+
 // ── Internal types (not re-exported from index) ──
 
 export type ParseMode = "render";

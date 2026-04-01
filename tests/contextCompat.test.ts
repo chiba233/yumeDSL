@@ -221,7 +221,7 @@ const cases = [
         {
           type: "note",
           title: "Demo",
-          value: [{ type: "text", value: "A || B\n" }],
+          value: [{ type: "text", value: "A || B" }],
         },
         {
           type: "box",
@@ -233,7 +233,6 @@ const cases = [
               url: "https://b.com",
               value: [{ type: "text", value: "go" }],
             },
-            { type: "text", value: "\n" },
           ],
         },
       ]);
@@ -261,7 +260,7 @@ const cases = [
         {
           type: "note",
           title: "Demo",
-          value: [{ type: "text", value: "A || B\n" }],
+          value: [{ type: "text", value: "A || B" }],
         },
         {
           type: "box",
@@ -273,7 +272,6 @@ const cases = [
               url: "https://b.com",
               value: [{ type: "text", value: "go" }],
             },
-            { type: "text", value: "\n" },
           ],
         },
       ]);
@@ -549,7 +547,7 @@ const cases = [
 
       assert.deepEqual(
         normalizeTokens(parser.parse("$$code(ts)%\nconst x = 1\n%end$$")),
-        [{ type: "code", arg: "ts", value: "const x = 1\n" }],
+        [{ type: "code", arg: "ts", value: "const x = 1" }],
       );
     },
   },

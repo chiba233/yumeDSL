@@ -9,6 +9,7 @@
 [![CI](https://github.com/chiba233/yumeDSL/actions/workflows/publish-dsl.yml/badge.svg)](https://github.com/chiba233/yumeDSL/actions/workflows/publish-dsl.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Wiki](https://img.shields.io/badge/Wiki-文档-6A57D5?logo=gitbook&logoColor=white)](https://github.com/chiba233/yumeDSL/wiki/)
+[![Demo](https://img.shields.io/badge/Demo-在线演示-ff6b6b?logo=vue.js&logoColor=white)](https://demo.qwwq.org/)
 [![Contributing](https://img.shields.io/badge/贡献指南-guide-blue.svg)](./CONTRIBUTING.zh-CN.md)
 [![Security](https://img.shields.io/badge/安全策略-policy-red.svg)](./SECURITY.md)
 
@@ -25,6 +26,12 @@
 - [`parseStructural`](#parsestructural--结构化解析) 给你一张轻量的文档地图；配合 [
   `yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker) 的 `parseSlice`，跳到任意区域拿到带完整位置的
   `TextToken[]`，不用重新解析整个文档
+
+> **200 KB 实测（鲲鹏 920 / Node v24.14.0）：** 全量 `parseRichText` ~1382 ms → `parseStructural` ~41 ms（快 34 倍）→
+`nodeAtOffset` + `parseSlice` **~0.17 ms**（快 **8000 倍**）。改一个 36 字符的标签，20 万字的文档只解析那 36 个字符。
+
+**[在线演示](https://demo.qwwq.org/)** — Vue 3 + CodeMirror 编辑器，实时展示 `parseStructural` + `parseSlice`
+局部重解析、handler 开关、语法高亮。
 
 **适用场景：**
 游戏对话与视觉小说（打字机 / 抖动 / 变色——标签你自己发明），
@@ -521,8 +528,9 @@ blockTags: declareMultilineTags([
 ])
 ```
 
-**自动推导：** 省略 `blockTags` 时，解析器从 handler 方法自动推导 raw/block 规范化（有 `raw` → raw 形式，有 `block` → block
-形式）。**inline 规范化永远不会自动推导**——解析器无法知道一个 inline 标签是否渲染为块级元素，必须显式声明。
+**自动推导：** 解析器始终从 handler 方法自动推导 raw/block 规范化（有 `raw` → raw 形式，有 `block` → block 形式）。
+传 `blockTags` 时，覆盖是**按标签的**：你列出的标签完全替换该标签的自动推导，没列出的标签保留自动推导。
+**inline 规范化永远不会自动推导**——解析器无法知道一个 inline 标签是否渲染为块级元素，必须显式声明。
 
 **经验法则：** 如果你的标签渲染为块级元素，确保它出现在 `blockTags` 中。否则边界换行会混入内容，渲染时产生多余空行。
 
@@ -727,7 +735,7 @@ const dsl = createParser({
 
 | 分类           | 导出                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 |--------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **核心**       | `parseRichText`、`stripRichText`、`createParser`、`parseStructural`、`printStructural`                                                                                                                                                                                                                                                                                                                                                         |
+| **核心**       | `parseRichText`、`stripRichText`、`createParser`、`parseStructural`、`printStructural`、`buildZones`                                                                                                                                                                                                                                                                                                                                            |
 | **配置**       | `DEFAULT_SYNTAX`、`createEasySyntax`、`createSyntax`、`DEFAULT_TAG_NAME`、`createTagNameConfig`、`createEasyStableId`                                                                                                                                                                                                                                                                                                                           |
 | **处理器辅助函数**  | `createPipeHandlers`、`createSimpleInlineHandlers`、`createSimpleBlockHandlers`、`createSimpleRawHandlers`、`declareMultilineTags`                                                                                                                                                                                                                                                                                                             |
 | **处理器工具函数**  | `parsePipeArgs`、`parsePipeTextArgs`、`parsePipeTextList`、`extractText`、`createTextToken`、`splitTokensByPipe`、`materializeTextTokens`、`unescapeInline`、`readEscapedSequence`、`createToken`                                                                                                                                                                                                                                                   |
