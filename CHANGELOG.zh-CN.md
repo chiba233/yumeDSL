@@ -18,7 +18,7 @@
 - 优化：`unescapeInline` 性能 —— 批量 `slice()` 非转义区间代替逐字符 `readEscaped()` 调用；
   无转义时直接返回原字符串（零分配）
 - 优化：`extractText` 性能 —— `string[]` + `join("")` 代替递归 `+=`
-- 优化：`splitTokensByPipe` 性能 —— 追�� run 起点代替逐字符 `buffer +=`
+- 优化：`splitTokensByPipe` 性能 —— 追踪 run 起点代替逐字符 `buffer +=`
 - 内部：`TagStartInfo.inlineContentStart` 更名为 `argStart`（内部类型，不影响公共 API）
 
 ### 1.0.15
