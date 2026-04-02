@@ -187,6 +187,46 @@ const smokeTest = (mod: DistModule, label: string) => {
         ]);
       },
     },
+    {
+      name: `[${label}] legacy handler signature remains compatible`,
+      run: () => {
+        const tokens = mod.parseRichText("$$link(https://a.com | hi)$$ $$code(js)%\nconst x = 1\n%end$$", {
+          handlers: {
+            link: {
+              inline: (children: TextToken[]) => {
+                const args = mod.parsePipeArgs(children);
+                return {
+                  type: "link",
+                  href: args.text(0),
+                  value: args.materializedTailTokens(1),
+                };
+              },
+            },
+            code: {
+              raw: (arg: string | undefined, content: string) => ({
+                type: "code",
+                lang: arg,
+                value: content,
+              }),
+            },
+          },
+        });
+
+        assert.deepEqual(normalize(tokens), [
+          {
+            type: "link",
+            href: "https://a.com",
+            value: [{ type: "text", value: "hi" }],
+          },
+          { type: "text", value: " " },
+          {
+            type: "code",
+            lang: "js",
+            value: "const x = 1",
+          },
+        ]);
+      },
+    },
 
     // ── stripRichText ──
     {

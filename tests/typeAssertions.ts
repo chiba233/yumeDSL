@@ -1,6 +1,7 @@
 import type {
   CreateId,
   DslContext,
+  Parser,
   ParseOptions,
   PipeHandlerDefinition,
   StructuralNode,
@@ -12,6 +13,7 @@ import type {
 } from "../src/index.ts";
 import {
   buildZones,
+  createParser,
   createSyntax,
   createPassthroughTags,
   createPipeHandlers,
@@ -182,6 +184,31 @@ const legacyCompatHandler: TagHandler = {
   },
 };
 void legacyCompatHandler;
+
+const legacyRawCompatHandler: TagHandler = {
+  raw: (arg, content) => ({
+    type: "code",
+    arg,
+    value: content,
+  }),
+  block: (arg, content) => ({
+    type: "panel",
+    arg,
+    value: content,
+  }),
+};
+void legacyRawCompatHandler;
+
+const parser: Parser = createParser({
+  handlers: {
+    legacy: legacyCompatHandler,
+  },
+});
+const printedWithOverride: string = parser.print(
+  [{ type: "inline", tag: "legacy", children: [{ type: "text", value: "ok" }] }],
+  { syntax: { tagPrefix: "@@", tagOpen: "[", tagClose: "]", endTag: "]@@" } },
+);
+void printedWithOverride;
 
 const structuralNodes: StructuralNode[] = parseStructural("$$bold(hi)$$", {
   handlers: inlineHandlers,

@@ -69,6 +69,26 @@ const handlers = createPipeHandlers({
   },
 });
 
+const legacyHandlers: ParseOptions["handlers"] = {
+  link: {
+    inline: (tokens) => {
+      const args = parsePipeArgs(tokens);
+      return {
+        type: "link",
+        value: args.materializedTailTokens(0),
+      };
+    },
+  },
+  code: {
+    raw: (arg, content) => ({
+      type: "code",
+      arg,
+      value: content,
+    }),
+  },
+};
+void legacyHandlers;
+
 const options: ParseOptions = {
   handlers,
   syntax: explicitSyntax,
@@ -122,6 +142,12 @@ const parserNodes = parser.structural("@@link<<a || b>>@@", {
   baseOffset: 6,
 });
 void parserNodes;
+
+const parserPrinted = parser.print(
+  [{ type: "inline", tag: "link", children: [{ type: "text", value: "hi" }] }],
+  { syntax: { tagPrefix: "%%", tagOpen: "<<", tagClose: ">>", endTag: ">>%%" } },
+);
+void parserPrinted;
 
 const distZones: Zone[] = buildZones(structuralNodes);
 const distZone: Zone = distZones[0];
