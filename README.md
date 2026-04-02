@@ -106,7 +106,7 @@ const RichText: FC<{ tokens: TextToken[] }> = ({tokens}) => (
 **Start here:**
 [Install](#install) · [Quick Start](#quick-start) · [DSL Syntax](#dsl-syntax) · [API](#api)
 
-**Go deeper:** 
+**Go deeper:**
 [Custom Syntax](#custom-syntax) · [Handler Helpers](#handler-helpers) · [ParseOptions](#parseoptions) · [Stable Token IDs](#stable-token-ids) · [Source Position Tracking](#source-position-tracking) · [Error Handling](#error-handling) · [Exports](#exports) · [Deprecated API](#deprecated-api) · [Compatibility](#compatibility-notes)
 
 ---
@@ -356,12 +356,12 @@ interface Parser {
 
 **Methods:**
 
-| Method       | Input                 | Output             | Inherits from defaults                                                        |
-|--------------|-----------------------|--------------------|-------------------------------------------------------------------------------|
-| `parse`      | DSL text + overrides? | `TextToken[]`      | All `ParseOptions` — overrides merge one level deep for `syntax`/`tagName`    |
-| `strip`      | DSL text + overrides? | `string`           | Same as `parse`                                                               |
-| `structural` | DSL text + overrides? | `StructuralNode[]` | `handlers`, `allowForms`, `syntax`, `tagName`, `depthLimit`, `trackPositions` |
-| `print`      | `StructuralNode[]`    | `string`           | `syntax` only — lossless serializer, no gating                                |
+| Method       | Input                           | Output             | Inherits from defaults                                                        |
+|--------------|---------------------------------|--------------------|-------------------------------------------------------------------------------|
+| `parse`      | DSL text + overrides?           | `TextToken[]`      | All `ParseOptions` — overrides merge one level deep for `syntax`/`tagName`    |
+| `strip`      | DSL text + overrides?           | `string`           | Same as `parse`                                                               |
+| `structural` | DSL text + overrides?           | `StructuralNode[]` | `handlers`, `allowForms`, `syntax`, `tagName`, `depthLimit`, `trackPositions` |
+| `print`      | `StructuralNode[]` + overrides? | `string`           | `syntax` only — overrides merge with defaults. Lossless serializer, no gating |
 
 ### `parseRichText` / `stripRichText`
 
@@ -678,7 +678,7 @@ interface TokenDraft {
 Use `NarrowToken` + `createTokenGuard` for zero-boilerplate type narrowing:
 
 ```ts
-import { createTokenGuard, type NarrowDraft, type TextToken } from "yume-dsl-rich-text";
+import {createTokenGuard, type NarrowDraft, type TextToken} from "yume-dsl-rich-text";
 
 // 1. Define a token map
 interface MyTokenMap {
@@ -772,14 +772,14 @@ const tokens = dsl.parse(input);
 
 ## Exports
 
-| Category              | Exports                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-|-----------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Core**              | `parseRichText`, `stripRichText`, `createParser`, `parseStructural`, `printStructural`, `buildZones`                                                                                                                                                                                                                                                                                                                                                                          |
-| **Configuration**     | `DEFAULT_SYNTAX`, `createEasySyntax`, `createSyntax`, `DEFAULT_TAG_NAME`, `createTagNameConfig`, `createEasyStableId`                                                                                                                                                                                                                                                                                                                                                         |
-| **Handler Helpers**   | `createPipeHandlers`, `createSimpleInlineHandlers`, `createSimpleBlockHandlers`, `createSimpleRawHandlers`, `declareMultilineTags`                                                                                                                                                                                                                                                                                                                                            |
-| **Handler Utilities** | `parsePipeArgs`, `parsePipeTextArgs`, `parsePipeTextList`, `extractText`, `createTextToken`, `splitTokensByPipe`, `materializeTextTokens`, `unescapeInline`, `readEscapedSequence`, `createToken`, `createTokenGuard`                                                                                                                                                                                                                                                          |
-| **Token Traversal**   | `walkTokens`, `mapTokens`                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| **Position Tracking** | `buildPositionTracker`                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Category              | Exports                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+|-----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Core**              | `parseRichText`, `stripRichText`, `createParser`, `parseStructural`, `printStructural`, `buildZones`                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| **Configuration**     | `DEFAULT_SYNTAX`, `createEasySyntax`, `createSyntax`, `DEFAULT_TAG_NAME`, `createTagNameConfig`, `createEasyStableId`                                                                                                                                                                                                                                                                                                                                                                                                           |
+| **Handler Helpers**   | `createPipeHandlers`, `createSimpleInlineHandlers`, `createSimpleBlockHandlers`, `createSimpleRawHandlers`, `declareMultilineTags`                                                                                                                                                                                                                                                                                                                                                                                              |
+| **Handler Utilities** | `parsePipeArgs`, `parsePipeTextArgs`, `parsePipeTextList`, `extractText`, `createTextToken`, `splitTokensByPipe`, `materializeTextTokens`, `unescapeInline`, `readEscapedSequence`, `createToken`, `createTokenGuard`                                                                                                                                                                                                                                                                                                           |
+| **Token Traversal**   | `walkTokens`, `mapTokens`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| **Position Tracking** | `buildPositionTracker`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | **Types**             | `TextToken`, `TokenDraft`, `CreateId`, `DslContext`, `TagHandler`, `TagForm`, `ParseOptions`, `ParserBaseOptions`, `StructuralParseOptions`, `Parser`, `SyntaxInput`, `SyntaxConfig`, `TagNameConfig`, `BlockTagInput`, `MultilineForm`, `ErrorCode`, `ParseError`, `StructuralNode`, `SourcePosition`, `SourceSpan`, `PositionTracker`, `PipeArgs`, `PipeHandlerDefinition`, `EasyStableIdOptions`, `PrintOptions`, `TokenVisitContext`, `WalkVisitor`, `MapVisitor`, `Zone`, `NarrowToken`, `NarrowDraft`, `NarrowTokenUnion` |
 
 See the [Exports wiki page](https://github.com/chiba233/yumeDSL/wiki/en-Exports) for full signatures and detailed
