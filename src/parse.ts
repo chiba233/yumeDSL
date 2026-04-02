@@ -47,13 +47,12 @@ const buildBlockTagLookup = (inputs: readonly BlockTagInput[]): BlockTagLookup =
   };
 };
 
-const deriveBlockTags = (handlers: Record<string, unknown>): BlockTagLookup => {
+const deriveBlockTags = (handlers: Record<string, import("./types.js").TagHandler>): BlockTagLookup => {
   const rawSet = new Set<string>();
   const blockSet = new Set<string>();
   for (const [tag, handler] of Object.entries(handlers)) {
-    const h = handler as Record<string, unknown>;
-    if (h.raw) rawSet.add(tag);
-    if (h.block) blockSet.add(tag);
+    if (handler.raw) rawSet.add(tag);
+    if (handler.block) blockSet.add(tag);
   }
   // inline is never auto-derived — the parser cannot know rendering intent.
   // Users must explicitly declare inline normalization via blockTags.
@@ -72,7 +71,7 @@ const deriveBlockTags = (handlers: Record<string, unknown>): BlockTagLookup => {
  * - Tags not mentioned in `userTags` keep auto-derived behavior.
  */
 const resolveBlockTags = (
-  handlers: Record<string, unknown>,
+  handlers: Record<string, import("./types.js").TagHandler>,
   userTags: readonly BlockTagInput[] | undefined,
 ): BlockTagLookup => {
   const derived = deriveBlockTags(handlers);
@@ -241,7 +240,7 @@ export interface Parser {
   parse: (text: string, overrides?: ParseOptions) => TextToken[];
   strip: (text: string, overrides?: ParseOptions) => string;
   structural: (text: string, overrides?: StructuralParseOptions) => StructuralNode[];
-  print: (nodes: StructuralNode[]) => string;
+  print: (nodes: StructuralNode[], overrides?: import("./print.js").PrintOptions) => string;
 }
 
 export const createParser = (defaults: ParseOptions): Parser => {
@@ -263,7 +262,11 @@ export const createParser = (defaults: ParseOptions): Parser => {
       stripRichText(text, overrides ? merge(overrides) : defaults),
     structural: (text, overrides) =>
       parseStructural(text, overrides ? merge(overrides) : defaults),
-    print: (nodes) =>
-      printStructural(nodes, { syntax: defaults.syntax }),
+    print: (nodes, overrides) => {
+      const syntax = overrides?.syntax && defaults.syntax
+        ? { ...defaults.syntax, ...overrides.syntax }
+        : overrides?.syntax ?? defaults.syntax;
+      return printStructural(nodes, { syntax });
+    },
   };
 };

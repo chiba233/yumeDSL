@@ -350,7 +350,7 @@ interface Parser {
     parse: (text: string, overrides?: ParseOptions) => TextToken[];
     strip: (text: string, overrides?: ParseOptions) => string;
     structural: (text: string, overrides?: StructuralParseOptions) => StructuralNode[];
-    print: (nodes: StructuralNode[]) => string;
+    print: (nodes: StructuralNode[], overrides?: PrintOptions) => string;
 }
 ```
 
@@ -675,26 +675,33 @@ interface TokenDraft {
 
 ### Strong Typing
 
-Define typed interfaces that extend `TextToken`, cast once, then narrow with discriminated unions:
+Use `NarrowToken` + `createTokenGuard` for zero-boilerplate type narrowing:
 
 ```ts
-interface LinkToken extends TextToken {
-    type: "link";
-    url: string;
-    value: MyToken[];
+import { createTokenGuard, type NarrowDraft, type TextToken } from "yume-dsl-rich-text";
+
+// 1. Define a token map
+interface MyTokenMap {
+    bold: {};
+    link: { url: string };
+    code: { lang: string };
 }
 
-type MyToken = PlainText | BoldToken | LinkToken | CodeBlockToken;
+// 2. Create a guard — one line
+const is = createTokenGuard<MyTokenMap>();
 
-const tokens = parseRichText(input, options) as MyToken[];
+// 3. Use in if branches — extra fields are auto-narrowed
+if (is(token, "link")) {
+    token.url;  // string ✓
+    token.type; // "link" ✓
+}
+
+// 4. Handler-side: NarrowDraft catches missing fields at compile time
+type LinkDraft = NarrowDraft<"link", { url: string }>;
 ```
 
-See the [Strong Typing wiki section](https://github.com/chiba233/yumeDSL/wiki/en-Token-Structure#strong-typing) for a
-full render example with discriminated unions.
-
-The cast is safe as long as your handlers return drafts that match the union.
-If you add or remove tags, update the union accordingly — TypeScript will flag any unhandled `type` in exhaustive
-switches.
+See the [Strong Typing wiki section](https://github.com/chiba233/yumeDSL/wiki/en-Token-Structure#strong-typing) for
+a full render example, `NarrowTokenUnion`, and the manual discriminated union alternative.
 
 ---
 
@@ -770,10 +777,10 @@ const tokens = dsl.parse(input);
 | **Core**              | `parseRichText`, `stripRichText`, `createParser`, `parseStructural`, `printStructural`, `buildZones`                                                                                                                                                                                                                                                                                                                                                                          |
 | **Configuration**     | `DEFAULT_SYNTAX`, `createEasySyntax`, `createSyntax`, `DEFAULT_TAG_NAME`, `createTagNameConfig`, `createEasyStableId`                                                                                                                                                                                                                                                                                                                                                         |
 | **Handler Helpers**   | `createPipeHandlers`, `createSimpleInlineHandlers`, `createSimpleBlockHandlers`, `createSimpleRawHandlers`, `declareMultilineTags`                                                                                                                                                                                                                                                                                                                                            |
-| **Handler Utilities** | `parsePipeArgs`, `parsePipeTextArgs`, `parsePipeTextList`, `extractText`, `createTextToken`, `splitTokensByPipe`, `materializeTextTokens`, `unescapeInline`, `readEscapedSequence`, `createToken`                                                                                                                                                                                                                                                                             |
+| **Handler Utilities** | `parsePipeArgs`, `parsePipeTextArgs`, `parsePipeTextList`, `extractText`, `createTextToken`, `splitTokensByPipe`, `materializeTextTokens`, `unescapeInline`, `readEscapedSequence`, `createToken`, `createTokenGuard`                                                                                                                                                                                                                                                          |
 | **Token Traversal**   | `walkTokens`, `mapTokens`                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | **Position Tracking** | `buildPositionTracker`                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| **Types**             | `TextToken`, `TokenDraft`, `CreateId`, `DslContext`, `TagHandler`, `TagForm`, `ParseOptions`, `ParserBaseOptions`, `StructuralParseOptions`, `Parser`, `SyntaxInput`, `SyntaxConfig`, `TagNameConfig`, `BlockTagInput`, `MultilineForm`, `ErrorCode`, `ParseError`, `StructuralNode`, `SourcePosition`, `SourceSpan`, `PositionTracker`, `PipeArgs`, `PipeHandlerDefinition`, `EasyStableIdOptions`, `PrintOptions`, `TokenVisitContext`, `WalkVisitor`, `MapVisitor`, `Zone` |
+| **Types**             | `TextToken`, `TokenDraft`, `CreateId`, `DslContext`, `TagHandler`, `TagForm`, `ParseOptions`, `ParserBaseOptions`, `StructuralParseOptions`, `Parser`, `SyntaxInput`, `SyntaxConfig`, `TagNameConfig`, `BlockTagInput`, `MultilineForm`, `ErrorCode`, `ParseError`, `StructuralNode`, `SourcePosition`, `SourceSpan`, `PositionTracker`, `PipeArgs`, `PipeHandlerDefinition`, `EasyStableIdOptions`, `PrintOptions`, `TokenVisitContext`, `WalkVisitor`, `MapVisitor`, `Zone`, `NarrowToken`, `NarrowDraft`, `NarrowTokenUnion` |
 
 See the [Exports wiki page](https://github.com/chiba233/yumeDSL/wiki/en-Exports) for full signatures and detailed
 documentation.

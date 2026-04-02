@@ -652,22 +652,33 @@ interface TokenDraft {
 
 ### 强类型
 
-定义继承 `TextToken` 的类型接口，在调用处做一次断言，然后通过可辨识联合收窄：
+用 `NarrowToken` + `createTokenGuard` 零样板收窄类型：
 
 ```ts
-interface LinkToken extends TextToken {
-    type: "link";
-    url: string;
-    value: MyToken[];
+import {createTokenGuard, type NarrowDraft} from "yume-dsl-rich-text";
+
+// 1. 定义 token map
+interface MyTokenMap {
+  bold: {};
+  link: { url: string };
+  code: { lang: string };
 }
 
-type MyToken = PlainText | BoldToken | LinkToken | CodeBlockToken;
+// 2. 创建守卫
+const is = createTokenGuard<MyTokenMap>();
 
-const tokens = parseRichText(input, options) as MyToken[];
+// 3. 在 if 分支里自动收窄
+if (is(token, "link")) {
+  token.url;  // string ✓
+  token.type; // "link" ✓
+}
+
+// 4. handler 侧：NarrowDraft 在编译期捕获漏写字段
+type LinkDraft = NarrowDraft<"link", { url: string }>;
 ```
 
 详见 [强类型 wiki 章节](https://github.com/chiba233/yumeDSL/wiki/zh-CN-Token-%E7%BB%93%E6%9E%84#%E5%BC%BA%E7%B1%BB%E5%9E%8B)
-：完整的 render 示例与可辨识联合用法。
+：完整 render 示例、`NarrowTokenUnion`、以及手写判别联合替代方案。
 
 ---
 

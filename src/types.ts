@@ -25,6 +25,81 @@ export interface TokenDraft {
   [key: string]: unknown;
 }
 
+// ── 强类型收窄工具 ──
+//
+// TextToken / TokenDraft 的 index signature `[key: string]: unknown` 是故意保留的：
+// handler 侧需要它来自由附加额外字段（url、lang、arg 等），不破坏现有 API。
+//
+// 消费侧用下面的 NarrowToken / NarrowDraft 把类型"捡回来"：
+// - NarrowToken  → 配合 createTokenGuard 在 if 分支里自动收窄
+// - NarrowDraft  → handler 作者标注返回类型，拿到编译期检查
+// - NarrowTokenUnion → 从 token map 批量生成联合类型，用于 switch/exhaustive check
+
+/**
+ * 把 TextToken 收窄为特定 `type` 字面量 + 已知额外字段的子类型。
+ *
+ * 基础 TextToken 的 index signature 允许 handler 随意附加字段，
+ * 但消费侧拿到的全是 `unknown`。用 NarrowToken 在消费侧恢复类型信息。
+ *
+ * @example
+ * ```ts
+ * type LinkToken = NarrowToken<'link', { url: string }>;
+ * type BoldToken = NarrowToken<'bold'>;
+ *
+ * function renderLink(token: LinkToken) {
+ *   token.type; // 'link'
+ *   token.url;  // string
+ *   token.id;   // string  （TextToken 的固有字段仍然可用）
+ * }
+ * ```
+ */
+export type NarrowToken<
+  TType extends string,
+  TExtra extends Record<string, unknown> = {},
+> = TextToken & { type: TType } & TExtra;
+
+/**
+ * 把 TokenDraft 收窄为特定 `type` 字面量 + 已知额外字段的子类型。
+ * 用于 handler 返回类型标注，让 handler 作者也能拿到编译期检查。
+ *
+ * @example
+ * ```ts
+ * type LinkDraft = NarrowDraft<'link', { url: string }>;
+ *
+ * const linkHandler: TagHandler = {
+ *   inline: (tokens, ctx): LinkDraft => ({
+ *     type: 'link',
+ *     url: args.text(0),           // ← 漏写 url 会报错
+ *     value: args.materializedTailTokens(1),
+ *   }),
+ * };
+ * ```
+ */
+export type NarrowDraft<
+  TType extends string,
+  TExtra extends Record<string, unknown> = {},
+> = TokenDraft & { type: TType } & TExtra;
+
+/**
+ * 从 token map 类型批量生成 NarrowToken 联合类型。
+ *
+ * 适合需要 exhaustive switch 或统一约束消费侧输入类型的场景。
+ *
+ * @example
+ * ```ts
+ * interface MyTokenMap {
+ *   bold: {};
+ *   link: { url: string };
+ *   code: { lang: string };
+ * }
+ * type MyToken = NarrowTokenUnion<MyTokenMap>;
+ * // = NarrowToken<'bold'> | NarrowToken<'link', { url: string }> | NarrowToken<'code', { lang: string }>
+ * ```
+ */
+export type NarrowTokenUnion<TMap extends Record<string, Record<string, unknown>>> = {
+  [K in keyof TMap & string]: NarrowToken<K, TMap[K]>;
+}[keyof TMap & string];
+
 export type CreateId = (token: TokenDraft) => string;
 
 export type ErrorCode =
@@ -286,7 +361,7 @@ export interface TagStartInfo {
   tag: string;
   tagOpenPos: number;
   tagNameEnd: number;
-  inlineContentStart: number;
+  argStart: number;
 }
 
 export interface ComplexTagParseResult {

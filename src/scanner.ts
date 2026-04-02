@@ -291,12 +291,12 @@ export const skipTagBoundary = (
   const { tagOpen, endTag, rawOpen, rawClose, blockOpen, blockClose } = syntax;
 
   const closerInfo = getTagCloserType(text, info.tagNameEnd + tagOpen.length, syntax);
-  if (!closerInfo) return info.inlineContentStart;
+  if (!closerInfo) return info.argStart;
 
   if (closerInfo.closer === endTag) {
-    const closeStart = findInlineClose(text, info.inlineContentStart, syntax, tagName);
+    const closeStart = findInlineClose(text, info.argStart, syntax, tagName);
     return closeStart === -1
-      ? skipDegradedInline(text, info.inlineContentStart, syntax, tagName)
+      ? skipDegradedInline(text, info.argStart, syntax, tagName)
       : closeStart + endTag.length;
   }
 
@@ -317,9 +317,9 @@ export const readTagStartInfo = (
   syntax: SyntaxConfig,
   tagName: TagNameConfig,
 ): TagStartInfo | null => {
-  // 注意：这里返回的是“最小可用 tag 起始信息”。
+  // 注意：这里返回的是"最小可用 tag 起始信息"。
   // 后面很多路径都会拿这个结果继续扫边界，所以字段含义别改名式重解释：
-  // `inlineContentStart` 现在其实是“argStart”，不是“已经确认是 inline 后的正文起点”。
+  // `argStart` 是 tagOpen 后面的参数区起点，不是"已经确认是 inline 后的正文起点"。
   const head = readTagHeadAt(text, i, syntax, tagName);
   if (!head) return null;
 
@@ -327,6 +327,6 @@ export const readTagStartInfo = (
     tag: head.tag,
     tagOpenPos: head.tagStart,
     tagNameEnd: head.tagNameEnd,
-    inlineContentStart: head.argStart,
+    argStart: head.argStart,
   };
 };

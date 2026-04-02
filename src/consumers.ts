@@ -61,21 +61,21 @@ export const tryConsumeDepthLimitedTag = (ctx: ParseContext, info: TagStartInfo)
       "DEPTH_LIMIT",
       ctx.text,
       ctx.i,
-      info.inlineContentStart - info.tagOpenPos,
+      info.argStart - info.tagOpenPos,
     );
   }
 
-  const tagInfo = getTagCloserType(ctx.text, info.inlineContentStart, syntax);
+  const tagInfo = getTagCloserType(ctx.text, info.argStart, syntax);
 
   if (!tagInfo) {
-    bufferAndAdvance(ctx, info.inlineContentStart);
+    bufferAndAdvance(ctx, info.argStart);
     return true;
   }
 
   if (tagInfo.closer === endTag) {
-    const end = findInlineClose(ctx.text, info.inlineContentStart, syntax, tagName);
+    const end = findInlineClose(ctx.text, info.argStart, syntax, tagName);
     if (end === -1) {
-      bufferAndAdvance(ctx, skipDegradedInline(ctx.text, info.inlineContentStart, syntax, tagName));
+      bufferAndAdvance(ctx, skipDegradedInline(ctx.text, info.argStart, syntax, tagName));
       return true;
     }
     bufferAndAdvance(ctx, end + endTag.length);
@@ -126,7 +126,7 @@ export const tryConsumeComplexTag = (
     text: ctx.text,
     tagOpenPos: info.tagOpenPos,
     tag: info.tag,
-    argStart: info.inlineContentStart,
+    argStart: info.argStart,
     inlineEnd,
     depthLimit: ctx.depthLimit,
     mode: ctx.mode,
@@ -175,10 +175,10 @@ export const tryConsumeInlineTag = (
       "INLINE_NOT_CLOSED",
       ctx.text,
       info.tagOpenPos,
-      info.inlineContentStart - info.tagOpenPos,
+      info.argStart - info.tagOpenPos,
     );
-    appendToBuffer(ctx, ctx.text.slice(ctx.i, info.inlineContentStart), info.tagOpenPos);
-    ctx.i = info.inlineContentStart;
+    appendToBuffer(ctx, ctx.text.slice(ctx.i, info.argStart), info.tagOpenPos);
+    ctx.i = info.argStart;
     return true;
   }
 
@@ -187,9 +187,9 @@ export const tryConsumeInlineTag = (
     richType: handler ? info.tag : null,
     tokens: [],
     openPos: info.tagOpenPos,
-    openLen: info.inlineContentStart - info.tagOpenPos,
+    openLen: info.argStart - info.tagOpenPos,
   });
-  ctx.i = info.inlineContentStart;
+  ctx.i = info.argStart;
   return true;
 };
 
@@ -209,7 +209,7 @@ export const tryConsumeTagStart = (
 
   if (tryConsumeDepthLimitedTag(ctx, info)) return true;
 
-  const inlineEnd = findInlineClose(ctx.text, info.inlineContentStart, ctx.syntax, ctx.tagName);
+  const inlineEnd = findInlineClose(ctx.text, info.argStart, ctx.syntax, ctx.tagName);
 
   if (tryConsumeComplexTag(ctx, info, inlineEnd, parseInlineContent)) return true;
   return tryConsumeInlineTag(ctx, info, inlineEnd);

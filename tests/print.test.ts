@@ -193,6 +193,29 @@ const cases: GoldenCase[] = [
       assert.equal(dsl.print(tree), "@@bold[ok]@@");
     },
   },
+  {
+    name: "printStructural: createParser.print per-call override merges with defaults",
+    run: () => {
+      // defaults: @@…]@@  syntax
+      const dsl = createParser({
+        syntax: { tagPrefix: "@@", tagOpen: "[", tagClose: "]", tagDivider: ";", endTag: "]@@", rawOpen: "]%", blockOpen: "]*", rawClose: "%end@@", blockClose: "*end@@", escapeChar: "~" },
+      });
+      const tree: StructuralNode[] = [
+        { type: "inline", tag: "bold", children: [{ type: "text", value: "ok" }] },
+      ];
+
+      // override only tagPrefix → endTag 等 compound 保持 defaults 的值（不重新派生），
+      // 所以必须连同 endTag 一起显式传才能 round-trip。
+      // 这里测的是：override 的 tagPrefix 和 endTag 确实被采纳，而其他字段仍继承 defaults。
+      assert.equal(
+        dsl.print(tree, { syntax: { tagPrefix: "%%", endTag: "]%%" } }),
+        "%%bold[ok]%%",
+      );
+
+      // 不带 override 应当仍用 defaults
+      assert.equal(dsl.print(tree), "@@bold[ok]@@");
+    },
+  },
 ];
 
 await runGoldenCases("Print", "print case", cases);

@@ -2,6 +2,25 @@
 
 # Changelog
 
+### 1.1.0
+
+- New: `NarrowToken<TType, TExtra?>` — utility type that narrows `TextToken` to a specific `type`
+  literal with known extra fields, recovering type safety from the index signature
+- New: `NarrowDraft<TType, TExtra?>` — same for `TokenDraft`, for handler return type annotations
+- New: `NarrowTokenUnion<TMap>` — generate a discriminated union of `NarrowToken` from a token map
+- New: `createTokenGuard<TMap>()` — runtime type guard factory that narrows `TextToken` by `type` key
+  in `if` branches with full TypeScript inference
+- New: `Parser.print()` now accepts optional `PrintOptions` override — syntax is deep-merged with
+  defaults, matching the per-call override behavior of `parse()` and `structural()`. Previously `print`
+  was always bound to `defaults.syntax`, breaking round-trip when parsing with a syntax override
+- Fix: `deriveBlockTags` / `resolveBlockTags` parameter type narrowed from `Record<string, unknown>`
+  to `Record<string, TagHandler>`, eliminating an unsafe `as Record<string, unknown>` cast
+- Improve: `unescapeInline` performance — batch non-escape runs via `slice()` instead of per-character
+  `readEscaped()` calls; returns original string unchanged when no escapes are found (zero allocation)
+- Improve: `extractText` performance — collect into `string[]` + `join("")` instead of recursive `+=`
+- Improve: `splitTokensByPipe` performance — track run start position instead of per-character `buffer +=`
+- Internal: rename `TagStartInfo.inlineContentStart` → `argStart` (internal type, not exported)
+
 ### 1.0.15
 
 - New: `buildZones(nodes)` — groups a `StructuralNode[]` (with `trackPositions: true`) into

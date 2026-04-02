@@ -58,22 +58,22 @@ const tryInlineFallback = (
     return { nodes: null, nextI: i + 1, bufferAppend: text[i] };
   }
 
-  const closeStart = findInlineClose(text, info.inlineContentStart, syntax, tagName);
+  const closeStart = findInlineClose(text, info.argStart, syntax, tagName);
   if (closeStart === -1) {
     return {
       nodes: null,
-      nextI: info.inlineContentStart,
-      bufferAppend: text.slice(i, info.inlineContentStart),
+      nextI: info.argStart,
+      bufferAppend: text.slice(i, info.argStart),
     };
   }
 
   const children = parseNodes(
-    text.slice(info.inlineContentStart, closeStart),
+    text.slice(info.argStart, closeStart),
     depth + 1,
     depthLimit,
     gating,
     true,
-    baseOffset + info.inlineContentStart,
+    baseOffset + info.argStart,
     tracker,
     syntax,
     tagName,
@@ -172,8 +172,8 @@ export const parseNodes = (
     const closerInfo = getTagCloserType(text, info.tagNameEnd + tagOpen.length, syntax);
     if (!closerInfo) {
       if (buf.start === -1) buf.start = i;
-      buf.content += text.slice(i, info.inlineContentStart);
-      i = info.inlineContentStart;
+      buf.content += text.slice(i, info.argStart);
+      i = info.argStart;
       continue;
     }
 
@@ -201,11 +201,11 @@ export const parseNodes = (
         continue;
       }
 
-      const closeStart = findInlineClose(text, info.inlineContentStart, syntax, tagName);
+      const closeStart = findInlineClose(text, info.argStart, syntax, tagName);
       if (closeStart === -1) {
         if (buf.start === -1) buf.start = i;
-        buf.content += text.slice(i, info.inlineContentStart);
-        i = info.inlineContentStart;
+        buf.content += text.slice(i, info.argStart);
+        i = info.argStart;
         continue;
       }
       // 注意：这里必须先 flush 再挂 inline 节点，否则前置纯文本会被错误并进当前 tag 前后。
@@ -218,12 +218,12 @@ export const parseNodes = (
           type: "inline",
           tag: info.tag,
           children: parseNodes(
-            text.slice(info.inlineContentStart, closeStart),
+            text.slice(info.argStart, closeStart),
             depth + 1,
             depthLimit,
             gating,
             true,
-            baseOffset + info.inlineContentStart,
+            baseOffset + info.argStart,
             tracker,
             syntax,
             tagName,
@@ -269,7 +269,7 @@ export const parseNodes = (
     // ── Raw: $$tag(args)% content %end$$ ──
     if (closerInfo.closer === rawClose) {
       // 注意：raw 的 args 和 content 起点不一样。
-      // `inlineContentStart` 是参数区起点，`contentStart` 才是正文起点；
+      // `argStart` 是参数区起点，`contentStart` 才是正文起点；
       // 这俩混了以后，args 子节点和 content 整体 position 会一起偏。
       const contentStart = closerInfo.argClose + rawOpen.length;
       const closeStart = findRawClose(text, contentStart, syntax);
@@ -297,12 +297,12 @@ export const parseNodes = (
           type: "raw",
           tag: info.tag,
           args: parseNodes(
-            text.slice(info.inlineContentStart, closerInfo.argClose),
+            text.slice(info.argStart, closerInfo.argClose),
             depth + 1,
             depthLimit,
             gating,
             true,
-            baseOffset + info.inlineContentStart,
+            baseOffset + info.argStart,
             tracker,
             syntax,
             tagName,
@@ -344,12 +344,12 @@ export const parseNodes = (
         type: "block",
         tag: info.tag,
         args: parseNodes(
-          text.slice(info.inlineContentStart, closerInfo.argClose),
+          text.slice(info.argStart, closerInfo.argClose),
           depth + 1,
           depthLimit,
           gating,
           true,
-          baseOffset + info.inlineContentStart,
+          baseOffset + info.argStart,
           tracker,
           syntax,
           tagName,

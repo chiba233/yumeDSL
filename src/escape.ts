@@ -62,14 +62,23 @@ export const readEscaped = (text: string, i: number, ctx?: DslContext | SyntaxCo
  */
 export const unescapeInline = (str: string, ctx?: DslContext | SyntaxConfig): string => {
   const syntax = resolveSyntax(ctx);
-  let result = "";
+  const parts: string[] = [];
   let i = 0;
+  let runStart = 0;
 
   while (i < str.length) {
-    const [chunk, next] = readEscaped(str, i, syntax);
-    result += chunk;
-    i = next;
+    const [escaped, next] = readEscapedSequence(str, i, syntax);
+    if (escaped !== null) {
+      if (i > runStart) parts.push(str.slice(runStart, i));
+      parts.push(escaped);
+      i = next;
+      runStart = i;
+    } else {
+      i++;
+    }
   }
 
-  return result;
+  if (runStart === 0) return str;
+  if (i > runStart) parts.push(str.slice(runStart, i));
+  return parts.join("");
 };

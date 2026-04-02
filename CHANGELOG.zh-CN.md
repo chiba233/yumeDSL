@@ -2,6 +2,25 @@
 
 # 更新日志
 
+### 1.1.0
+
+- 新增：`NarrowToken<TType, TExtra?>` —— 把 `TextToken` 收窄为特定 `type` 字面量 + 已知额外字段的子类型，
+  从 index signature 中恢复类型安全
+- 新增：`NarrowDraft<TType, TExtra?>` —— 同理收窄 `TokenDraft`，用于 handler 返回类型标注
+- 新增：`NarrowTokenUnion<TMap>` —— 从 token map 批量生成 `NarrowToken` 判别联合
+- 新增：`createTokenGuard<TMap>()` —— 运行时类型守卫工厂，在 `if` 分支中按 `type` 键收窄 `TextToken`，
+  TypeScript 自动推导额外字段
+- 新增：`Parser.print()` 现在接受可选的 `PrintOptions` 覆盖 —— syntax 与 defaults 深合并，
+  与 `parse()` / `structural()` 的 per-call override 行为一致。此前 `print` 始终绑定 `defaults.syntax`，
+  使用 syntax override 解析后 round-trip 会输出错误语法
+- 修复：`deriveBlockTags` / `resolveBlockTags` 参数类型从 `Record<string, unknown>` 收窄为
+  `Record<string, TagHandler>`，消除了不安全的 `as Record<string, unknown>` 类型断言
+- 优化：`unescapeInline` 性能 —— 批量 `slice()` 非转义区间代替逐字符 `readEscaped()` 调用；
+  无转义时直接返回原字符串（零分配）
+- 优化：`extractText` 性能 —— `string[]` + `join("")` 代替递归 `+=`
+- 优化：`splitTokensByPipe` 性能 —— 追�� run 起点代替逐字符 `buffer +=`
+- 内部：`TagStartInfo.inlineContentStart` 更名为 `argStart`（内部类型，不影响公共 API）
+
 ### 1.0.15
 
 - 新增：`buildZones(nodes)` — 将带 `trackPositions: true` 的 `StructuralNode[]` 分组为连续的 `Zone[]`。

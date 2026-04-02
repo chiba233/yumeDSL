@@ -1,4 +1,4 @@
-import type { DslContext, TextToken } from "./types.js";
+import type { DslContext, NarrowToken, TextToken } from "./types.js";
 import { readEscapedSequence, resolveSyntax, unescapeInline } from "./escape.js";
 import { createToken } from "./createToken.js";
 
@@ -9,11 +9,15 @@ export const createTextToken = (value: string, ctx?: DslContext): TextToken =>
 /** 递归提取 token 树里的纯文本内容，不做 unescape，也不保留结构信息。 */
 export const extractText = (tokens?: TextToken[]): string => {
   if (!tokens?.length) return "";
-  let result = "";
-  for (const t of tokens) {
-    result += typeof t.value === "string" ? t.value : extractText(t.value);
-  }
-  return result;
+  const parts: string[] = [];
+  const collectParts = (children: TextToken[]) => {
+    for (const t of children) {
+      if (typeof t.value === "string") parts.push(t.value);
+      else collectParts(t.value);
+    }
+  };
+  collectParts(tokens);
+  return parts.join("");
 };
 
 /**
@@ -71,38 +75,39 @@ export const splitTokensByPipe = (
       continue;
     }
 
-    let buffer = "";
     let i = 0;
     const val = token.value;
+    let runStart = 0;
 
-    const flushText = () => {
-      if (buffer) {
-        parts[parts.length - 1].push(createTextToken(buffer, ctx));
-        buffer = "";
+    const flushRun = (end: number) => {
+      if (end > runStart) {
+        parts[parts.length - 1].push(createTextToken(val.slice(runStart, end), ctx));
       }
     };
 
     while (i < val.length) {
       const [escaped, next] = readEscapedSequence(val, i, s);
       if (escaped !== null) {
-        buffer += escapeChar + escaped;
+        flushRun(i);
+        parts[parts.length - 1].push(createTextToken(escapeChar + escaped, ctx));
         i = next;
+        runStart = i;
         continue;
       }
 
       if (val.startsWith(tagDivider, i)) {
-        flushText();
+        flushRun(i);
         parts.push([]);
         i += tagDivider.length;
         while (i < val.length && val[i] === " ") i++;
+        runStart = i;
         continue;
       }
 
-      buffer += val[i];
       i++;
     }
 
-    flushText();
+    flushRun(i);
   }
   return parts;
 };
@@ -162,3 +167,45 @@ export const parsePipeTextList = (
   const parsed = parsePipeTextArgs(text, ctx);
   return parsed.parts.map((_, i) => parsed.text(i));
 };
+
+// ── 类型收窄守卫 ──
+
+/**
+ * 创建一个基于 token map 的类型收窄守卫。
+ *
+ * 定义一份 token map 接口描述每种 type 对应的额外字段，
+ * 然后用 `createTokenGuard` 生成守卫函数。
+ * 在 `if` 分支里 TypeScript 会自动收窄到对应的 `NarrowToken` 类型。
+ *
+ * @example
+ * ```ts
+ * // 1. 定义 token map
+ * interface MyTokenMap {
+ *   link: { url: string };
+ *   code: { lang: string; highlighted?: boolean };
+ *   bold: {};
+ * }
+ *
+ * // 2. 创建守卫
+ * const is = createTokenGuard<MyTokenMap>();
+ *
+ * // 3. 消费时自动收窄
+ * function render(token: TextToken) {
+ *   if (is(token, 'link')) {
+ *     token.url;  // string ✓
+ *     token.type; // 'link' ✓
+ *   }
+ *   if (is(token, 'code')) {
+ *     token.lang; // string ✓
+ *   }
+ * }
+ * ```
+ */
+export const createTokenGuard = <
+  TMap extends Record<string, Record<string, unknown>>,
+>() =>
+  <K extends keyof TMap & string>(
+    token: TextToken,
+    type: K,
+  ): token is NarrowToken<K, TMap[K]> =>
+    token.type === type;

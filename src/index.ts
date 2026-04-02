@@ -34,6 +34,7 @@ export {
   parsePipeArgs,
   parsePipeTextArgs,
   parsePipeTextList,
+  createTokenGuard,
 } from "./builders.js";
 export { unescapeInline, readEscapedSequence } from "./escape.js";
 export { createToken, resetTokenIdSeed } from "./createToken.js";
@@ -61,6 +62,9 @@ export type {
   TagForm,
   TextToken,
   TokenDraft,
+  NarrowToken,
+  NarrowDraft,
+  NarrowTokenUnion,
 } from "./types.js";
 
 // ── Types: configuration ──
