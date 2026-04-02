@@ -4,9 +4,10 @@
 
 ## Supported versions
 
-| Version | Supported |
-|---------|-----------|
-| Latest  | Yes       |
+| Version | Supported          |
+|---------|--------------------|
+| 1.x     | Yes                |
+| 0.x     | No (development)   |
 
 ## Reporting a vulnerability
 
