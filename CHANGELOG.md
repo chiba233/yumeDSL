@@ -2,6 +2,16 @@
 
 # Changelog
 
+### 1.1.3
+
+- Improve: public `parseStructural` deep-nesting memory profile — `stripMeta` no longer builds a
+  `Map<IndexedStructuralNode, StructuralNode>` for the whole tree. It now fills the public forest
+  directly via an iterative parent-container walk, reducing peak overhead on user-visible API calls
+- Benchmark: public `parseStructural(50000000)` now completes with
+  `NODE_OPTIONS=--max-old-space-size=32768` in **~224.1 s** on Kunpeng 920 / Node v24.14.0
+- Documentation: README / GUIDE / wiki performance pages updated from the old 10 M / internal-limit
+  narrative to the new 50 M public-API benchmark and heap-budget notes
+
 ### 1.1.2
 
 - Fix: deep nesting stack overflow — `parseNodes`, `renderNodes`, `stripMeta`, `extractText`,

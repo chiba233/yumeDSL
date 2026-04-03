@@ -13,7 +13,7 @@
 [![Contributing](https://img.shields.io/badge/贡献指南-guide-blue.svg)](./CONTRIBUTING.zh-CN.md)
 [![Security](https://img.shields.io/badge/安全策略-policy-red.svg)](./SECURITY.md)
 
-零依赖、O(n)、1000 万层嵌套跑完的富文本 DSL 解析器。
+零依赖、O(n)、给够堆内存时 public `parseStructural` 能跑完 5000 万层嵌套的富文本 DSL 解析器。
 文本进来，token 树出去——标签语义、渲染方式、目标框架，全部由你定义。
 
 - **不是** Markdown 渲染器、富文本编辑器或 HTML 生产线
@@ -33,7 +33,7 @@
 
 > **200 KB 实测（鲲鹏 920 / Node v24.14.0）：** `parseRichText` **~24 ms**，
 > `parseStructural` ~21 ms。全迭代 O(n)——任意嵌套深度均不会爆栈。
-> **1000 万层单链 inline 嵌套（95 MB）：`parseRichText` ~50 s。** 编辑器场景可配合
+> **5000 万层单链 inline 嵌套（约 500 MB）：public `parseStructural` 在 `--max-old-space-size=32768` 下约 ~224.1 s。** 编辑器场景可配合
 > [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker) 的 `parseSlice`——只重解析被修改的区域。
 > [完整性能数据](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E6%80%A7%E8%83%BD)
 

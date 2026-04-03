@@ -13,7 +13,7 @@
 [![Contributing](https://img.shields.io/badge/Contributing-guide-blue.svg)](./CONTRIBUTING.md)
 [![Security](https://img.shields.io/badge/Security-policy-red.svg)](./SECURITY.md)
 
-Zero-dependency, O(n) rich-text DSL parser. 10 million nested layers, still finishes.
+Zero-dependency, O(n) rich-text DSL parser. 50 million nested layers, public structural parse still finishes with enough heap.
 Text in, token tree out — tag semantics, rendering, framework: all yours to define.
 
 - **Not** a Markdown renderer, rich-text editor, or HTML pipeline
@@ -37,7 +37,8 @@ Text in, token tree out — tag semantics, rendering, framework: all yours to de
 
 > **200 KB daily benchmark (Kunpeng 920 / Node v24.14.0):** `parseRichText` **~24 ms**,
 > `parseStructural` ~21 ms. Fully iterative, O(n) — no stack overflow at any depth.
-> **10 000 000-layer single-chain inline nesting (95 MB): `parseRichText` ~50 s.** Edit a 36-char tag in a 200 KB document? Pair with
+> **50 000 000-layer single-chain inline nesting (~500 MB): public `parseStructural` ~224.1 s with `--max-old-space-size=32768`.**
+> Edit a 36-char tag in a 200 KB document? Pair with
 > [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker)'s `parseSlice` — only the touched
 > region gets re-parsed.
 > [Full benchmark data](https://github.com/chiba233/yumeDSL/wiki/en-Performance)

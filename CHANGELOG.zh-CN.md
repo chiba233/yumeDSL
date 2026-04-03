@@ -2,6 +2,16 @@
 
 # 更新日志
 
+### 1.1.3
+
+- 优化：public `parseStructural` 的深嵌套内存画像 —— `stripMeta` 不再为整棵树构建
+  `Map<IndexedStructuralNode, StructuralNode>`，改为迭代式父容器回填，直接产出 public forest，
+  降低用户可见 API 路径上的峰值开销
+- 基准：public `parseStructural(50000000)` 在
+  `NODE_OPTIONS=--max-old-space-size=32768` 下可完成，鲲鹏 920 / Node v24.14.0 实测 **~224.1 s**
+- 文档：README / GUIDE / wiki 性能页从旧的 1000 万层 / internal 限制口径更新为新的
+  5000 万层 public API 基准，并补充堆内存预算说明
+
 ### 1.1.2
 
 - 修复：深层嵌套爆栈——`parseNodes`、`renderNodes`、`stripMeta`、`extractText`、

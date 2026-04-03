@@ -97,86 +97,68 @@ const pushNode = (
   nodes.push(node);
 };
 
-const stripMeta = (node: IndexedStructuralNode): StructuralNode => {
+const stripMetaForest = (nodes: IndexedStructuralNode[]): StructuralNode[] => {
   interface StripFrame {
     node: IndexedStructuralNode;
-    stage: "enter" | "build";
+    parent: StructuralNode[];
   }
 
-  const completed = new Map<IndexedStructuralNode, StructuralNode>();
-  const stack: StripFrame[] = [{ node, stage: "enter" }];
+  const result: StructuralNode[] = [];
+  const stack: StripFrame[] = [];
+
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    stack.push({ node: nodes[i], parent: result });
+  }
 
   while (stack.length > 0) {
     const frame = stack.pop();
     if (!frame) break;
 
-    if (frame.stage === "build") {
-      const current = frame.node;
-      const pos = current.position;
-      switch (current.type) {
-        case "text":
-          completed.set(current, { type: "text", value: current.value, ...(pos && { position: pos }) });
-          break;
-        case "escape":
-          completed.set(current, { type: "escape", raw: current.raw, ...(pos && { position: pos }) });
-          break;
-        case "separator":
-          completed.set(current, { type: "separator", ...(pos && { position: pos }) });
-          break;
-        case "inline":
-          completed.set(current, {
-            type: "inline",
-            tag: current.tag,
-            children: current.children.map((child) => completed.get(child) as StructuralNode),
-            ...(pos && { position: pos }),
-          });
-          break;
-        case "raw":
-          completed.set(current, {
-            type: "raw",
-            tag: current.tag,
-            args: current.args.map((child) => completed.get(child) as StructuralNode),
-            content: current.content,
-            ...(pos && { position: pos }),
-          });
-          break;
-        case "block":
-          completed.set(current, {
-            type: "block",
-            tag: current.tag,
-            args: current.args.map((child) => completed.get(child) as StructuralNode),
-            children: current.children.map((child) => completed.get(child) as StructuralNode),
-            ...(pos && { position: pos }),
-          });
-          break;
-      }
-      continue;
-    }
+    const { node, parent } = frame;
+    const pos = node.position;
 
-    stack.push({ node: frame.node, stage: "build" });
-    switch (frame.node.type) {
-      case "inline":
-        for (let i = frame.node.children.length - 1; i >= 0; i--) {
-          stack.push({ node: frame.node.children[i], stage: "enter" });
+    switch (node.type) {
+      case "text":
+        parent.push({ type: "text", value: node.value, ...(pos && { position: pos }) });
+        break;
+      case "escape":
+        parent.push({ type: "escape", raw: node.raw, ...(pos && { position: pos }) });
+        break;
+      case "separator":
+        parent.push({ type: "separator", ...(pos && { position: pos }) });
+        break;
+      case "inline": {
+        const children: StructuralNode[] = [];
+        parent.push({ type: "inline", tag: node.tag, children, ...(pos && { position: pos }) });
+        for (let i = node.children.length - 1; i >= 0; i--) {
+          stack.push({ node: node.children[i], parent: children });
         }
         break;
-      case "raw":
-        for (let i = frame.node.args.length - 1; i >= 0; i--) {
-          stack.push({ node: frame.node.args[i], stage: "enter" });
+      }
+      case "raw": {
+        const args: StructuralNode[] = [];
+        parent.push({ type: "raw", tag: node.tag, args, content: node.content, ...(pos && { position: pos }) });
+        for (let i = node.args.length - 1; i >= 0; i--) {
+          stack.push({ node: node.args[i], parent: args });
         }
         break;
-      case "block":
-        for (let i = frame.node.children.length - 1; i >= 0; i--) {
-          stack.push({ node: frame.node.children[i], stage: "enter" });
+      }
+      case "block": {
+        const args: StructuralNode[] = [];
+        const children: StructuralNode[] = [];
+        parent.push({ type: "block", tag: node.tag, args, children, ...(pos && { position: pos }) });
+        for (let i = node.children.length - 1; i >= 0; i--) {
+          stack.push({ node: node.children[i], parent: children });
         }
-        for (let i = frame.node.args.length - 1; i >= 0; i--) {
-          stack.push({ node: frame.node.args[i], stage: "enter" });
+        for (let i = node.args.length - 1; i >= 0; i--) {
+          stack.push({ node: node.args[i], parent: args });
         }
         break;
+      }
     }
   }
 
-  return completed.get(node) as StructuralNode;
+  return result;
 };
 
 // ── Structural parser ──
@@ -789,5 +771,5 @@ export const parseStructural = (
   text: string,
   options?: StructuralParseOptions,
 ): StructuralNode[] => {
-  return parseStructuralInternal(text, options).map(stripMeta);
+  return stripMetaForest(parseStructuralInternal(text, options));
 };
