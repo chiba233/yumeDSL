@@ -55,6 +55,32 @@ export const filterHandlersByForms = (
   return result;
 };
 
+/**
+ * Decide whether a tag may be consumed via the inline code path.
+ *
+ * Decision table (evaluated top-to-bottom, first match wins):
+ *
+ *  allowInline=false                          -> reject  (global inline disabled)
+ *  handler missing + tag NOT registered       -> accept  (unknown tag -> passthrough)
+ *  handler missing + tag IS registered        -> reject  (registered but filtered out by allowForms)
+ *  handler has `inline`                       -> accept  (explicit inline support)
+ *  handler has only `raw` / `block`           -> reject  (block/raw-only tag)
+ *  handler is empty `{}`                      -> accept  (passthrough handler)
+ *
+ * This function is the inline-form rules centre.
+ * Changes here affect every tag in every parse mode — add tests, not shortcuts.
+ */
+export const supportsInlineForm = (
+  handler: TagHandler | undefined,
+  allowInline: boolean,
+  isRegistered: boolean,
+): boolean => {
+  if (!allowInline) return false;
+  if (!handler) return !isRegistered;
+  if (handler.inline) return true;
+  return !handler.raw && !handler.block;
+};
+
 export const buildGatingContext = (
   handlers: Record<string, TagHandler>,
   allowForms: readonly TagForm[] | undefined,

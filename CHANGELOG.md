@@ -4,6 +4,20 @@
 
 ### 1.1.1
 
+- Internal: parser architecture rewritten from single-pass character scanner (`internalParse`) to
+  two-phase approach — `parseStructural` produces an indexed node tree, then a render phase walks
+  it to produce `TextToken[]`. The old single-pass design was elegant and a joy to read, but
+  `findBlockClose` calling `findInlineClose` repeatedly caused O(n²) rescanning on deeply nested
+  block tags — a painful but necessary rewrite
+- Improve: `parseRichText` performance — **133x faster** on 200 KB documents (Kunpeng 920 / Node
+  v24.14.0): ~4400 ms → ~33 ms. Now nearly as fast as `parseStructural` (~29 ms)
+- Improve: error reporting — `parseStructural` gained 6 new diagnostic points (`INLINE_NOT_CLOSED`,
+  `BLOCK_NOT_CLOSED`) for malformed input; 4 spurious `INLINE_NOT_CLOSED` false positives on
+  complex-form tags removed from `parseRichText`
+- Internal: dead code removed — `complex.ts` deleted, `consumers.ts` trimmed to `supportsInlineForm`
+  then merged into `resolveOptions.ts`, `context.ts` trimmed to `emptyBuffer` then inlined into
+  `structural.ts`
+- Internal: new `render.ts` — render phase extracted from `parse.ts`
 - Fix: `tryConsumeEscape` now uses `startsWith` instead of single-character comparison
   for the escape character. Previously, custom multi-character `escapeChar` in syntax
   config would silently fail to trigger escape handling. Default single-character `\`

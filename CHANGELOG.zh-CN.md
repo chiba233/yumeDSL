@@ -4,6 +4,15 @@
 
 ### 1.1.1
 
+- 架构：`parseRichText` 内部从单遍字符扫描重构为"结构解析 → 渲染遍历"两阶段管线。
+  旧版单遍扫描设计优雅简洁，是值得骄傲的工程作品——但在深层嵌套 block 标签上存在 O(n²)
+  重复扫描，大文档性能无法接受，不得不忍痛重写
+- 性能：200 KB `parseRichText` ~4400 ms → ~33 ms（提升 ~133 倍），与 `parseStructural`（~29 ms）
+  几乎持平
+- 内部文件整理：`complex.ts` 删除；`consumers.ts` / `context.ts` 合并至其他模块后删除；
+  新增 `render.ts`
+- 修复：移除 `parseRichText` 对 complex form 标签的 4 个伪 `INLINE_NOT_CLOSED` 错误上报
+- 改进：`parseStructural` 新增 6 个错误上报点（`INLINE_NOT_CLOSED` / `BLOCK_NOT_CLOSED`）
 - 修复：`tryConsumeEscape` 现在使用 `startsWith` 代替单字符比较来匹配转义字符。
   之前自定义多字符 `escapeChar` 时转义处理会静默失效。默认单字符 `\` 不受影响
 

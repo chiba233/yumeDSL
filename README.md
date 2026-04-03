@@ -13,7 +13,7 @@
 [![Contributing](https://img.shields.io/badge/Contributing-guide-blue.svg)](./CONTRIBUTING.md)
 [![Security](https://img.shields.io/badge/Security-policy-red.svg)](./SECURITY.md)
 
-Zero-dependency, single-pass rich-text DSL parser.
+Zero-dependency, near-linear, infinitely nestable rich-text DSL parser.
 Text goes in, token tree comes out — what tags mean, how they render, which framework they live in is entirely up to
 you.
 
@@ -26,7 +26,7 @@ you.
 - Malformed or unknown tags [degrade to plain text](#error-handling) — never throws, never corrupts surrounding
   content
 - Framework-agnostic, DOM-free — runs in browsers, Node, Deno, Bun, game engines, or any JS runtime
-- Content-driven [stable IDs](#stable-token-ids), single-pass [position tracking](#source-position-tracking),
+- Content-driven [stable IDs](#stable-token-ids), [position tracking](#source-position-tracking),
   handler-level [pipe parameters](#pipe-parameters) — use what you need
 - [`parseStructural`](#parsestructural--structural-parse) gives you a lightweight map of the document; paired with [
   `yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker)'s `parseSlice`, you jump to any region and
@@ -36,9 +36,9 @@ you.
 
 **Edit tags in real time, toggle handlers on/off, watch the token tree update as you type.**
 
-> **200 KB benchmark (Kunpeng 920 / Node v24.14.0):** full `parseRichText` ~1382 ms → `parseStructural` ~41 ms (34x
-> faster) → `nodeAtOffset` + `parseSlice` **~0.17 ms** (**8000x faster**). Edit a 36-char tag in a 200K-char document —
-> only those 36 characters get parsed.
+> **200 KB benchmark (Kunpeng 920 / Node v24.14.0):** `parseRichText` **~33 ms**, `parseStructural` ~29 ms — fast
+> enough for most use cases. For real-time keystroke-level editing of very large documents:
+> `nodeAtOffset` + `parseSlice` **~0.17 ms** — only the affected region gets re-parsed.
 
 **Use cases:**
 game dialogue & visual novels (typewriter / shake / color tags you invent),

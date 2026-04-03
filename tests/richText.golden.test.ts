@@ -267,6 +267,18 @@ const cases: Array<{ name: string; run: () => void }> = [
     },
   },
   {
+    name: "[Common/Escape] nested inline 内的转义 -> 不应把反斜杠错误保留到输出",
+    run: () => {
+      const tokens = parse("$$bold(a \\| b)$$");
+      assert.deepEqual(normalizeTokens(tokens), [
+        {
+          type: "bold",
+          value: [{ type: "text", value: "a | b" }],
+        },
+      ]);
+    },
+  },
+  {
     name: "[Common/Robustness] 随机脏输入压力测试 -> 解析器应当永不崩溃并保持输出稳定",
     run: () => {
       const parts = [
@@ -949,6 +961,28 @@ const cases: Array<{ name: string; run: () => void }> = [
     },
   },
   {
+    name: "[Raw/Boundary] 连续 raw 标签 -> 只应消费各自尾随的一个换行",
+    run: () => {
+      const tokens = parse("$$raw-code(ts)%\nconst a = 1\n%end$$\n$$raw-code(ts)%\nconst b = 2\n%end$$");
+      assert.deepEqual(normalizeTokens(tokens), [
+        {
+          type: "raw-code",
+          codeLang: "typescript",
+          title: "Code:",
+          label: "",
+          value: "const a = 1",
+        },
+        {
+          type: "raw-code",
+          codeLang: "typescript",
+          title: "Code:",
+          label: "",
+          value: "const b = 2",
+        },
+      ]);
+    },
+  },
+  {
     name: "[Raw/Error] 未闭合 raw 标签 -> 应当上报 RAW_NOT_CLOSED 错误",
     run: () => {
       const { errors } = parseWithErrors("$$raw-code(ts)%\nconst a = 1");
@@ -1102,6 +1136,24 @@ const cases: Array<{ name: string; run: () => void }> = [
           value: [{ type: "text", value: "line" }],
         },
         { type: "text", value: "next" },
+      ]);
+    },
+  },
+  {
+    name: "[Block/Boundary] 连续 block 标签 -> 只应消费各自尾随的一个换行",
+    run: () => {
+      const tokens = parse("$$collapse(A)*\none\n*end$$\n$$collapse(B)*\ntwo\n*end$$");
+      assert.deepEqual(normalizeTokens(tokens), [
+        {
+          type: "collapse",
+          title: "A",
+          value: [{ type: "text", value: "one" }],
+        },
+        {
+          type: "collapse",
+          title: "B",
+          value: [{ type: "text", value: "two" }],
+        },
       ]);
     },
   },

@@ -1,27 +1,26 @@
 import type {
   BlockTagInput,
   BlockTagLookup,
-  CreateId,
   MultilineForm,
-  ParseContext,
   ParseOptions,
   ParserBaseOptions,
   StructuralNode,
   StructuralParseOptions,
-  SyntaxConfig,
-  TagNameConfig,
   TextToken,
 } from "./types.js";
 import { extractText } from "./builders.js";
 import { withTagNameConfig } from "./chars.js";
-import { tryConsumeEscape, tryConsumeTagClose, tryConsumeTagStart } from "./consumers.js";
-import { emptyBuffer, appendToBuffer, finalizeUnclosedTags, flushBuffer } from "./context.js";
 import { withCreateId } from "./createToken.js";
 import { printStructural } from "./print.js";
-import { parseStructural } from "./structural.js";
+import { parseStructural, parseStructuralInternal } from "./structural.js";
 import { withSyntax } from "./syntax.js";
-import { type PositionTracker } from "./types.ts";
+import { renderNodes, type RenderContext } from "./render.js";
 import { buildGatingContext, resolveBaseOptions } from "./resolveOptions.js";
+
+// Re-export for backward compatibility and for structural.ts which imports from here.
+export { filterHandlersByForms } from "./resolveOptions.js";
+
+// ── Block tag resolution ──
 
 const buildBlockTagLookup = (inputs: readonly BlockTagInput[]): BlockTagLookup => {
   const rawSet = new Set<string>();
@@ -89,101 +88,13 @@ const resolveBlockTags = (
   };
 };
 
-/**
- * Filter handler methods by allowed tag forms.
- * Handlers that have no remaining methods after filtering are removed entirely,
- * so the parser treats those tags as unrecognized (graceful degradation).
- *
- * Passthrough handlers (empty `{}`) are treated as inline-form tags.
- */
-// Re-export for backward compatibility and for structural.ts which imports from here.
-export { filterHandlersByForms } from "./resolveOptions.js";
-
-const internalParse = (
-  text: string,
-  depthLimit: number,
-  options: { mode?: ParseContext["mode"] } | undefined,
-  allowInline: boolean,
-  registeredTags: ReadonlySet<string>,
-  onError: ParseContext["onError"],
-  handlers: Record<string, import("./types").TagHandler>,
-  blockTagSet: BlockTagLookup,
-  tracker: PositionTracker | null,
-  syntax: import("./types").SyntaxConfig,
-  tagName: import("./types").TagNameConfig,
-  createId: import("./types").CreateId,
-): TextToken[] => {
-  if (!text) return [];
-
-  // 注意：这是 render parser 的主状态机。
-  // 真正会变的内部状态只有四块：`ctx.i`（扫描指针）、`ctx.buf`（文本缓冲）、
-  // `ctx.stack`（未闭合 inline 栈）、`ctx.root`（当前层输出）。
-  // 改这里时先想清楚“消费了多少源码”和“文本最终落到哪一层”，
-  // 否则最先炸的是未闭合退化、相邻 text 合并、以及 position 对齐。
-  const ctx: ParseContext = {
-    text,
-    depthLimit,
-    mode: options?.mode ?? "render",
-    allowInline,
-    registeredTags,
-    onError,
-    handlers,
-    blockTagSet,
-    tracker,
-    syntax,
-    tagName,
-    createId,
-    root: [],
-    stack: [],
-    buf: emptyBuffer(),
-    i: 0,
-  };
-
-  const recursiveParse = (
-    innerText: string,
-    innerDepthLimit: number,
-    innerOptions?: { mode?: ParseContext["mode"] },
-    innerTracker?: PositionTracker | null,
-  ): TextToken[] => {
-    return internalParse(
-      innerText,
-      innerDepthLimit,
-      innerOptions,
-      allowInline,
-      registeredTags,
-      onError,
-      handlers,
-      blockTagSet,
-      innerTracker !== undefined ? innerTracker : tracker,
-      syntax,
-      tagName,
-      createId,
-    );
-  };
-
-  // 注意：这里的处理顺序不是装饰性的。
-  // tag-start / tag-close / escape 都可能一次消费多个字符，
-  // 只有三者都不命中时，当前字符才作为普通文本塞进 buffer。
-  // 顺序乱了以后，边界恢复和源码位置都会跟着错。
-  while (ctx.i < ctx.text.length) {
-    if (tryConsumeTagStart(ctx, recursiveParse)) continue;
-    if (tryConsumeTagClose(ctx)) continue;
-    if (tryConsumeEscape(ctx)) continue;
-
-    appendToBuffer(ctx, ctx.text[ctx.i], ctx.i);
-    ctx.i++;
-  }
-
-  flushBuffer(ctx);
-  finalizeUnclosedTags(ctx);
-  return ctx.root;
-};
+// ── Legacy ambient state ──
 
 /** Set legacy ambient state for backward-compatible handler support, suppressing deprecation warnings. */
 const withLegacyAmbientState = <T>(
-  syntax: SyntaxConfig,
-  tagName: TagNameConfig,
-  createId: CreateId,
+  syntax: import("./types.js").SyntaxConfig,
+  tagName: import("./types.js").TagNameConfig,
+  createId: import("./types.js").CreateId,
   fn: () => T,
 ): T => {
   // 注意：这是 compat 隔离层，不是扩功能的入口。
@@ -197,6 +108,8 @@ const withLegacyAmbientState = <T>(
   suppress);
 };
 
+// ── Public API ──
+
 export const parseRichText = (text: string, options: ParseOptions = {}): TextToken[] => {
   if (!text) return [];
 
@@ -209,23 +122,36 @@ export const parseRichText = (text: string, options: ParseOptions = {}): TextTok
   let seed = 0;
   const createId = options.createId ?? (() => `rt-${seed++}`);
 
+  const renderCtx: RenderContext = {
+    source: text,
+    handlers,
+    registeredTags,
+    allowInline,
+    blockTagSet,
+    tracker,
+    syntax,
+    createId,
+    mode: options.mode ?? "render",
+  };
+
   // with* wrappers kept for backward compatibility: user handlers may call
   // public utilities (parsePipeArgs, createToken, unescapeInline, etc.) that
   // fall back to module-level state when no explicit config is passed.
   return withLegacyAmbientState(syntax, tagName, createId, () =>
-    internalParse(
-      text,
-      depthLimit,
-      { mode: options.mode ?? "render" },
-      allowInline,
-      registeredTags,
-      options.onError,
-      handlers,
-      blockTagSet,
-      tracker,
-      syntax,
-      tagName,
-      createId,
+    renderNodes(
+      parseStructuralInternal(text, {
+        handlers,
+        allowForms: options.allowForms,
+        depthLimit,
+        syntax,
+        tagName,
+        tracker: options.tracker,
+        baseOffset: options.baseOffset,
+        trackPositions: options.trackPositions,
+        onError: options.onError,
+      }),
+      renderCtx,
+      "root",
     ),
   );
 };

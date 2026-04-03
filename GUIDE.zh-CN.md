@@ -13,7 +13,7 @@
 [![Contributing](https://img.shields.io/badge/贡献指南-guide-blue.svg)](./CONTRIBUTING.zh-CN.md)
 [![Security](https://img.shields.io/badge/安全策略-policy-red.svg)](./SECURITY.md)
 
-零依赖、单遍扫描的富文本 DSL 解析器。
+零依赖、接近 O(n)、可无限嵌套的富文本 DSL 解析器。
 文本进来，token 树出去——标签是什么意思、怎么渲染、放在哪个框架里，全部由你说了算。
 
 - **不是** Markdown 渲染器、富文本编辑器或 HTML 生产线
@@ -22,7 +22,7 @@
 - inline / raw / block 三种标签形式，语法符号和标签名规则完全可换；内置[转义序列](#转义序列)让任何语法符号都能作为普通文本出现
 - 写错的、未知的标签[自动降级为纯文本](#错误处理)——不抛异常，不污染上下文
 - 无框架绑定、不依赖 DOM——浏览器、Node、Deno、Bun、游戏引擎或任何 JS 运行时都能跑
-- 内容驱动的[稳定 ID](#稳定-token-id)、单遍[位置追踪](#源码位置追踪)、handler 级[管道参数](#管道参数)——开箱即用或按需组合
+- 内容驱动的[稳定 ID](#稳定-token-id)、[位置追踪](#源码位置追踪)、handler 级[管道参数](#管道参数)——开箱即用或按需组合
 - [`parseStructural`](#parsestructural--结构化解析) 给你一张轻量的文档地图；配合 [
   `yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker) 的 `parseSlice`，跳到任意区域拿到带完整位置的
   `TextToken[]`，不用重新解析整个文档
@@ -31,8 +31,9 @@
 
 **实时编辑标签、开关 handler、边打字边看 token 树更新。**
 
-> **200 KB 实测（鲲鹏 920 / Node v24.14.0）：** 全量 `parseRichText` ~1382 ms → `parseStructural` ~41 ms（快 34 倍）→
-`nodeAtOffset` + `parseSlice` **~0.17 ms**（快 **8000 倍**）。改一个 36 字符的标签，20 万字的文档只解析那 36 个字符。
+> **200 KB 实测（鲲鹏 920 / Node v24.14.0）：** `parseRichText` ~33 ms（1.1.0 的 ~4400 ms → 提升 ~133 倍），
+> 与 `parseStructural`（~29 ms）几乎持平。`parseSlice` 仍是击键级实时编辑的最佳选择——
+> `nodeAtOffset` + `parseSlice` **~0.17 ms**，改一个 36 字符的标签，20 万字的文档只解析那 36 个字符。
 
 **适用场景：**
 游戏对话与视觉小说（打字机 / 抖动 / 变色——标签你自己发明），
