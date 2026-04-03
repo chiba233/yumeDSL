@@ -15,6 +15,10 @@
   inlined into `parseNodes` main loop during the iterative rewrite
 - Internal: shared `prepareComplexTag` helper extracted to deduplicate meta / position / argText /
   contentText construction + flush + pointer advance between raw and block branches
+- Improve: `materializeTextTokens` now tracks already-processed subtrees via an internal
+  `WeakSet`, skipping redundant re-traversal in deeply nested handler chains. In 1.1.1 each
+  handler invocation recursed into the full subtree — O(n²) total at 5000 layers (~12.5 M
+  redundant visits); now O(n). `parseRichText(5000)` drops from ~17 s to ~8 s
 - Tests: new `[Edge/Depth]` case — 2000-layer inline nesting with `depthLimit: 3000` verifies both
   `parseStructural` and `parseRichText` complete without stack overflow
 

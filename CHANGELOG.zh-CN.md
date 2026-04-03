@@ -13,6 +13,10 @@
   逻辑在迭代化重写中内联到 `parseNodes` 主循环
 - 内部：提取公共 `prepareComplexTag` 辅助函数，消除 raw 和 block 分支之间
   meta / position / argText / contentText 构建 + flush + 指针推进的重复代码
+- 优化：`materializeTextTokens` 通过内部 `WeakSet` 标记已处理的子树，跳过深层嵌套
+  handler 链中的冗余重复遍历。1.1.1 中每层 handler 调用都会递归遍历整棵子树——
+  5000 层时总计 O(n²) 约 1250 万次冗余访问；现在 O(n)。
+  `parseRichText(5000)` 从 ~17 s 降至 ~8 s
 - 测试：新增 `[Edge/Depth]` 用例——2000 层 inline 嵌套 + `depthLimit: 3000`，
   验证 `parseStructural` 和 `parseRichText` 均可正常完成，不会爆栈
 

@@ -29,7 +29,17 @@ export const extractText = (tokens?: TextToken[]): string => {
  * Recursively unescapes DSL escape sequences in **text-type leaf tokens only**.
  * Non-text tokens and their string values (e.g. `raw-code` content) are left
  * untouched — only `{ type: "text", value: string }` leaves are processed.
+ *
+ * Subtrees that have already been materialized (returned by a previous call)
+ * are recognized via an internal WeakSet and skipped, avoiding O(n²)
+ * re-traversal in deeply nested handler chains.
  */
+// 注意：materializedArrays 是性能缓存，不是语义状态。
+// materializeTextTokens 的返回数组被加入 WeakSet；
+// 后续调用遇到同一数组时跳过递归（子树已经 unescape 过），
+// 从 O(n²) 降到 O(n)。WeakSet 随 GC 自动清理，不会泄漏。
+const materializedArrays = new WeakSet<TextToken[]>();
+
 export const materializeTextTokens = (
   tokens: TextToken[],
   ctx?: DslContext,
@@ -55,7 +65,10 @@ export const materializeTextTokens = (
       const output = frame.output;
       const resume = frame.resume;
       stack.pop();
-      if (!resume) return output;
+      if (!resume) {
+        materializedArrays.add(output);
+        return output;
+      }
       resume(output);
       continue;
     }
@@ -70,11 +83,17 @@ export const materializeTextTokens = (
       continue;
     }
 
+    if (materializedArrays.has(token.value)) {
+      frame.output.push(token);
+      continue;
+    }
+
     stack.push({
       source: token.value,
       index: 0,
       output: [],
       resume: (children) => {
+        materializedArrays.add(children);
         frame.output.push({ ...token, value: children });
       },
     });

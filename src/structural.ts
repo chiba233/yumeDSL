@@ -257,19 +257,11 @@ export const parseNodes = (
       contentEnd: frame.baseOffset + closeStart,
     };
     const position = makePosition(tracker, frame.baseOffset + frame.i, frame.baseOffset + nextI);
-    const childText = frame.text.slice(info.argStart, closeStart);
 
     flushFrame(frame);
     frame.i = nextI;
-    stack.push(createFrame(childText, frame.depth + 1, true, frame.baseOffset + info.argStart, (children) => {
-      const node: IndexedStructuralNode = {
-        type: "inline",
-        tag: info.tag,
-        children,
-        _meta: meta,
-      };
-      if (position) node.position = position;
-      frame.nodes.push(node);
+    stack.push(createFrame(frame.text.slice(info.argStart, closeStart), frame.depth + 1, true, frame.baseOffset + info.argStart, (children) => {
+      pushNode(frame.nodes, { type: "inline", tag: info.tag, children, _meta: meta }, position);
     }));
   };
 
@@ -461,15 +453,13 @@ export const parseNodes = (
         frame, info, closerInfo.argClose, contentStart, closeStart, syntax.rawClose.length,
       );
       stack.push(createFrame(argText, frame.depth + 1, true, frame.baseOffset + info.argStart, (args) => {
-        const node: IndexedStructuralNode = {
+        pushNode(frame.nodes, {
           type: "raw",
           tag: info.tag,
           args,
           content,
           _meta: meta,
-        };
-        if (position) node.position = position;
-        frame.nodes.push(node);
+        }, position);
       }));
       continue;
     }
@@ -504,15 +494,13 @@ export const parseNodes = (
     );
     stack.push(createFrame(argText, frame.depth + 1, true, frame.baseOffset + info.argStart, (args) => {
       stack.push(createFrame(contentText, frame.depth + 1, false, frame.baseOffset + contentStart, (children) => {
-        const node: IndexedStructuralNode = {
+        pushNode(frame.nodes, {
           type: "block",
           tag: info.tag,
           args,
           children,
           _meta: meta,
-        };
-        if (position) node.position = position;
-        frame.nodes.push(node);
+        }, position);
       }));
     }));
   }

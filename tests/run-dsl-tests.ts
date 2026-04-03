@@ -9,6 +9,9 @@ await import("./positions.test.ts");
 console.log("=== Edge Cases ===");
 await import("./edgeCases.test.ts");
 
+console.log("=== Deep Nesting ===");
+await import("./deepNesting.test.ts");
+
 console.log("=== Stable Id ===");
 await import("./stableId.test.ts");
 
