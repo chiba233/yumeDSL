@@ -1,6 +1,9 @@
 name: Publish yume-dsl-rich-text
 
 on:
+  push:
+    branches:
+      - master
   workflow_dispatch:
     inputs:
       version:
@@ -40,6 +43,18 @@ jobs:
       id-token: write
 
     steps:
+      - name: Resolve publish mode
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "PUBLISH_REGISTRY=both" >> "$GITHUB_ENV"
+            echo "DRY_RUN=true" >> "$GITHUB_ENV"
+            echo "SHOULD_BUMP_VERSION=false" >> "$GITHUB_ENV"
+          else
+            echo "PUBLISH_REGISTRY=${{ inputs.registry }}" >> "$GITHUB_ENV"
+            echo "DRY_RUN=${{ inputs.dry_run }}" >> "$GITHUB_ENV"
+            echo "SHOULD_BUMP_VERSION=true" >> "$GITHUB_ENV"
+          fi
+
       - name: Checkout
         uses: actions/checkout@v6
 
@@ -56,6 +71,7 @@ jobs:
         run: npm test
 
       - name: Bump version
+        if: ${{ env.SHOULD_BUMP_VERSION == 'true' }}
         run: |
           if [ "${{ inputs.version }}" = "custom" ]; then
             if [ -z "${{ inputs.custom_version }}" ]; then
@@ -80,13 +96,13 @@ jobs:
           }
 
       - name: Publish to npm
-        if: ${{ !inputs.dry_run && inputs.registry != 'github' }}
+        if: ${{ env.DRY_RUN != 'true' && env.PUBLISH_REGISTRY != 'github' }}
         run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish to npm (dry run)
-        if: ${{ inputs.dry_run && inputs.registry != 'github' }}
+        if: ${{ env.DRY_RUN == 'true' && env.PUBLISH_REGISTRY != 'github' }}
         run: npm publish --access public --provenance --dry-run
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -98,7 +114,7 @@ jobs:
           registry-url: https://npm.pkg.github.com
 
       - name: Publish to GitHub Packages
-        if: ${{ !inputs.dry_run && inputs.registry != 'npm' }}
+        if: ${{ env.DRY_RUN != 'true' && env.PUBLISH_REGISTRY != 'npm' }}
         run: |
           cp package.json package.json.bak
           node -e "
@@ -112,7 +128,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish to GitHub Packages (dry run)
-        if: ${{ inputs.dry_run && inputs.registry != 'npm' }}
+        if: ${{ env.DRY_RUN == 'true' && env.PUBLISH_REGISTRY != 'npm' }}
         run: |
           cp package.json package.json.bak
           node -e "
@@ -126,7 +142,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Commit version bump
-        if: ${{ !inputs.dry_run }}
+        if: ${{ env.SHOULD_BUMP_VERSION == 'true' && env.DRY_RUN != 'true' }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
