@@ -3,6 +3,10 @@ export interface GoldenCase {
   run: () => Promise<void> | void;
 }
 
+export interface GoldenCaseRunOptions {
+  quietPasses?: boolean;
+}
+
 const CLEAR_SCREEN = "\u001bc";
 
 const formatError = (error: unknown): string => {
@@ -17,13 +21,16 @@ export const runGoldenCases = async (
   suiteName: string,
   summaryLabel: string,
   cases: GoldenCase[],
+  options: GoldenCaseRunOptions = {},
 ): Promise<void> => {
   const passLines: string[] = [];
 
   for (const testCase of cases) {
     try {
       await testCase.run();
-      passLines.push(`PASS ${testCase.name}`);
+      if (!options.quietPasses) {
+        passLines.push(`PASS ${testCase.name}`);
+      }
     } catch (error) {
       process.stdout.write(CLEAR_SCREEN);
       console.error(`FAIL ${suiteName}`);

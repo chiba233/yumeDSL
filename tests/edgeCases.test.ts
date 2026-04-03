@@ -155,4 +155,4 @@ const cases: GoldenCase[] = [
   },
 ];
 
-await runGoldenCases("Edge Cases", "Edge case", cases);
+await runGoldenCases("Edge Cases", "Edge case", cases, { quietPasses: true });
