@@ -73,6 +73,17 @@ fix(rich-text): handle escaped pipe inside raw tags
 - **Zero dependencies** — `yume-dsl-rich-text` is dependency-free by design. Don't add runtime dependencies unless
   discussed first.
 
+## Structural parser maintenance boundary
+
+`src/structural.ts` is no longer a small parser helper. In practice it has grown into a broad parser VM / state machine,
+and large behavior-preserving rewrites are difficult to review safely.
+
+- Pull requests touching `src/structural.ts` should be limited to bug fixes, correctness fixes, and narrowly scoped
+  regression repairs.
+- Do not send feature expansions, cleanup-only refactors, architecture rewrites, or "simplify the parser" PRs for that
+  file unless the maintainer explicitly asked for them first.
+- If a fix must touch `src/structural.ts`, keep the patch minimal and include a reproducer or regression test.
+
 ## Testing
 
 - Tests live in the `tests/` directory.
