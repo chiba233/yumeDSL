@@ -191,6 +191,7 @@ const renderTextLikeNode = (
 // 3. handler 存在 → 调 handler.inline 或 fallback 到 { type: tag, value: children }
 const renderInlineNode = (
   node: Extract<IndexedStructuralNode, { type: "inline" }>,
+  childTokens: TextToken[],
   tokens: TextToken[],
   ctx: RenderContext,
   dslCtx: DslContext,
@@ -200,8 +201,6 @@ const renderInlineNode = (
     degradeToSource(tokens, node, ctx, dslCtx);
     return false;
   }
-
-  const childTokens = renderNodes(node.children, ctx, "nested");
 
   if (!handler) {
     // unknown tag passthrough：去壳，子节点原样落回当前层
@@ -242,6 +241,7 @@ const renderRawNode = (
 
 const renderBlockNode = (
   node: Extract<IndexedStructuralNode, { type: "block" }>,
+  childTokens: TextToken[],
   tokens: TextToken[],
   ctx: RenderContext,
   dslCtx: DslContext,
@@ -254,7 +254,6 @@ const renderBlockNode = (
 
   const { argStart, argEnd } = node._meta;
   const arg = ctx.source.slice(argStart, argEnd).trim();
-  const childTokens = renderNodes(node.children, ctx, "root");
   const normalizedChildren = ctx.blockTagSet.has(node.tag, "block")
     ? trimBlockBoundaryTokens(childTokens, ctx.tracker)
     : childTokens;
@@ -282,18 +281,51 @@ export const renderNodes = (
   ctx: RenderContext,
   escapeMode: EscapeMode,
 ): TextToken[] => {
-  const tokens: TextToken[] = [];
   const dslCtx: DslContext = { syntax: ctx.syntax, createId: ctx.createId };
-  let consumeNextLB = false;
+  interface RenderFrame {
+    nodes: IndexedStructuralNode[];
+    index: number;
+    escapeMode: EscapeMode;
+    tokens: TextToken[];
+    consumeNextLB: boolean;
+    resume: ((childTokens: TextToken[]) => void) | null;
+  }
 
-  for (const node of nodes) {
-    // block-like 标签吃掉紧跟的前导换行
-    if (consumeNextLB) {
-      consumeNextLB = false;
+  const stack: RenderFrame[] = [{
+    nodes,
+    index: 0,
+    escapeMode,
+    tokens: [],
+    consumeNextLB: false,
+    resume: null,
+  }];
+
+  while (stack.length > 0) {
+    const frame = stack[stack.length - 1];
+    if (frame.index >= frame.nodes.length) {
+      const childTokens = frame.tokens;
+      const resume = frame.resume;
+      stack.pop();
+      if (!resume) return childTokens;
+      resume(childTokens);
+      continue;
+    }
+
+    const node = frame.nodes[frame.index++];
+
+    if (frame.consumeNextLB) {
+      frame.consumeNextLB = false;
       if (node.type === "text") {
         const [trimmed, removed] = trimLeadingLineBreak(node.value);
         if (removed > 0) {
-          if (trimmed) mergeTextToken(tokens, trimmed, shiftPosition(node.position, ctx.tracker, "start", removed), dslCtx);
+          if (trimmed) {
+            mergeTextToken(
+              frame.tokens,
+              trimmed,
+              shiftPosition(node.position, ctx.tracker, "start", removed),
+              dslCtx,
+            );
+          }
           continue;
         }
       }
@@ -303,19 +335,37 @@ export const renderNodes = (
       case "text":
       case "escape":
       case "separator":
-        renderTextLikeNode(node, tokens, ctx, dslCtx, escapeMode);
+        renderTextLikeNode(node, frame.tokens, ctx, dslCtx, frame.escapeMode);
         break;
       case "inline":
-        consumeNextLB = renderInlineNode(node, tokens, ctx, dslCtx);
+        stack.push({
+          nodes: node.children,
+          index: 0,
+          escapeMode: "nested",
+          tokens: [],
+          consumeNextLB: false,
+          resume: (childTokens) => {
+            frame.consumeNextLB = renderInlineNode(node, childTokens, frame.tokens, ctx, dslCtx);
+          },
+        });
         break;
       case "raw":
-        consumeNextLB = renderRawNode(node, tokens, ctx, dslCtx);
+        frame.consumeNextLB = renderRawNode(node, frame.tokens, ctx, dslCtx);
         break;
       case "block":
-        consumeNextLB = renderBlockNode(node, tokens, ctx, dslCtx);
+        stack.push({
+          nodes: node.children,
+          index: 0,
+          escapeMode: "root",
+          tokens: [],
+          consumeNextLB: false,
+          resume: (childTokens) => {
+            frame.consumeNextLB = renderBlockNode(node, childTokens, frame.tokens, ctx, dslCtx);
+          },
+        });
         break;
     }
   }
 
-  return tokens;
+  return [];
 };

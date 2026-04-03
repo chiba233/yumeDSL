@@ -67,15 +67,85 @@ const pushNode = (
 };
 
 const stripMeta = (node: IndexedStructuralNode): StructuralNode => {
-  const pos = node.position;
-  switch (node.type) {
-    case "text":      return { type: "text", value: node.value, ...(pos && { position: pos }) };
-    case "escape":    return { type: "escape", raw: node.raw, ...(pos && { position: pos }) };
-    case "separator": return { type: "separator", ...(pos && { position: pos }) };
-    case "inline":    return { type: "inline", tag: node.tag, children: node.children.map(stripMeta), ...(pos && { position: pos }) };
-    case "raw":       return { type: "raw", tag: node.tag, args: node.args.map(stripMeta), content: node.content, ...(pos && { position: pos }) };
-    case "block":     return { type: "block", tag: node.tag, args: node.args.map(stripMeta), children: node.children.map(stripMeta), ...(pos && { position: pos }) };
+  interface StripFrame {
+    node: IndexedStructuralNode;
+    stage: "enter" | "build";
   }
+
+  const completed = new Map<IndexedStructuralNode, StructuralNode>();
+  const stack: StripFrame[] = [{ node, stage: "enter" }];
+
+  while (stack.length > 0) {
+    const frame = stack.pop();
+    if (!frame) break;
+
+    if (frame.stage === "build") {
+      const current = frame.node;
+      const pos = current.position;
+      switch (current.type) {
+        case "text":
+          completed.set(current, { type: "text", value: current.value, ...(pos && { position: pos }) });
+          break;
+        case "escape":
+          completed.set(current, { type: "escape", raw: current.raw, ...(pos && { position: pos }) });
+          break;
+        case "separator":
+          completed.set(current, { type: "separator", ...(pos && { position: pos }) });
+          break;
+        case "inline":
+          completed.set(current, {
+            type: "inline",
+            tag: current.tag,
+            children: current.children.map((child) => completed.get(child) as StructuralNode),
+            ...(pos && { position: pos }),
+          });
+          break;
+        case "raw":
+          completed.set(current, {
+            type: "raw",
+            tag: current.tag,
+            args: current.args.map((child) => completed.get(child) as StructuralNode),
+            content: current.content,
+            ...(pos && { position: pos }),
+          });
+          break;
+        case "block":
+          completed.set(current, {
+            type: "block",
+            tag: current.tag,
+            args: current.args.map((child) => completed.get(child) as StructuralNode),
+            children: current.children.map((child) => completed.get(child) as StructuralNode),
+            ...(pos && { position: pos }),
+          });
+          break;
+      }
+      continue;
+    }
+
+    stack.push({ node: frame.node, stage: "build" });
+    switch (frame.node.type) {
+      case "inline":
+        for (let i = frame.node.children.length - 1; i >= 0; i--) {
+          stack.push({ node: frame.node.children[i], stage: "enter" });
+        }
+        break;
+      case "raw":
+        for (let i = frame.node.args.length - 1; i >= 0; i--) {
+          stack.push({ node: frame.node.args[i], stage: "enter" });
+        }
+        break;
+      case "block":
+        for (let i = frame.node.children.length - 1; i >= 0; i--) {
+          stack.push({ node: frame.node.children[i], stage: "enter" });
+        }
+        for (let i = frame.node.args.length - 1; i >= 0; i--) {
+          stack.push({ node: frame.node.args[i], stage: "enter" });
+        }
+        break;
+    }
+  }
+
+  return completed.get(node) as StructuralNode;
 };
 
 // ── Structural parser ──
@@ -90,217 +160,7 @@ interface ScanContext {
   onError?: (error: ParseError) => void;
 }
 
-// 注意：下面 scanInline / scanRaw / scanBlock / tryInlineFallback 四个函数
-// 和 parseNodes 主循环共用同一套返回值约定：
-// - 返回 nextI：调用方把 i 推进到这里
-// - node !== null：调用方先 flush 再 push
-// - node === null + bufferAppend：调用方把文本追加进 buffer（退化路径）
-// 不要在这些函数里自己 flush 或 push，否则主循环的状态会乱。
-
-interface ScanResult {
-  nextI: number;
-  node: IndexedStructuralNode | null;
-  bufferAppend: string;
-}
-
 type TagStartInfo = NonNullable<ReturnType<typeof readTagStartInfo>>;
-type CloserInfo = NonNullable<ReturnType<typeof getTagCloserType>>;
-
-// ── Inline: $$tag(…)$$ ──
-
-// 注意：nextI 必须覆盖完整 endTag；少吃一个字符，后面的源码 span 会整体错位。
-const buildInlineResult = (
-  text: string,
-  i: number,
-  info: TagStartInfo,
-  closeStart: number,
-  depth: number,
-  baseOffset: number,
-  ctx: ScanContext,
-): ScanResult => {
-  const nextI = closeStart + ctx.syntax.endTag.length;
-  const node: IndexedStructuralNode = {
-    type: "inline",
-    tag: info.tag,
-    children: parseNodes(text.slice(info.argStart, closeStart), depth + 1, ctx, true, baseOffset + info.argStart),
-    _meta: {
-      start: baseOffset + i,
-      end: baseOffset + nextI,
-      argStart: baseOffset + info.argStart,
-      argEnd: baseOffset + closeStart,
-      contentStart: baseOffset + info.argStart,
-      contentEnd: baseOffset + closeStart,
-    },
-  };
-  const position = makePosition(ctx.tracker, baseOffset + i, baseOffset + nextI);
-  if (position) node.position = position;
-  return { nextI, node, bufferAppend: "" };
-};
-
-const scanInline = (
-  text: string,
-  i: number,
-  info: TagStartInfo,
-  depth: number,
-  baseOffset: number,
-  ctx: ScanContext,
-): ScanResult | null => {
-  const { syntax, tagName, tracker, onError, gating } = ctx;
-
-  // form gating: 不支持 inline 的标签直接跳过
-  if (
-    gating &&
-    !supportsInlineForm(gating.handlers[info.tag], gating.allowInline, gating.registeredTags.has(info.tag))
-  ) {
-    return { nextI: i + 1, node: null, bufferAppend: text[i] };
-  }
-
-  const closeStart = findInlineClose(text, info.argStart, syntax, tagName);
-  if (closeStart === -1) {
-    emitError(tracker, onError, "INLINE_NOT_CLOSED", text, i, info.argStart - info.tagOpenPos);
-    return { nextI: info.argStart, node: null, bufferAppend: text.slice(i, info.argStart) };
-  }
-
-  return buildInlineResult(text, i, info, closeStart, depth, baseOffset, ctx);
-};
-
-// ── Complex form 没有 raw/block handler 时，尝试退化为 inline ──
-
-const tryInlineFallback = (
-  text: string,
-  i: number,
-  info: TagStartInfo,
-  depth: number,
-  baseOffset: number,
-  gating: GatingContext,
-  ctx: ScanContext,
-): ScanResult => {
-  if (!supportsInlineForm(gating.handlers[info.tag], gating.allowInline, gating.registeredTags.has(info.tag))) {
-    return { nextI: i + 1, node: null, bufferAppend: text[i] };
-  }
-
-  const closeStart = findInlineClose(text, info.argStart, ctx.syntax, ctx.tagName);
-  if (closeStart === -1) {
-    return { nextI: info.argStart, node: null, bufferAppend: text.slice(i, info.argStart) };
-  }
-
-  return buildInlineResult(text, i, info, closeStart, depth, baseOffset, ctx);
-};
-
-// ── Raw: $$tag(args)% content %end$$ ──
-
-const scanRaw = (
-  text: string,
-  i: number,
-  info: TagStartInfo,
-  closerInfo: CloserInfo,
-  depth: number,
-  baseOffset: number,
-  ctx: ScanContext,
-): ScanResult => {
-  const { syntax, tracker, onError, gating } = ctx;
-  const { rawOpen, rawClose } = syntax;
-
-  // 注意：raw 的 args 和 content 起点不一样。
-  // `argStart` 是参数区起点，`contentStart` 才是正文起点；
-  // 这俩混了以后，args 子节点和 content 整体 position 会一起偏。
-  const contentStart = closerInfo.argClose + rawOpen.length;
-  const closeStart = findRawClose(text, contentStart, syntax);
-
-  if (closeStart === -1) {
-    const malformed = findMalformedWholeLineTokenCandidate(text, contentStart, rawClose);
-    emitError(
-      tracker, onError,
-      malformed ? "RAW_CLOSE_MALFORMED" : "RAW_NOT_CLOSED",
-      text,
-      malformed?.index ?? i,
-      malformed?.length ?? contentStart - i,
-    );
-    return { nextI: contentStart, node: null, bufferAppend: text.slice(i, contentStart) };
-  }
-
-  // gating: handler 不支持 raw → 整段退化
-  if (gating && !gating.handlers[info.tag]?.raw) {
-    const end = closeStart + rawClose.length;
-    return { nextI: end, node: null, bufferAppend: text.slice(i, end) };
-  }
-
-  const nextI = closeStart + rawClose.length;
-  const node: IndexedStructuralNode = {
-    type: "raw",
-    tag: info.tag,
-    args: parseNodes(text.slice(info.argStart, closerInfo.argClose), depth + 1, ctx, true, baseOffset + info.argStart),
-    content: text.slice(contentStart, closeStart),
-    _meta: {
-      start: baseOffset + i,
-      end: baseOffset + nextI,
-      argStart: baseOffset + info.argStart,
-      argEnd: baseOffset + closerInfo.argClose,
-      contentStart: baseOffset + contentStart,
-      contentEnd: baseOffset + closeStart,
-    },
-  };
-  const position = makePosition(tracker, baseOffset + i, baseOffset + nextI);
-  if (position) node.position = position;
-  return { nextI, node, bufferAppend: "" };
-};
-
-// ── Block: $$tag(args)* content *end$$ ──
-
-const scanBlock = (
-  text: string,
-  i: number,
-  info: TagStartInfo,
-  closerInfo: CloserInfo,
-  depth: number,
-  baseOffset: number,
-  ctx: ScanContext,
-): ScanResult => {
-  const { syntax, tagName, tracker, onError, gating } = ctx;
-  const { blockOpen, blockClose } = syntax;
-
-  // 注意：block 同时有 args 子树和 children 子树，
-  // 两边的 `baseOffset` 起点不同；一边对一边错时，表面 parse 正常，位置却会成片漂移。
-  const contentStart = closerInfo.argClose + blockOpen.length;
-  const closeStart = findBlockClose(text, contentStart, syntax, tagName);
-
-  if (closeStart === -1) {
-    const malformed = findMalformedWholeLineTokenCandidate(text, contentStart, blockClose);
-    emitError(
-      tracker, onError,
-      malformed ? "BLOCK_CLOSE_MALFORMED" : "BLOCK_NOT_CLOSED",
-      text,
-      malformed?.index ?? i,
-      malformed?.length ?? contentStart - i,
-    );
-    return { nextI: contentStart, node: null, bufferAppend: text.slice(i, contentStart) };
-  }
-
-  // gating: handler 不支持 block → 整段退化
-  if (gating && !gating.handlers[info.tag]?.block) {
-    const end = closeStart + blockClose.length;
-    return { nextI: end, node: null, bufferAppend: text.slice(i, end) };
-  }
-
-  const nextI = closeStart + blockClose.length;
-  const node: IndexedStructuralNode = {
-    type: "block",
-    tag: info.tag,
-    args: parseNodes(text.slice(info.argStart, closerInfo.argClose), depth + 1, ctx, true, baseOffset + info.argStart),
-    children: parseNodes(text.slice(contentStart, closeStart), depth + 1, ctx, false, baseOffset + contentStart),
-    _meta: {
-      start: baseOffset + i,
-      end: baseOffset + nextI,
-      argStart: baseOffset + info.argStart,
-      argEnd: baseOffset + closerInfo.argClose,
-      contentStart: baseOffset + contentStart,
-      contentEnd: baseOffset + closeStart,
-    },
-  };
-  const position = makePosition(tracker, baseOffset + i, baseOffset + nextI);
-  if (position) node.position = position;
-  return { nextI, node, bufferAppend: "" };
-};
 
 // ── 主循环 ──
 
@@ -327,108 +187,193 @@ export const parseNodes = (
   const { depthLimit, gating, tracker, syntax, tagName, onError } = ctx;
   const { tagDivider, tagOpen, endTag, rawClose } = syntax;
 
-  const nodes: IndexedStructuralNode[] = [];
-  let i = 0;
-  const buf: BufferState = emptyBuffer();
+  interface ParseFrame {
+    text: string;
+    depth: number;
+    insideArgs: boolean;
+    baseOffset: number;
+    i: number;
+    nodes: IndexedStructuralNode[];
+    buf: BufferState;
+    resume: ((childNodes: IndexedStructuralNode[]) => void) | null;
+  }
 
-  const flush = () => {
-    if (!buf.content) return;
+  const createFrame = (
+    frameText: string,
+    frameDepth: number,
+    frameInsideArgs: boolean,
+    frameBaseOffset: number,
+    resume: ((childNodes: IndexedStructuralNode[]) => void) | null,
+  ): ParseFrame => ({
+    text: frameText,
+    depth: frameDepth,
+    insideArgs: frameInsideArgs,
+    baseOffset: frameBaseOffset,
+    i: 0,
+    nodes: [],
+    buf: emptyBuffer(),
+    resume,
+  });
+
+  const flushFrame = (frame: ParseFrame) => {
+    if (!frame.buf.content) return;
     const position =
-      buf.start >= 0 ? makePosition(tracker, baseOffset + buf.start, baseOffset + i) : undefined;
+      frame.buf.start >= 0
+        ? makePosition(tracker, frame.baseOffset + frame.buf.start, frame.baseOffset + frame.i)
+        : undefined;
     pushNode(
-      nodes,
+      frame.nodes,
       {
         type: "text",
-        value: buf.content,
-        _meta: { start: baseOffset + buf.start, end: baseOffset + i },
+        value: frame.buf.content,
+        _meta: { start: frame.baseOffset + frame.buf.start, end: frame.baseOffset + frame.i },
       },
       position,
     );
     const reset = emptyBuffer();
-    buf.content = reset.content;
-    buf.start = reset.start;
-    buf.sourceEnd = reset.sourceEnd;
+    frame.buf.content = reset.content;
+    frame.buf.start = reset.start;
+    frame.buf.sourceEnd = reset.sourceEnd;
   };
 
-  // 注意：scan* 函数返回 ScanResult，主循环统一处理：
-  // node !== null → flush + push；node === null → 追加 buffer。
-  // 不要在 scan* 里自己操作 nodes/buf，保持主循环是唯一的状态写入点。
-  const applyScanResult = (result: ScanResult) => {
-    if (result.node) {
-      flush();
-      nodes.push(result.node);
-    } else if (result.bufferAppend) {
-      if (buf.start === -1) buf.start = i;
-      buf.content += result.bufferAppend;
+  const appendBuffer = (frame: ParseFrame, content: string, start: number) => {
+    if (!content) return;
+    if (frame.buf.start === -1) frame.buf.start = start;
+    frame.buf.content += content;
+  };
+
+  const pushInlineFrame = (
+    frame: ParseFrame,
+    info: TagStartInfo,
+    closeStart: number,
+  ) => {
+    const nextI = closeStart + endTag.length;
+    const meta: TagMeta = {
+      start: frame.baseOffset + frame.i,
+      end: frame.baseOffset + nextI,
+      argStart: frame.baseOffset + info.argStart,
+      argEnd: frame.baseOffset + closeStart,
+      contentStart: frame.baseOffset + info.argStart,
+      contentEnd: frame.baseOffset + closeStart,
+    };
+    const position = makePosition(tracker, frame.baseOffset + frame.i, frame.baseOffset + nextI);
+    const childText = frame.text.slice(info.argStart, closeStart);
+
+    flushFrame(frame);
+    frame.i = nextI;
+    stack.push(createFrame(childText, frame.depth + 1, true, frame.baseOffset + info.argStart, (children) => {
+      const node: IndexedStructuralNode = {
+        type: "inline",
+        tag: info.tag,
+        children,
+        _meta: meta,
+      };
+      if (position) node.position = position;
+      frame.nodes.push(node);
+    }));
+  };
+
+  const prepareComplexTag = (
+    frame: ParseFrame,
+    info: TagStartInfo,
+    argClose: number,
+    contentStart: number,
+    closeStart: number,
+    closeLength: number,
+  ) => {
+    const nextI = closeStart + closeLength;
+    const meta: TagMeta = {
+      start: frame.baseOffset + frame.i,
+      end: frame.baseOffset + nextI,
+      argStart: frame.baseOffset + info.argStart,
+      argEnd: frame.baseOffset + argClose,
+      contentStart: frame.baseOffset + contentStart,
+      contentEnd: frame.baseOffset + closeStart,
+    };
+    const position = makePosition(tracker, frame.baseOffset + frame.i, frame.baseOffset + nextI);
+    const argText = frame.text.slice(info.argStart, argClose);
+    const contentText = frame.text.slice(contentStart, closeStart);
+    flushFrame(frame);
+    frame.i = nextI;
+    return { meta, position, argText, contentText };
+  };
+
+  const stack: ParseFrame[] = [createFrame(text, depth, insideArgs, baseOffset, null)];
+
+  while (stack.length > 0) {
+    const frame = stack[stack.length - 1];
+
+    if (frame.i >= frame.text.length) {
+      flushFrame(frame);
+      const completedNodes = frame.nodes;
+      const resume = frame.resume;
+      stack.pop();
+      if (!resume) return completedNodes;
+      resume(completedNodes);
+      continue;
     }
-    i = result.nextI;
-  };
 
-  // 注意：这里同样依赖固定优先级：
-  // escape → unexpected close → 参数分隔符 → tag start → 普通文本。
-  // 前面命中时必须先 flush，再推进指针；否则节点切分和子节点 position 会错。
-  while (i < text.length) {
+    const frameText = frame.text;
+    const i = frame.i;
+
     // ── Escape sequence ──
-    const [escaped, next] = readEscapedSequence(text, i, syntax);
+    const [escaped, next] = readEscapedSequence(frameText, i, syntax);
     if (escaped !== null) {
-      flush();
+      flushFrame(frame);
       pushNode(
-        nodes,
+        frame.nodes,
         {
           type: "escape",
-          raw: text.slice(i, next),
-          _meta: { start: baseOffset + i, end: baseOffset + next },
+          raw: frameText.slice(i, next),
+          _meta: { start: frame.baseOffset + i, end: frame.baseOffset + next },
         },
-        makePosition(tracker, baseOffset + i, baseOffset + next),
+        makePosition(tracker, frame.baseOffset + i, frame.baseOffset + next),
       );
-      i = next;
+      frame.i = next;
       continue;
     }
 
     // ── Unexpected inline close ──
-    if (text.startsWith(endTag, i)) {
-      emitError(tracker, onError, "UNEXPECTED_CLOSE", text, i, endTag.length);
-      if (buf.start === -1) buf.start = i;
-      buf.content += endTag;
-      i += endTag.length;
+    if (frameText.startsWith(endTag, i)) {
+      emitError(tracker, onError, "UNEXPECTED_CLOSE", frameText, i, endTag.length);
+      appendBuffer(frame, endTag, i);
+      frame.i += endTag.length;
       continue;
     }
 
     // ── Pipe separator (only inside tag argument sections) ──
-    if (insideArgs && text.startsWith(tagDivider, i)) {
-      flush();
+    if (frame.insideArgs && frameText.startsWith(tagDivider, i)) {
+      flushFrame(frame);
       pushNode(
-        nodes,
+        frame.nodes,
         {
           type: "separator",
-          _meta: { start: baseOffset + i, end: baseOffset + i + tagDivider.length },
+          _meta: { start: frame.baseOffset + i, end: frame.baseOffset + i + tagDivider.length },
         },
-        makePosition(tracker, baseOffset + i, baseOffset + i + tagDivider.length),
+        makePosition(tracker, frame.baseOffset + i, frame.baseOffset + i + tagDivider.length),
       );
-      i += tagDivider.length;
+      frame.i += tagDivider.length;
       continue;
     }
 
     // ── Tag start ──
-    const info = readTagStartInfo(text, i, syntax, tagName);
+    const info = readTagStartInfo(frameText, i, syntax, tagName);
     if (!info) {
-      if (buf.start === -1) buf.start = i;
-      buf.content += text[i];
-      i++;
+      appendBuffer(frame, frameText[i], i);
+      frame.i++;
       continue;
     }
 
     // ── Depth limit → skip entire tag ──
-    if (depth >= depthLimit) {
-      emitError(tracker, onError, "DEPTH_LIMIT", text, i, info.argStart - info.tagOpenPos);
-      const degradedEnd = skipTagBoundary(text, info, syntax, tagName);
-      if (buf.start === -1) buf.start = i;
-      buf.content += text.slice(i, degradedEnd);
-      i = degradedEnd;
+    if (frame.depth >= depthLimit) {
+      emitError(tracker, onError, "DEPTH_LIMIT", frameText, i, info.argStart - info.tagOpenPos);
+      const degradedEnd = skipTagBoundary(frameText, info, syntax, tagName);
+      appendBuffer(frame, frameText.slice(i, degradedEnd), i);
+      frame.i = degradedEnd;
       continue;
     }
 
-    const closerInfo = getTagCloserType(text, info.tagNameEnd + tagOpen.length, syntax);
+    const closerInfo = getTagCloserType(frameText, info.tagNameEnd + tagOpen.length, syntax);
     if (!closerInfo) {
       const handler = gating?.handlers[info.tag];
       const isRegistered = gating?.registeredTags.has(info.tag) ?? false;
@@ -436,50 +381,143 @@ export const parseNodes = (
         ? supportsInlineForm(handler, gating.allowInline, isRegistered)
         : true;
       if (canAttemptInline) {
-        emitError(tracker, onError, "INLINE_NOT_CLOSED", text, i, info.argStart - info.tagOpenPos);
+        emitError(tracker, onError, "INLINE_NOT_CLOSED", frameText, i, info.argStart - info.tagOpenPos);
       }
-      if (buf.start === -1) buf.start = i;
-      buf.content += text.slice(i, info.argStart);
-      i = info.argStart;
+      appendBuffer(frame, frameText.slice(i, info.argStart), i);
+      frame.i = info.argStart;
       continue;
     }
-
-    // ── 按 closer 类型分发 ──
-    // 注意：inline / raw / block 三段是并排的同构分支。
-    // 如果你只修其中一段，不同步检查另外两段，位置映射和退化行为大概率会分叉。
 
     if (closerInfo.closer === endTag) {
-      const result = scanInline(text, i, info, depth, baseOffset, ctx);
-      if (!result) {
-        // scanInline 返回 null 表示 gating 拒绝了，当普通字符处理
-        if (buf.start === -1) buf.start = i;
-        buf.content += text[i];
-        i++;
-      } else {
-        applyScanResult(result);
+      if (
+        gating &&
+        !supportsInlineForm(gating.handlers[info.tag], gating.allowInline, gating.registeredTags.has(info.tag))
+      ) {
+        appendBuffer(frame, frameText[i], i);
+        frame.i++;
+        continue;
       }
+
+      const closeStart = findInlineClose(frameText, info.argStart, syntax, tagName);
+      if (closeStart === -1) {
+        emitError(tracker, onError, "INLINE_NOT_CLOSED", frameText, i, info.argStart - info.tagOpenPos);
+        appendBuffer(frame, frameText.slice(i, info.argStart), i);
+        frame.i = info.argStart;
+        continue;
+      }
+
+      pushInlineFrame(frame, info, closeStart);
       continue;
     }
 
-    // complex form 的标签如果没有 raw/block handler，尝试走 inline fallback
     if (gating) {
       const handler = gating.handlers[info.tag];
       if (!handler?.raw && !handler?.block) {
-        applyScanResult(tryInlineFallback(text, i, info, depth, baseOffset, gating, ctx));
+        if (!supportsInlineForm(handler, gating.allowInline, gating.registeredTags.has(info.tag))) {
+          appendBuffer(frame, frameText[i], i);
+          frame.i++;
+          continue;
+        }
+
+        const closeStart = findInlineClose(frameText, info.argStart, syntax, tagName);
+        if (closeStart === -1) {
+          appendBuffer(frame, frameText.slice(i, info.argStart), i);
+          frame.i = info.argStart;
+          continue;
+        }
+
+        pushInlineFrame(frame, info, closeStart);
         continue;
       }
     }
 
     if (closerInfo.closer === rawClose) {
-      applyScanResult(scanRaw(text, i, info, closerInfo, depth, baseOffset, ctx));
+      const contentStart = closerInfo.argClose + syntax.rawOpen.length;
+      const closeStart = findRawClose(frameText, contentStart, syntax);
+
+      if (closeStart === -1) {
+        const malformed = findMalformedWholeLineTokenCandidate(frameText, contentStart, syntax.rawClose);
+        emitError(
+          tracker,
+          onError,
+          malformed ? "RAW_CLOSE_MALFORMED" : "RAW_NOT_CLOSED",
+          frameText,
+          malformed?.index ?? i,
+          malformed?.length ?? contentStart - i,
+        );
+        appendBuffer(frame, frameText.slice(i, contentStart), i);
+        frame.i = contentStart;
+        continue;
+      }
+
+      if (gating && !gating.handlers[info.tag]?.raw) {
+        const end = closeStart + syntax.rawClose.length;
+        appendBuffer(frame, frameText.slice(i, end), i);
+        frame.i = end;
+        continue;
+      }
+
+      const { meta, position, argText, contentText: content } = prepareComplexTag(
+        frame, info, closerInfo.argClose, contentStart, closeStart, syntax.rawClose.length,
+      );
+      stack.push(createFrame(argText, frame.depth + 1, true, frame.baseOffset + info.argStart, (args) => {
+        const node: IndexedStructuralNode = {
+          type: "raw",
+          tag: info.tag,
+          args,
+          content,
+          _meta: meta,
+        };
+        if (position) node.position = position;
+        frame.nodes.push(node);
+      }));
       continue;
     }
 
-    applyScanResult(scanBlock(text, i, info, closerInfo, depth, baseOffset, ctx));
+    const contentStart = closerInfo.argClose + syntax.blockOpen.length;
+    const closeStart = findBlockClose(frameText, contentStart, syntax, tagName);
+
+    if (closeStart === -1) {
+      const malformed = findMalformedWholeLineTokenCandidate(frameText, contentStart, syntax.blockClose);
+      emitError(
+        tracker,
+        onError,
+        malformed ? "BLOCK_CLOSE_MALFORMED" : "BLOCK_NOT_CLOSED",
+        frameText,
+        malformed?.index ?? i,
+        malformed?.length ?? contentStart - i,
+      );
+      appendBuffer(frame, frameText.slice(i, contentStart), i);
+      frame.i = contentStart;
+      continue;
+    }
+
+    if (gating && !gating.handlers[info.tag]?.block) {
+      const end = closeStart + syntax.blockClose.length;
+      appendBuffer(frame, frameText.slice(i, end), i);
+      frame.i = end;
+      continue;
+    }
+
+    const { meta, position, argText, contentText } = prepareComplexTag(
+      frame, info, closerInfo.argClose, contentStart, closeStart, syntax.blockClose.length,
+    );
+    stack.push(createFrame(argText, frame.depth + 1, true, frame.baseOffset + info.argStart, (args) => {
+      stack.push(createFrame(contentText, frame.depth + 1, false, frame.baseOffset + contentStart, (children) => {
+        const node: IndexedStructuralNode = {
+          type: "block",
+          tag: info.tag,
+          args,
+          children,
+          _meta: meta,
+        };
+        if (position) node.position = position;
+        frame.nodes.push(node);
+      }));
+    }));
   }
 
-  flush();
-  return nodes;
+  return [];
 };
 
 // ── Public API ──

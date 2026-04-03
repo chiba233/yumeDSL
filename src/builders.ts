@@ -10,13 +10,18 @@ export const createTextToken = (value: string, ctx?: DslContext): TextToken =>
 export const extractText = (tokens?: TextToken[]): string => {
   if (!tokens?.length) return "";
   const parts: string[] = [];
-  const collectParts = (children: TextToken[]) => {
-    for (const t of children) {
-      if (typeof t.value === "string") parts.push(t.value);
-      else collectParts(t.value);
+  const stack = [...tokens].reverse();
+  while (stack.length > 0) {
+    const token = stack.pop();
+    if (!token) continue;
+    if (typeof token.value === "string") {
+      parts.push(token.value);
+      continue;
     }
-  };
-  collectParts(tokens);
+    for (let i = token.value.length - 1; i >= 0; i--) {
+      stack.push(token.value[i]);
+    }
+  }
   return parts.join("");
 };
 
@@ -30,18 +35,52 @@ export const materializeTextTokens = (
   ctx?: DslContext,
 ): TextToken[] => {
   const syntax = resolveSyntax(ctx);
-  return tokens.map((token) => {
-    if (typeof token.value === "string") {
-      return token.type === "text"
-        ? { ...token, value: unescapeInline(token.value, syntax) }
-        : token;
+  interface MaterializeFrame {
+    source: TextToken[];
+    index: number;
+    output: TextToken[];
+    resume: ((children: TextToken[]) => void) | null;
+  }
+
+  const stack: MaterializeFrame[] = [{
+    source: tokens,
+    index: 0,
+    output: [],
+    resume: null,
+  }];
+
+  while (stack.length > 0) {
+    const frame = stack[stack.length - 1];
+    if (frame.index >= frame.source.length) {
+      const output = frame.output;
+      const resume = frame.resume;
+      stack.pop();
+      if (!resume) return output;
+      resume(output);
+      continue;
     }
 
-    return {
-      ...token,
-      value: materializeTextTokens(token.value, ctx),
-    };
-  });
+    const token = frame.source[frame.index++];
+    if (typeof token.value === "string") {
+      frame.output.push(
+        token.type === "text"
+          ? { ...token, value: unescapeInline(token.value, syntax) }
+          : token,
+      );
+      continue;
+    }
+
+    stack.push({
+      source: token.value,
+      index: 0,
+      output: [],
+      resume: (children) => {
+        frame.output.push({ ...token, value: children });
+      },
+    });
+  }
+
+  return [];
 };
 
 export interface PipeArgs {

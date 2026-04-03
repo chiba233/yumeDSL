@@ -2,6 +2,20 @@
 
 # 更新日志
 
+### 1.1.2
+
+- 修复：深层嵌套爆栈回归——`parseNodes`（结构解析阶段）、`renderNodes`（渲染阶段）、`stripMeta`、
+  `extractText`、`materializeTextTokens` 从直接递归改为显式栈迭代。1.1.1 版本在结构解析阶段
+  每层嵌套多出约 2–3 个调用帧，爆栈阈值从 1.1.0 的 ~5000 层降至 ~1200–1800 层；
+  现在五条递归路径全部改为迭代，仅受堆内存限制
+- 内部：移除死代码——`buildInlineResult`、`scanInline`、`tryInlineFallback`、`scanRaw`、
+  `scanBlock` 辅助函数及关联的 `ScanResult` / `CloserInfo` 类型已删除；
+  逻辑在迭代化重写中内联到 `parseNodes` 主循环
+- 内部：提取公共 `prepareComplexTag` 辅助函数，消除 raw 和 block 分支之间
+  meta / position / argText / contentText 构建 + flush + 指针推进的重复代码
+- 测试：新增 `[Edge/Depth]` 用例——2000 层 inline 嵌套 + `depthLimit: 3000`，
+  验证 `parseStructural` 和 `parseRichText` 均可正常完成，不会爆栈
+
 ### 1.1.1
 
 - 架构：`parseRichText` 内部从单遍字符扫描重构为"结构解析 → 渲染遍历"两阶段管线。

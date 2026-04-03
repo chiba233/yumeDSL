@@ -34,6 +34,7 @@
 > **200 KB 实测（鲲鹏 920 / Node v24.14.0）：** `parseRichText` **~33 ms**（1.1.0 → 1.1.1 提升 ~133 倍），
 > `parseStructural` ~29 ms。编辑器场景可配合
 > [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker) 的 `parseSlice`——只重解析被修改的区域。
+>深层嵌套与其他压力测试的详细数据，见[性能页](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E6%80%A7%E8%83%BD#%E5%85%A8%E9%87%8F%E8%A7%A3%E6%9E%90200-kb)。
 
 **适用场景：**
 游戏对话与视觉小说（打字机 / 抖动 / 变色——标签你自己发明），
