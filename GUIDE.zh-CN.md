@@ -13,12 +13,12 @@
 [![Contributing](https://img.shields.io/badge/贡献指南-guide-blue.svg)](./CONTRIBUTING.zh-CN.md)
 [![Security](https://img.shields.io/badge/安全策略-policy-red.svg)](./SECURITY.md)
 
-零依赖、接近 O(n)、可无限嵌套的富文本 DSL 解析器。
-文本进来，token 树出去——标签是什么意思、怎么渲染、放在哪个框架里，全部由你说了算。
+零依赖、O(n)、1000 万层嵌套跑完的富文本 DSL 解析器。
+文本进来，token 树出去——标签语义、渲染方式、目标框架，全部由你定义。
 
 - **不是** Markdown 渲染器、富文本编辑器或 HTML 生产线
 - **是** 一台只认语法不认语义的 token 机器——你喂它规则，它还你结构；[语法符号完全可换](#自定义语法)
-- 无正则回溯，确定性线性扫描，输入多长跑多久
+- 无正则回溯、无递归——全迭代确定性扫描，输入多长跑多久
 - inline / raw / block 三种标签形式，语法符号和标签名规则完全可换；内置[转义序列](#转义序列)让任何语法符号都能作为普通文本出现
 - 写错的、未知的标签[自动降级为纯文本](#错误处理)——不抛异常，不污染上下文
 - 无框架绑定、不依赖 DOM——浏览器、Node、Deno、Bun、游戏引擎或任何 JS 运行时都能跑
@@ -31,8 +31,8 @@
 
 **实时编辑标签、开关 handler、边打字边看 token 树更新。**
 
-> **200 KB 实测（鲲鹏 920 / Node v24.14.0）：** `parseRichText` **~33 ms**，
-> `parseStructural` ~29 ms。全迭代 O(n)——任意嵌套深度均不会爆栈。
+> **200 KB 实测（鲲鹏 920 / Node v24.14.0）：** `parseRichText` **~24 ms**，
+> `parseStructural` ~21 ms。全迭代 O(n)——任意嵌套深度均不会爆栈。
 > **1000 万层单链 inline 嵌套（95 MB）：`parseRichText` ~50 s。** 编辑器场景可配合
 > [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker) 的 `parseSlice`——只重解析被修改的区域。
 > [完整性能数据](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E6%80%A7%E8%83%BD)

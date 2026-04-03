@@ -13,14 +13,13 @@
 [![Contributing](https://img.shields.io/badge/Contributing-guide-blue.svg)](./CONTRIBUTING.md)
 [![Security](https://img.shields.io/badge/Security-policy-red.svg)](./SECURITY.md)
 
-Zero-dependency, near-linear, infinitely nestable rich-text DSL parser.
-Text goes in, token tree comes out — what tags mean, how they render, which framework they live in is entirely up to
-you.
+Zero-dependency, O(n) rich-text DSL parser. 10 million nested layers, still finishes.
+Text in, token tree out — tag semantics, rendering, framework: all yours to define.
 
 - **Not** a Markdown renderer, rich-text editor, or HTML pipeline
 - **Is** a syntax-only token machine — you feed it rules, it returns
   structure; [syntax tokens are fully swappable](#custom-syntax)
-- No regex backtracking — deterministic linear scan, runtime proportional to input length
+- No regex backtracking, no recursion — fully iterative deterministic scan, runtime proportional to input length
 - Inline / Raw / Block — three tag forms, fully swappable syntax tokens and tag-name rules;
   built-in [escape sequences](#escape-sequences) let any syntax token appear as literal text
 - Malformed or unknown tags [degrade to plain text](#error-handling) — never throws, never corrupts surrounding
@@ -36,8 +35,8 @@ you.
 
 **Edit tags in real time, toggle handlers on/off, watch the token tree update as you type.**
 
-> **200 KB daily benchmark (Kunpeng 920 / Node v24.14.0):** `parseRichText` **~33 ms**,
-> `parseStructural` ~29 ms. Fully iterative, O(n) — no stack overflow at any depth.
+> **200 KB daily benchmark (Kunpeng 920 / Node v24.14.0):** `parseRichText` **~24 ms**,
+> `parseStructural` ~21 ms. Fully iterative, O(n) — no stack overflow at any depth.
 > **10 000 000-layer single-chain inline nesting (95 MB): `parseRichText` ~50 s.** Edit a 36-char tag in a 200 KB document? Pair with
 > [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker)'s `parseSlice` — only the touched
 > region gets re-parsed.
