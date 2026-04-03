@@ -4,11 +4,12 @@
 
 ### 1.1.3
 
+- 延续 1.1.2 的深嵌套工作：1.1.2 已经消除的三个独立瓶颈在 1.1.3 中仍然保持消除状态；
+  这次主要继续处理 public `parseStructural` 路径上剩余的内存峰值问题
 - 优化：public `parseStructural` 的深嵌套内存画像 —— `stripMeta` 不再为整棵树构建
   `Map<IndexedStructuralNode, StructuralNode>`，改为迭代式父容器回填，直接产出 public forest，
   降低用户可见 API 路径上的峰值开销
-- 基准：public `parseStructural(50000000)` 在
-  `NODE_OPTIONS=--max-old-space-size=32768` 下可完成，鲲鹏 920 / Node v24.14.0 实测 **~224.1 s**
+- 基准：public `parseStructural(50000000)` 可完成，鲲鹏 920 / Node v24.14.0 实测 **~224.1 s**
 - 文档：README / GUIDE / wiki 性能页从旧的 1000 万层 / internal 限制口径更新为新的
   5000 万层 public API 基准，并补充堆内存预算说明
 

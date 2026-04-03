@@ -37,7 +37,15 @@ Text in, token tree out — tag semantics, rendering, framework: all yours to de
 
 > **200 KB daily benchmark (Kunpeng 920 / Node v24.14.0):** `parseRichText` **~24 ms**,
 > `parseStructural` ~21 ms. Fully iterative, O(n) — no stack overflow at any depth.
-> **50 000 000-layer single-chain inline nesting (~500 MB): public `parseStructural` ~224.1 s with `--max-old-space-size=32768`.**
+> Since 1.1.2, the three independent deep-nesting bottlenecks are already gone; 1.1.3 continues by
+> lowering the remaining public `parseStructural` memory peak.
+> 
+> **50 000 000-layer single-chain inline nesting (~500 MB): public `parseStructural` ~224.1 s.**
+> 
+> **20 000 000-layer single-chain inline nesting:** full `parseRichText` is also part of the
+> large-scale deep-nesting benchmark envelope now.
+> Large-scale deep-nesting measurements use an expanded heap budget; see the performance page for the
+> exact memory notes and run conditions.
 > Edit a 36-char tag in a 200 KB document? Pair with
 > [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker)'s `parseSlice` — only the touched
 > region gets re-parsed.

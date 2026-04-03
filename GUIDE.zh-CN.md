@@ -33,7 +33,13 @@
 
 > **200 KB 实测（鲲鹏 920 / Node v24.14.0）：** `parseRichText` **~24 ms**，
 > `parseStructural` ~21 ms。全迭代 O(n)——任意嵌套深度均不会爆栈。
-> **5000 万层单链 inline 嵌套（约 500 MB）：public `parseStructural` 在 `--max-old-space-size=32768` 下约 ~224.1 s。** 编辑器场景可配合
+> 从 1.1.2 开始，三个彼此独立的深嵌套瓶颈已经全部消除；1.1.3 继续往前推，把 public
+> `parseStructural` 剩余的内存峰值再压下去。
+> 
+> **5000 万层单链 inline 嵌套（约 500 MB）：public `parseStructural` 约 ~224.1 s。** 编辑器场景可配合
+> 
+> **2000 万层单链 inline 嵌套：** 完整 `parseRichText` 也已经进入大规模深嵌套 benchmark 口径。
+> 大规模深嵌套基准统一使用放宽后的堆预算；具体内存占用和运行条件见性能页。
 > [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker) 的 `parseSlice`——只重解析被修改的区域。
 > [完整性能数据](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E6%80%A7%E8%83%BD)
 

@@ -4,11 +4,14 @@
 
 ### 1.1.3
 
+- Follow-up to 1.1.2's deep-nesting work: the three independent bottlenecks removed in 1.1.2
+  remain gone. This release focuses on the remaining public `parseStructural` memory peak on top
+  of that O(n) path
 - Improve: public `parseStructural` deep-nesting memory profile — `stripMeta` no longer builds a
   `Map<IndexedStructuralNode, StructuralNode>` for the whole tree. It now fills the public forest
   directly via an iterative parent-container walk, reducing peak overhead on user-visible API calls
-- Benchmark: public `parseStructural(50000000)` now completes with
-  `NODE_OPTIONS=--max-old-space-size=32768` in **~224.1 s** on Kunpeng 920 / Node v24.14.0
+- Benchmark: public `parseStructural(50000000)` now completes in **~224.1 s** on Kunpeng 920 /
+  Node v24.14.0
 - Documentation: README / GUIDE / wiki performance pages updated from the old 10 M / internal-limit
   narrative to the new 50 M public-API benchmark and heap-budget notes
 
