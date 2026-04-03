@@ -97,13 +97,13 @@ jobs:
           }
 
       - name: Publish to npm
-        if: ${{ env.DRY_RUN != 'true' && env.PUBLISH_REGISTRY != 'github' }}
+        if: ${{ env.DRY_RUN != 'true' && (env.PUBLISH_REGISTRY == 'npm' || env.PUBLISH_REGISTRY == 'both') }}
         run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Verify npm publish payload (dry run)
-        if: ${{ env.DRY_RUN == 'true' && env.PUBLISH_REGISTRY != 'github' }}
+        if: ${{ env.DRY_RUN == 'true' && (env.PUBLISH_REGISTRY == 'npm' || env.PUBLISH_REGISTRY == 'both') }}
         run: npm pack --dry-run
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -115,7 +115,7 @@ jobs:
           registry-url: https://npm.pkg.github.com
 
       - name: Publish to GitHub Packages
-        if: ${{ env.DRY_RUN != 'true' && env.PUBLISH_REGISTRY != 'npm' }}
+        if: ${{ env.DRY_RUN != 'true' && (env.PUBLISH_REGISTRY == 'github' || env.PUBLISH_REGISTRY == 'both') }}
         run: |
           cp package.json package.json.bak
           node -e "
@@ -129,7 +129,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Verify GitHub Packages publish payload (dry run)
-        if: ${{ env.DRY_RUN == 'true' && env.PUBLISH_REGISTRY != 'npm' }}
+        if: ${{ env.DRY_RUN == 'true' && (env.PUBLISH_REGISTRY == 'github' || env.PUBLISH_REGISTRY == 'both') }}
         run: |
           cp package.json package.json.bak
           node -e "
