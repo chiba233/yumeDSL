@@ -131,7 +131,6 @@ export const parseRichText = (text: string, options: ParseOptions = {}): TextTok
     tracker,
     syntax,
     createId,
-    mode: options.mode ?? "render",
   };
 
   // with* wrappers kept for backward compatibility: user handlers may call

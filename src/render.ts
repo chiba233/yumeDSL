@@ -26,7 +26,6 @@ export interface RenderContext {
   tracker: PositionTracker | null;
   syntax: SyntaxConfig;
   createId: CreateId;
-  mode: "render";
 }
 
 // ── 相邻 text 合并 ──
@@ -151,7 +150,7 @@ const complexTagPosition = (
   meta: TagMeta,
   form: MultilineForm,
 ) => {
-  const end = consumeBlockTagTrailingLineBreak(tag, ctx.source, meta.end, ctx.mode, ctx.blockTagSet, form);
+  const end = consumeBlockTagTrailingLineBreak(tag, ctx.source, meta.end, ctx.blockTagSet, form);
   return makePosition(ctx.tracker, meta.start, end);
 };
 
@@ -235,7 +234,7 @@ const renderRawNode = (
   // 注意：raw 正文里的转义闭合符（如 \%end$$）要还原成字面量，
   // 这里用 split/join 而不是 replace 是因为 escapeChar 可能是多字符。
   const unescaped = rawContent.split(ctx.syntax.escapeChar + ctx.syntax.rawClose).join(ctx.syntax.rawClose);
-  const { content } = normalizeBlockTagContent(node.tag, unescaped, ctx.mode, ctx.blockTagSet, "raw");
+  const { content } = normalizeBlockTagContent(node.tag, unescaped, ctx.blockTagSet, "raw");
   const draft = handler.raw(arg, content, dslCtx);
   appendToken(tokens, createToken(draft, complexTagPosition(ctx, node.tag, node._meta, "raw"), dslCtx), dslCtx);
   return ctx.blockTagSet.has(node.tag, "raw");
