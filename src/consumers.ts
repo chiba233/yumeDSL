@@ -273,7 +273,7 @@ export const tryConsumeTagClose = (ctx: ParseContext): boolean => {
 
 export const tryConsumeEscape = (ctx: ParseContext): boolean => {
   const { escapeChar } = ctx.syntax;
-  if (ctx.text[ctx.i] !== escapeChar || ctx.i + 1 >= ctx.text.length) {
+  if (!ctx.text.startsWith(escapeChar, ctx.i) || ctx.i + escapeChar.length >= ctx.text.length) {
     return false;
   }
 

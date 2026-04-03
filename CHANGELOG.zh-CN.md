@@ -2,6 +2,11 @@
 
 # 更新日志
 
+### 1.1.1
+
+- 修复：`tryConsumeEscape` 现在使用 `startsWith` 代替单字符比较来匹配转义字符。
+  之前自定义多字符 `escapeChar` 时转义处理会静默失效。默认单字符 `\` 不受影响
+
 ### 1.1.0
 
 - 新增：`NarrowToken<TType, TExtra?>` —— 把 `TextToken` 收窄为特定 `type` 字面量 + 已知额外字段的子类型，

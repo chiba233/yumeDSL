@@ -2,6 +2,13 @@
 
 # Changelog
 
+### 1.1.1
+
+- Fix: `tryConsumeEscape` now uses `startsWith` instead of single-character comparison
+  for the escape character. Previously, custom multi-character `escapeChar` in syntax
+  config would silently fail to trigger escape handling. Default single-character `\`
+  was not affected
+
 ### 1.1.0
 
 - New: `NarrowToken<TType, TExtra?>` — utility type that narrows `TextToken` to a specific `type`
