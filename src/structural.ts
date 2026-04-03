@@ -111,8 +111,7 @@ const stripMetaForest = (nodes: IndexedStructuralNode[]): StructuralNode[] => {
   }
 
   while (stack.length > 0) {
-    const frame = stack.pop();
-    if (!frame) break;
+    const frame = stack.pop()!;
 
     const { node, parent } = frame;
     const pos = node.position;
@@ -147,6 +146,7 @@ const stripMetaForest = (nodes: IndexedStructuralNode[]): StructuralNode[] => {
         const args: StructuralNode[] = [];
         const children: StructuralNode[] = [];
         parent.push({ type: "block", tag: node.tag, args, children, ...(pos && { position: pos }) });
+        // These frames write into different output arrays, so push order does not affect result shape.
         for (let i = node.children.length - 1; i >= 0; i--) {
           stack.push({ node: node.children[i], parent: children });
         }
