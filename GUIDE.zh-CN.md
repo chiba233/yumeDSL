@@ -31,9 +31,9 @@
 
 **实时编辑标签、开关 handler、边打字边看 token 树更新。**
 
-> **200 KB 实测（鲲鹏 920 / Node v24.14.0）：** `parseRichText` ~33 ms（1.1.0 的 ~4400 ms → 提升 ~133 倍），
-> 与 `parseStructural`（~29 ms）几乎持平。`parseSlice` 仍是击键级实时编辑的最佳选择——
-> `nodeAtOffset` + `parseSlice` **~0.17 ms**，改一个 36 字符的标签，20 万字的文档只解析那 36 个字符。
+> **200 KB 实测（鲲鹏 920 / Node v24.14.0）：** `parseRichText` **~33 ms**（1.1.0 → 1.1.1 提升 ~133 倍），
+> `parseStructural` ~29 ms。编辑器场景可配合
+> [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker) 的 `parseSlice`——只重解析被修改的区域。
 
 **适用场景：**
 游戏对话与视觉小说（打字机 / 抖动 / 变色——标签你自己发明），
