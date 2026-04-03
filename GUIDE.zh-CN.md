@@ -32,9 +32,10 @@
 **实时编辑标签、开关 handler、边打字边看 token 树更新。**
 
 > **200 KB 实测（鲲鹏 920 / Node v24.14.0）：** `parseRichText` **~33 ms**，
-> `parseStructural` ~29 ms。全迭代实现——任意嵌套深度均不会爆栈。编辑器场景可配合
+> `parseStructural` ~29 ms。全迭代 O(n)——任意嵌套深度均不会爆栈。
+> **1000 万层单链 inline 嵌套（95 MB）：`parseRichText` ~50 s。** 编辑器场景可配合
 > [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker) 的 `parseSlice`——只重解析被修改的区域。
-> 深层嵌套与其他压力测试的详细数据，见[性能页](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E6%80%A7%E8%83%BD#%E7%97%85%E7%90%86%E6%B7%B1%E5%B5%8C%E5%A5%97%E5%8E%8B%E5%8A%9B%E6%B5%8B%E8%AF%95)。
+> [完整性能数据](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E6%80%A7%E8%83%BD)
 
 **适用场景：**
 游戏对话与视觉小说（打字机 / 抖动 / 变色——标签你自己发明），

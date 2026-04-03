@@ -4,23 +4,23 @@
 
 ### 1.1.2
 
-- Fix: deep nesting stack overflow regression — `parseNodes` (structural phase), `renderNodes`
-  (render phase), `stripMeta`, `extractText`, and `materializeTextTokens` converted from direct
-  recursion to explicit stack-based iteration. Version 1.1.1 added ~2–3 extra call frames per
-  nesting level during the structural phase, lowering the stack overflow threshold from ~5000
-  layers (1.1.0) to ~1200–1800 layers; all five recursive paths are now fully iterative and
-  bounded only by heap memory
-- Internal: dead code removed — `buildInlineResult`, `scanInline`, `tryInlineFallback`, `scanRaw`,
-  `scanBlock` helper functions and associated `ScanResult` / `CloserInfo` types deleted; logic
-  inlined into `parseNodes` main loop during the iterative rewrite
-- Internal: shared `prepareComplexTag` helper extracted to deduplicate meta / position / argText /
-  contentText construction + flush + pointer advance between raw and block branches
-- Improve: `materializeTextTokens` now tracks already-processed subtrees via an internal
-  `WeakSet`, skipping redundant re-traversal in deeply nested handler chains. In 1.1.1 each
-  handler invocation recursed into the full subtree — O(n²) total at 5000 layers (~12.5 M
-  redundant visits); now O(n). `parseRichText(5000)` drops from ~17 s to ~8 s
-- Tests: new `[Edge/Depth]` case — 2000-layer inline nesting with `depthLimit: 3000` verifies both
-  `parseStructural` and `parseRichText` complete without stack overflow
+- Fix: deep nesting stack overflow — `parseNodes`, `renderNodes`, `stripMeta`, `extractText`,
+  and `materializeTextTokens` converted from recursion to explicit stack iteration. Nesting
+  depth now bounded only by heap memory (1.1.1 hit stack overflow at ~1200–1800 layers)
+- Improve: deep nesting O(n) — 5000-layer `parseRichText` drops from 1.1.1 ~17 s to
+  **~23 ms** (~740x). Three O(n²) bottlenecks eliminated:
+    - `materializeTextTokens` re-traversal: `WeakSet` marks processed subtrees, subsequent
+      calls skip them
+    - `findInlineClose` forward scan: inline child frames now use lazy close — scan on the
+      parent's text and complete when `)$$` is encountered, with `parenDepth` tracking for
+      correct `)`-based form detection (`)`+`$$` / `)`+`%` / `)`+`*`)
+    - `findTagArgClose` via `getTagCloserType`: nested tags inside inline child frames
+      skip `getTagCloserType`, avoiding the O(n) arg-close scan per nesting level
+- Internal: `parseNodes` rewritten with explicit `ReturnKind` dispatch (`completeChild`)
+  replacing all `resume` closures. Frame completion is a single switch, not scattered
+  callbacks
+- Tests: new `[Edge/Depth]` case — 2000-layer inline nesting with `depthLimit: 3000` verifies
+  both `parseStructural` and `parseRichText` complete without stack overflow
 
 ### 1.1.1
 

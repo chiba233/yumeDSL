@@ -1419,6 +1419,44 @@ const cases: Array<{ name: string; run: () => void }> = [
     },
   },
   {
+    name: "[Forms] unsupported raw 正文中的 )$$ 不应提前闭合 inline",
+    run: () => {
+      const input = "$$bold()%\nhello )$$ world\n%end$$";
+      const tokens = parseRichText(input, {
+        handlers: helperHandlers,
+      });
+      assert.deepEqual(normalizeTokens(tokens), [
+        { type: "text", value: input },
+      ]);
+      assert.deepEqual(
+        normalizeStructuralNodes(parseStructural(input, { handlers: helperHandlers })),
+        [{ type: "text", value: input }],
+      );
+    },
+  },
+  {
+    name: "[Forms] inline 容器内 raw-only 标签的 inline 语法应保留原文",
+    run: () => {
+      const input = "$$bold(a $$code(x)$$ b)$$";
+      const tokens = parseRichText(input, {
+        handlers: helperHandlers,
+      });
+      assert.deepEqual(normalizeTokens(tokens), [
+        { type: "bold", value: [{ type: "text", value: "a $$code(x)$$ b" }] },
+      ]);
+      assert.deepEqual(
+        normalizeStructuralNodes(parseStructural(input, { handlers: helperHandlers })),
+        [
+          {
+            type: "inline",
+            tag: "bold",
+            children: [{ type: "text", value: "a $$code(x)$$ b" }],
+          },
+        ],
+      );
+    },
+  },
+  {
     name: "[Forms/Matrix] 同标签同时支持 inline/raw/block -> complex form 仍应优先于 inline",
     run: () => {
       const handlers = {

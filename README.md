@@ -36,12 +36,12 @@ you.
 
 **Edit tags in real time, toggle handlers on/off, watch the token tree update as you type.**
 
-> **Daily benchmark, 200 KB document (Kunpeng 920 / Node v24.14.0):** `parseRichText` **~33 ms**,
-> `parseStructural` ~29 ms. Fully iterative — no stack overflow at any nesting depth.
-> Edit a 36-char tag in a 200 KB document? Pair with
+> **200 KB daily benchmark (Kunpeng 920 / Node v24.14.0):** `parseRichText` **~33 ms**,
+> `parseStructural` ~29 ms. Fully iterative, O(n) — no stack overflow at any depth.
+> **10 000 000-layer single-chain inline nesting (95 MB): `parseRichText` ~50 s.** Edit a 36-char tag in a 200 KB document? Pair with
 > [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker)'s `parseSlice` — only the touched
 > region gets re-parsed.
-> For pathological deep-nesting stress results, see the [wiki performance notes](https://github.com/chiba233/yumeDSL/wiki/en-Performance#pathological-deep-nesting-stress).
+> [Full benchmark data](https://github.com/chiba233/yumeDSL/wiki/en-Performance)
 
 **Use cases:**
 game dialogue & visual novels (typewriter / shake / color tags you invent),

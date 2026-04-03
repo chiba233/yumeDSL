@@ -4,19 +4,19 @@
 
 ### 1.1.2
 
-- 修复：深层嵌套爆栈回归——`parseNodes`（结构解析阶段）、`renderNodes`（渲染阶段）、`stripMeta`、
-  `extractText`、`materializeTextTokens` 从直接递归改为显式栈迭代。1.1.1 版本在结构解析阶段
-  每层嵌套多出约 2–3 个调用帧，爆栈阈值从 1.1.0 的 ~5000 层降至 ~1200–1800 层；
-  现在五条递归路径全部改为迭代，仅受堆内存限制
-- 内部：移除死代码——`buildInlineResult`、`scanInline`、`tryInlineFallback`、`scanRaw`、
-  `scanBlock` 辅助函数及关联的 `ScanResult` / `CloserInfo` 类型已删除；
-  逻辑在迭代化重写中内联到 `parseNodes` 主循环
-- 内部：提取公共 `prepareComplexTag` 辅助函数，消除 raw 和 block 分支之间
-  meta / position / argText / contentText 构建 + flush + 指针推进的重复代码
-- 优化：`materializeTextTokens` 通过内部 `WeakSet` 标记已处理的子树，跳过深层嵌套
-  handler 链中的冗余重复遍历。1.1.1 中每层 handler 调用都会递归遍历整棵子树——
-  5000 层时总计 O(n²) 约 1250 万次冗余访问；现在 O(n)。
-  `parseRichText(5000)` 从 ~17 s 降至 ~8 s
+- 修复：深层嵌套爆栈——`parseNodes`、`renderNodes`、`stripMeta`、`extractText`、
+  `materializeTextTokens` 从递归改为显式栈迭代，嵌套深度仅受堆内存限制
+  （1.1.1 在 ~1200–1800 层即爆栈）
+- 优化：深嵌套 O(n)——5000 层 `parseRichText` 从 1.1.1 ~17 s 降至 **~23 ms**（~740 倍）。
+  消除三个独立的 O(n²) 瓶颈：
+    - `materializeTextTokens` 重复遍历：`WeakSet` 标记已处理子树，后续调用直接跳过
+    - `findInlineClose` 前扫：inline 子帧改为 lazy close——在父帧 text 上继续扫描，
+      通过 `parenDepth` 追踪裸括号深度，在匹配 `)` 处判定真实 form
+      （`)$$` / `)%` / `)*`），不再预扫
+    - `findTagArgClose`：inline 子帧内的嵌套标签直接 push 子帧，跳过 `getTagCloserType`，
+      避免每层 O(n) 的 arg-close 扫描
+- 内部：`parseNodes` 用显式 `ReturnKind` 分发（`completeChild`）替代所有 `resume` 闭包，
+  帧完成逻辑集中在一个 switch 里
 - 测试：新增 `[Edge/Depth]` 用例——2000 层 inline 嵌套 + `depthLimit: 3000`，
   验证 `parseStructural` 和 `parseRichText` 均可正常完成，不会爆栈
 
