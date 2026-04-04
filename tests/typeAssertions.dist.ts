@@ -1,15 +1,20 @@
 import type {
   DslContext,
+  NarrowDraft,
+  NarrowToken,
+  NarrowTokenUnion,
   ParseOptions,
   PipeHandlerDefinition,
   StructuralNode,
   SyntaxConfig,
+  TagHandler,
   TextToken,
   Zone,
 } from "yume-dsl-rich-text";
 import {
   buildPositionTracker,
   buildZones,
+  createTokenGuard,
   createEasySyntax,
   createParser,
   createPipeHandlers,
@@ -24,6 +29,13 @@ import {
   readEscapedSequence,
   unescapeInline,
 } from "yume-dsl-rich-text";
+
+const distTokenMap = {
+  link: { url: "" },
+  bold: {},
+} satisfies Record<string, Record<string, unknown>>;
+
+type DistTokenMap = typeof distTokenMap;
 
 const syntax: SyntaxConfig = createEasySyntax({
   tagPrefix: "@@",
@@ -69,6 +81,20 @@ const handlers = createPipeHandlers({
   },
 });
 
+type DistLinkDraft = NarrowDraft<"link", { url: string }>;
+
+const typedHandler: TagHandler = {
+  inline: (tokens, innerCtx): DistLinkDraft => {
+    const args = parsePipeArgs(tokens, innerCtx);
+    return {
+      type: "link",
+      url: args.text(0),
+      value: args.materializedTailTokens(1, [createTextToken("fallback", innerCtx)]),
+    };
+  },
+};
+void typedHandler;
+
 const legacyHandlers: ParseOptions["handlers"] = {
   link: {
     inline: (tokens) => {
@@ -101,6 +127,29 @@ void options;
 
 const richTokens: TextToken[] = parseRichText("@@link<<https://a.com || hi>>@@", options);
 void richTokens;
+
+const isDistToken = createTokenGuard<DistTokenMap>();
+const firstToken: TextToken | undefined = richTokens[0];
+
+if (firstToken && isDistToken(firstToken, "link")) {
+  const url: string = firstToken.url;
+  void url;
+}
+
+type DistToken = NarrowTokenUnion<DistTokenMap>;
+
+const renderDistToken = (token: DistToken): string => {
+  switch (token.type) {
+    case "link":
+      return token.url;
+    case "bold":
+      return Array.isArray(token.value) ? "bold" : token.value;
+  }
+};
+
+const acceptLinkToken = (token: NarrowToken<"link", { url: string }>): string => token.url;
+void renderDistToken;
+void acceptLinkToken;
 
 const structuralNodes: StructuralNode[] = parseStructural("@@link<<a || b>>@@", {
   syntax,
