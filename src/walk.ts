@@ -21,10 +21,7 @@ export type MapVisitor = (
  * - Pass a function to visit every token.
  * - Pass a `Record<type, fn>` to visit only tokens whose `type` matches a key.
  */
-export const walkTokens = (
-  tokens: TextToken[],
-  visitor: WalkVisitor,
-): void => {
+export const walkTokens = (tokens: TextToken[], visitor: WalkVisitor): void => {
   const visit =
     typeof visitor === "function"
       ? visitor
@@ -33,11 +30,7 @@ export const walkTokens = (
           if (fn) fn(token, ctx);
         };
 
-  const walk = (
-    list: TextToken[],
-    parent: TextToken | null,
-    depth: number,
-  ): void => {
+  const walk = (list: TextToken[], parent: TextToken | null, depth: number): void => {
     for (let i = 0; i < list.length; i++) {
       const token = list[i];
       visit(token, { parent, depth, index: i });
@@ -65,15 +58,8 @@ export const walkTokens = (
  * the mapped parent cannot exist until all children have been visited.
  * Use `ctx.parent` for type/attribute checks, not for inspecting mapped children.
  */
-export const mapTokens = (
-  tokens: TextToken[],
-  visitor: MapVisitor,
-): TextToken[] => {
-  const map = (
-    list: TextToken[],
-    parent: TextToken | null,
-    depth: number,
-  ): TextToken[] => {
+export const mapTokens = (tokens: TextToken[], visitor: MapVisitor): TextToken[] => {
+  const map = (list: TextToken[], parent: TextToken | null, depth: number): TextToken[] => {
     const result: TextToken[] = [];
     for (let i = 0; i < list.length; i++) {
       const token = list[i];

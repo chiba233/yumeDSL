@@ -43,7 +43,11 @@ export const readEscapedSequence = (
  * 注意：它比 `readEscapedSequence(...)` 多了一层兜底消费逻辑，
  * 所以调用方拿到的一定是“能追加到输出里的内容”。
  */
-export const readEscaped = (text: string, i: number, ctx?: DslContext | SyntaxConfig): [string, number] => {
+export const readEscaped = (
+  text: string,
+  i: number,
+  ctx?: DslContext | SyntaxConfig,
+): [string, number] => {
   const syntax = resolveSyntax(ctx);
   const [escaped, next] = readEscapedSequence(text, i, syntax);
   if (escaped !== null) {

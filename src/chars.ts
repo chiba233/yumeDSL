@@ -43,9 +43,13 @@ export const withTagNameConfig = <T>(
   fn: () => T,
   options?: { suppressDeprecation?: boolean },
 ): T => {
-  warnDeprecated("withTagNameConfig", "withTagNameConfig() is deprecated. Pass tagName via ParseOptions instead.", {
-    suppress: options?.suppressDeprecation,
-  });
+  warnDeprecated(
+    "withTagNameConfig",
+    "withTagNameConfig() is deprecated. Pass tagName via ParseOptions instead.",
+    {
+      suppress: options?.suppressDeprecation,
+    },
+  );
   const prev = activeTagName;
   activeTagName = config;
   try {

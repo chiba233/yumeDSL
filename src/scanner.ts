@@ -2,11 +2,7 @@ import type { SyntaxConfig, TagHead, TagNameConfig, TagStartInfo } from "./types
 import { getLineEnd, isWholeLineToken } from "./chars.js";
 import { readEscapedSequence } from "./escape.js";
 
-export const findTagArgClose = (
-  text: string,
-  start: number,
-  syntax: SyntaxConfig,
-): number => {
+export const findTagArgClose = (text: string, start: number, syntax: SyntaxConfig): number => {
   const { tagOpen, tagClose } = syntax;
   let pos = start;
   let depth = 1;
@@ -152,7 +148,13 @@ export const findInlineClose = (
   syntax: SyntaxConfig,
   tagName: TagNameConfig,
 ): number => {
-  return scanInlineBoundary(text, start, { returnCloseStart: true, fallbackToTextEnd: false }, syntax, tagName);
+  return scanInlineBoundary(
+    text,
+    start,
+    { returnCloseStart: true, fallbackToTextEnd: false },
+    syntax,
+    tagName,
+  );
 };
 
 export const findBlockClose = (
@@ -271,7 +273,13 @@ export const skipDegradedInline = (
   syntax: SyntaxConfig,
   tagName: TagNameConfig,
 ): number => {
-  return scanInlineBoundary(text, start, { returnCloseStart: false, fallbackToTextEnd: true }, syntax, tagName);
+  return scanInlineBoundary(
+    text,
+    start,
+    { returnCloseStart: false, fallbackToTextEnd: true },
+    syntax,
+    tagName,
+  );
 };
 
 /**

@@ -68,36 +68,20 @@ export type {
 } from "./types.js";
 
 // ── Types: configuration ──
-export type {
-  SyntaxInput,
-  SyntaxConfig,
-  TagNameConfig,
-} from "./types.js";
+export type { SyntaxInput, SyntaxConfig, TagNameConfig } from "./types.js";
 
 // ── Types: block tags ──
-export type {
-  BlockTagInput,
-  BlockTagLookup,
-  MultilineForm,
-} from "./types.js";
+export type { BlockTagInput, BlockTagLookup, MultilineForm } from "./types.js";
 
 // ── Types: errors & utilities ──
-export type {
-  ErrorCode,
-  ParseError,
-  CreateId,
-} from "./types.js";
+export type { ErrorCode, ParseError, CreateId } from "./types.js";
 
 // ── Position tracking ──
 export { buildPositionTracker } from "./positions.js";
 export { createEasyStableId } from "./stableId.js";
 
 // ── Types: source positions ──
-export type {
-  PositionTracker,
-  SourcePosition,
-  SourceSpan,
-} from "./types.js";
+export type { PositionTracker, SourcePosition, SourceSpan } from "./types.js";
 
 // ── Zone grouping ──
 export { buildZones } from "./zones.js";

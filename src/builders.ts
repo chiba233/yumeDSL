@@ -40,10 +40,7 @@ export const extractText = (tokens?: TextToken[]): string => {
 // 从 O(n²) 降到 O(n)。WeakSet 随 GC 自动清理，不会泄漏。
 const materializedArrays = new WeakSet<TextToken[]>();
 
-export const materializeTextTokens = (
-  tokens: TextToken[],
-  ctx?: DslContext,
-): TextToken[] => {
+export const materializeTextTokens = (tokens: TextToken[], ctx?: DslContext): TextToken[] => {
   const syntax = resolveSyntax(ctx);
   interface MaterializeFrame {
     source: TextToken[];
@@ -52,12 +49,14 @@ export const materializeTextTokens = (
     resume: ((children: TextToken[]) => void) | null;
   }
 
-  const stack: MaterializeFrame[] = [{
-    source: tokens,
-    index: 0,
-    output: [],
-    resume: null,
-  }];
+  const stack: MaterializeFrame[] = [
+    {
+      source: tokens,
+      index: 0,
+      output: [],
+      resume: null,
+    },
+  ];
 
   while (stack.length > 0) {
     const frame = stack[stack.length - 1];
@@ -76,9 +75,7 @@ export const materializeTextTokens = (
     const token = frame.source[frame.index++];
     if (typeof token.value === "string") {
       frame.output.push(
-        token.type === "text"
-          ? { ...token, value: unescapeInline(token.value, syntax) }
-          : token,
+        token.type === "text" ? { ...token, value: unescapeInline(token.value, syntax) } : token,
       );
       continue;
     }
@@ -119,10 +116,7 @@ export interface PipeArgs {
  * - 这里识别到被转义的 divider 时，会把它按“普通文本”留在当前段里，不会切段
  * - 这里不会做最终 unescape；那是 `parsePipeArgs().text()` / `materializedTokens()` 的职责
  */
-export const splitTokensByPipe = (
-  tokens: TextToken[],
-  ctx?: DslContext,
-): TextToken[][] => {
+export const splitTokensByPipe = (tokens: TextToken[], ctx?: DslContext): TextToken[][] => {
   const s = resolveSyntax(ctx);
   const { escapeChar, tagDivider } = s;
   const parts: TextToken[][] = [[]];
@@ -182,10 +176,7 @@ export const splitTokensByPipe = (
  * 注意：`splitTokensByPipe(...)` 和 `text(...)` 不是同一层语义。
  * 前者负责“按 divider 切段”，后者才负责“把段变成最终字符串”。
  */
-export const parsePipeArgs = (
-  tokens: TextToken[],
-  ctx?: DslContext,
-): PipeArgs => {
+export const parsePipeArgs = (tokens: TextToken[], ctx?: DslContext): PipeArgs => {
   const s = resolveSyntax(ctx);
   const parts = splitTokensByPipe(tokens, ctx);
   const has = (index: number): boolean => index >= 0 && index < parts.length;
@@ -205,10 +196,8 @@ export const parsePipeArgs = (
 };
 
 /** 纯文本快捷入口：先包成一个 text token，再复用 `parsePipeArgs(...)`。 */
-export const parsePipeTextArgs = (
-  text: string,
-  ctx?: DslContext,
-): PipeArgs => parsePipeArgs([createTextToken(text, ctx)], ctx);
+export const parsePipeTextArgs = (text: string, ctx?: DslContext): PipeArgs =>
+  parsePipeArgs([createTextToken(text, ctx)], ctx);
 
 /**
  * Split a plain-text pipe-delimited arg string into trimmed string segments.
@@ -218,10 +207,7 @@ export const parsePipeTextArgs = (
  * @example
  * parsePipeTextList("ts | Demo | Label")  // → ["ts", "Demo", "Label"]
  */
-export const parsePipeTextList = (
-  text: string,
-  ctx?: DslContext,
-): string[] => {
+export const parsePipeTextList = (text: string, ctx?: DslContext): string[] => {
   const parsed = parsePipeTextArgs(text, ctx);
   return parsed.parts.map((_, i) => parsed.text(i));
 };
@@ -259,11 +245,7 @@ export const parsePipeTextList = (
  * }
  * ```
  */
-export const createTokenGuard = <
-  TMap extends Record<string, Record<string, unknown>>,
->() =>
-  <K extends keyof TMap & string>(
-    token: TextToken,
-    type: K,
-  ): token is NarrowToken<K, TMap[K]> =>
+export const createTokenGuard =
+  <TMap extends Record<string, Record<string, unknown>>>() =>
+  <K extends keyof TMap & string>(token: TextToken, type: K): token is NarrowToken<K, TMap[K]> =>
     token.type === type;

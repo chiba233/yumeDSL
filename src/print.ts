@@ -10,25 +10,47 @@ const printNodes = (nodes: StructuralNode[], s: SyntaxInput): string => {
   let out = "";
 
   for (const node of nodes) {
-    switch (node.type) {
-      case "text":
-        out += node.value;
-        break;
-      case "escape":
-        out += node.raw;
-        break;
-      case "separator":
-        out += s.tagDivider;
-        break;
-      case "inline":
-        out += s.tagPrefix + node.tag + s.tagOpen + printNodes(node.children, s) + s.endTag;
-        break;
-      case "raw":
-        out += s.tagPrefix + node.tag + s.tagOpen + printNodes(node.args, s) + s.rawOpen + node.content + s.rawClose;
-        break;
-      case "block":
-        out += s.tagPrefix + node.tag + s.tagOpen + printNodes(node.args, s) + s.blockOpen + printNodes(node.children, s) + s.blockClose;
-        break;
+    if (node.type === "text") {
+      out += node.value;
+      continue;
+    }
+
+    if (node.type === "escape") {
+      out += node.raw;
+      continue;
+    }
+
+    if (node.type === "separator") {
+      out += s.tagDivider;
+      continue;
+    }
+
+    if (node.type === "inline") {
+      out += s.tagPrefix + node.tag + s.tagOpen + printNodes(node.children, s) + s.endTag;
+      continue;
+    }
+
+    if (node.type === "raw") {
+      out +=
+        s.tagPrefix +
+        node.tag +
+        s.tagOpen +
+        printNodes(node.args, s) +
+        s.rawOpen +
+        node.content +
+        s.rawClose;
+      continue;
+    }
+
+    if (node.type === "block") {
+      out +=
+        s.tagPrefix +
+        node.tag +
+        s.tagOpen +
+        printNodes(node.args, s) +
+        s.blockOpen +
+        printNodes(node.children, s) +
+        s.blockClose;
     }
   }
 
@@ -47,10 +69,7 @@ const printNodes = (nodes: StructuralNode[], s: SyntaxInput): string => {
  * and the same syntax configuration is used, this can be used for round-trip
  * serialization of well-formed inputs.
  */
-export const printStructural = (
-  nodes: StructuralNode[],
-  options?: PrintOptions,
-): string => {
+export const printStructural = (nodes: StructuralNode[], options?: PrintOptions): string => {
   const syntax = createSyntax(options?.syntax);
   return printNodes(nodes, syntax);
 };

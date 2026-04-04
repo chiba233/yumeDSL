@@ -7,7 +7,7 @@ let activeCreateId: CreateId | null = null;
 /** @internal Resolve createId from DslContext, bare CreateId, or module default. */
 const resolveCreateId = (ctx?: DslContext | CreateId): CreateId | null => {
   if (!ctx) return activeCreateId;
-  return typeof ctx === "function" ? ctx : ctx.createId ?? activeCreateId;
+  return typeof ctx === "function" ? ctx : (ctx.createId ?? activeCreateId);
 };
 
 export const createToken = (
@@ -23,7 +23,10 @@ export const createToken = (
 };
 
 export const resetTokenIdSeed = () => {
-  warnDeprecated("resetTokenIdSeed", "resetTokenIdSeed() is deprecated. Use DslContext.createId instead.");
+  warnDeprecated(
+    "resetTokenIdSeed",
+    "resetTokenIdSeed() is deprecated. Use DslContext.createId instead.",
+  );
   tokenIdSeed = 0;
 };
 

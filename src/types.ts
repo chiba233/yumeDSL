@@ -277,7 +277,13 @@ export type StructuralNode =
   | { type: "separator"; position?: SourceSpan }
   | { type: "inline"; tag: string; children: StructuralNode[]; position?: SourceSpan }
   | { type: "raw"; tag: string; args: StructuralNode[]; content: string; position?: SourceSpan }
-  | { type: "block"; tag: string; args: StructuralNode[]; children: StructuralNode[]; position?: SourceSpan };
+  | {
+      type: "block";
+      tag: string;
+      args: StructuralNode[];
+      children: StructuralNode[];
+      position?: SourceSpan;
+    };
 
 /**
  * Options for {@link parseStructural}.
@@ -322,7 +328,6 @@ export interface Zone {
 
 // ── Internal types (not re-exported from index) ──
 
-export type ParseMode = "render";
 
 export interface BufferState {
   content: string;
@@ -330,32 +335,6 @@ export interface BufferState {
   sourceEnd: number;
 }
 
-export interface ParseContext {
-  text: string;
-  depthLimit: number;
-  mode: ParseMode;
-  allowInline: boolean;
-  registeredTags: ReadonlySet<string>;
-  onError: ((error: ParseError) => void) | undefined;
-  handlers: Record<string, TagHandler>;
-  blockTagSet: BlockTagLookup;
-  tracker: PositionTracker | null;
-  syntax: SyntaxConfig;
-  tagName: TagNameConfig;
-  createId: CreateId;
-  root: TextToken[];
-  stack: ParseStackNode[];
-  buf: BufferState;
-  i: number;
-}
-
-export interface ParseStackNode {
-  tag: string;
-  richType: string | null;
-  tokens: TextToken[];
-  openPos: number;
-  openLen: number;
-}
 
 export interface TagStartInfo {
   tag: string;
@@ -364,17 +343,6 @@ export interface TagStartInfo {
   argStart: number;
 }
 
-export interface ComplexTagParseResult {
-  handled: boolean;
-  nextIndex: number;
-  token?: TextToken;
-  fallbackText?: string;
-  error?: {
-    code: ErrorCode;
-    index: number;
-    length?: number;
-  };
-}
 
 export interface TagHead {
   tag: string;

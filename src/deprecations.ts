@@ -14,11 +14,7 @@ const shouldWarn = (): boolean => {
 };
 
 /** Emit a deprecation warning once per key. Suppressed when `NODE_ENV=production`. */
-export const warnDeprecated = (
-  key: string,
-  message: string,
-  options?: DeprecationOptions,
-) => {
+export const warnDeprecated = (key: string, message: string, options?: DeprecationOptions) => {
   if (options?.suppress) return;
   if (warned.has(key)) return;
   warned.add(key);

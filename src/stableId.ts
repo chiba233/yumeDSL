@@ -124,7 +124,7 @@ export const createEasyStableId = (options?: EasyStableIdOptions): CreateId => {
   const seen = new Map<string, number>();
 
   return (token: TokenDraft): string => {
-    const h = fingerprint ? fnv1a(fingerprint(token)) : (hashDraftInto(FNV_OFFSET, token) >>> 0);
+    const h = fingerprint ? fnv1a(fingerprint(token)) : hashDraftInto(FNV_OFFSET, token) >>> 0;
     const key = `${prefix}-${h.toString(36)}`;
 
     const count = seen.get(key) ?? 0;

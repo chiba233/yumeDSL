@@ -8,11 +8,7 @@ import type {
 } from "./types.js";
 import { createSyntax } from "./syntax.js";
 import { createTagNameConfig } from "./chars.js";
-import {
-  buildPositionTracker,
-  localOffsetTracker,
-  offsetTracker,
-} from "./positions.js";
+import { buildPositionTracker, localOffsetTracker, offsetTracker } from "./positions.js";
 
 // ── Gating ──
 
@@ -86,9 +82,7 @@ export const buildGatingContext = (
   allowForms: readonly TagForm[] | undefined,
 ): GatingContext => {
   const registeredTags = new Set(Object.keys(handlers));
-  const filtered = allowForms
-    ? filterHandlersByForms(handlers, new Set(allowForms))
-    : handlers;
+  const filtered = allowForms ? filterHandlersByForms(handlers, new Set(allowForms)) : handlers;
   const allowInline = !allowForms || allowForms.includes("inline");
   return { handlers: filtered, registeredTags, allowInline };
 };

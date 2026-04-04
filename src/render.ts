@@ -18,7 +18,10 @@ import { supportsInlineForm } from "./resolveOptions.js";
 import { createToken } from "./createToken.js";
 import { makePosition } from "./positions.js";
 import { readEscaped } from "./escape.js";
-import { normalizeBlockTagContent, consumeBlockTagTrailingLineBreak } from "./blockTagFormatting.js";
+import {
+  consumeBlockTagTrailingLineBreak,
+  normalizeBlockTagContent,
+} from "./blockTagFormatting.js";
 import type { IndexedStructuralNode, TagMeta } from "./structural.js";
 
 type EscapeMode = "root" | "nested";
@@ -51,7 +54,9 @@ const mergeTextToken = (
     }
     return;
   }
-  tokens.push(position ? { ...createTextToken(value, dslCtx), position } : createTextToken(value, dslCtx));
+  tokens.push(
+    position ? { ...createTextToken(value, dslCtx), position } : createTextToken(value, dslCtx),
+  );
 };
 
 const appendToken = (tokens: TextToken[], token: TextToken, dslCtx: DslContext) => {
@@ -112,10 +117,12 @@ const trimBlockBoundaryTokens = (
   if (first?.type === "text" && typeof first.value === "string") {
     const [nextValue, removed] = trimLeadingLineBreak(first.value);
     if (removed > 0) {
-      if (!nextValue) { trimmed.shift(); }
-      else {
+      if (!nextValue) {
+        trimmed.shift();
+      } else {
         first.value = nextValue;
-        if (first.position && tracker) first.position = shiftPosition(first.position, tracker, "start", removed);
+        if (first.position && tracker)
+          first.position = shiftPosition(first.position, tracker, "start", removed);
       }
     }
   }
@@ -124,10 +131,12 @@ const trimBlockBoundaryTokens = (
   if (last?.type === "text" && typeof last.value === "string") {
     const [nextValue, removed] = trimTrailingLineBreak(last.value);
     if (removed > 0) {
-      if (!nextValue) { trimmed.pop(); }
-      else {
+      if (!nextValue) {
+        trimmed.pop();
+      } else {
         last.value = nextValue;
-        if (last.position && tracker) last.position = shiftPosition(last.position, tracker, "end", removed);
+        if (last.position && tracker)
+          last.position = shiftPosition(last.position, tracker, "end", removed);
       }
     }
   }
@@ -238,10 +247,16 @@ const renderRawNode = (
   const rawContent = ctx.source.slice(contentStart, contentEnd);
   // 注意：raw 正文里的转义闭合符（如 \%end$$）要还原成字面量，
   // 这里用 split/join 而不是 replace 是因为 escapeChar 可能是多字符。
-  const unescaped = rawContent.split(ctx.syntax.escapeChar + ctx.syntax.rawClose).join(ctx.syntax.rawClose);
+  const unescaped = rawContent
+    .split(ctx.syntax.escapeChar + ctx.syntax.rawClose)
+    .join(ctx.syntax.rawClose);
   const { content } = normalizeBlockTagContent(node.tag, unescaped, ctx.blockTagSet, "raw");
   const draft = handler.raw(arg, content, dslCtx);
-  appendToken(tokens, createToken(draft, complexTagPosition(ctx, node.tag, node._meta, "raw"), dslCtx), dslCtx);
+  appendToken(
+    tokens,
+    createToken(draft, complexTagPosition(ctx, node.tag, node._meta, "raw"), dslCtx),
+    dslCtx,
+  );
   return ctx.blockTagSet.has(node.tag, "raw");
 };
 
@@ -264,7 +279,11 @@ const renderBlockNode = (
     ? trimBlockBoundaryTokens(childTokens, ctx.tracker)
     : childTokens;
   const draft = handler.block(arg, normalizedChildren, dslCtx);
-  appendToken(tokens, createToken(draft, complexTagPosition(ctx, node.tag, node._meta, "block"), dslCtx), dslCtx);
+  appendToken(
+    tokens,
+    createToken(draft, complexTagPosition(ctx, node.tag, node._meta, "block"), dslCtx),
+    dslCtx,
+  );
   return ctx.blockTagSet.has(node.tag, "block");
 };
 
@@ -297,14 +316,16 @@ export const renderNodes = (
     resume: ((childTokens: TextToken[]) => void) | null;
   }
 
-  const stack: RenderFrame[] = [{
-    nodes,
-    index: 0,
-    escapeMode,
-    tokens: [],
-    consumeNextLB: false,
-    resume: null,
-  }];
+  const stack: RenderFrame[] = [
+    {
+      nodes,
+      index: 0,
+      escapeMode,
+      tokens: [],
+      consumeNextLB: false,
+      resume: null,
+    },
+  ];
 
   while (stack.length > 0) {
     const frame = stack[stack.length - 1];

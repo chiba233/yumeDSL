@@ -166,9 +166,13 @@ export const withSyntax = <T>(
   fn: () => T,
   options?: { suppressDeprecation?: boolean },
 ): T => {
-  warnDeprecated("withSyntax", "withSyntax() is deprecated. Pass syntax via ParseOptions or DslContext instead.", {
-    suppress: options?.suppressDeprecation,
-  });
+  warnDeprecated(
+    "withSyntax",
+    "withSyntax() is deprecated. Pass syntax via ParseOptions or DslContext instead.",
+    {
+      suppress: options?.suppressDeprecation,
+    },
+  );
   const prev = activeSyntax;
   activeSyntax = syntax;
   try {

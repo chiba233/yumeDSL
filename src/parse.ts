@@ -14,12 +14,12 @@ import { withCreateId } from "./createToken.js";
 import { printStructural } from "./print.js";
 import { parseStructural, parseStructuralWithResolved } from "./structural.js";
 import { withSyntax } from "./syntax.js";
-import { renderNodes, type RenderContext } from "./render.js";
+import { type RenderContext, renderNodes } from "./render.js";
 import {
-  buildGatingContext,
-  resolveBaseOptions,
   type BaseResolvedConfig,
+  buildGatingContext,
   type GatingContext,
+  resolveBaseOptions,
 } from "./resolveOptions.js";
 
 // Re-export for backward compatibility and for structural.ts which imports from here.
@@ -51,7 +51,9 @@ const buildBlockTagLookup = (inputs: readonly BlockTagInput[]): BlockTagLookup =
   };
 };
 
-const deriveBlockTags = (handlers: Record<string, import("./types.js").TagHandler>): BlockTagLookup => {
+const deriveBlockTags = (
+  handlers: Record<string, import("./types.js").TagHandler>,
+): BlockTagLookup => {
   const rawSet = new Set<string>();
   const blockSet = new Set<string>();
   for (const [tag, handler] of Object.entries(handlers)) {
@@ -106,11 +108,11 @@ const withLegacyAmbientState = <T>(
   // 用户旧 handler 里那些不传 ctx 的 utility 还活着，全靠这里临时灌 ambient state。
   // 如果把这层拿掉，或者漏包一个维度，legacy handler 会静悄悄产出错误的 syntax / tagName / id。
   const suppress = { suppressDeprecation: true };
-  return withSyntax(syntax, () =>
-    withTagNameConfig(tagName, () =>
-      withCreateId(createId, fn, suppress),
-    suppress),
-  suppress);
+  return withSyntax(
+    syntax,
+    () => withTagNameConfig(tagName, () => withCreateId(createId, fn, suppress), suppress),
+    suppress,
+  );
 };
 
 // ── Public API ──
@@ -130,10 +132,7 @@ interface ParsePipelineBase {
   resolved: BaseResolvedConfig;
 }
 
-const resolveParsePipelineBase = (
-  text: string,
-  options: ParseOptions,
-): ParsePipelineBase => {
+const resolveParsePipelineBase = (text: string, options: ParseOptions): ParsePipelineBase => {
   const gating = buildGatingContext(options.handlers ?? {}, options.allowForms);
   return {
     gating,
@@ -207,16 +206,14 @@ export const createParser = (defaults: ParseOptions): Parser => {
   };
 
   return {
-    parse: (text, overrides) =>
-      parseRichText(text, overrides ? merge(overrides) : defaults),
-    strip: (text, overrides) =>
-      stripRichText(text, overrides ? merge(overrides) : defaults),
-    structural: (text, overrides) =>
-      parseStructural(text, overrides ? merge(overrides) : defaults),
+    parse: (text, overrides) => parseRichText(text, overrides ? merge(overrides) : defaults),
+    strip: (text, overrides) => stripRichText(text, overrides ? merge(overrides) : defaults),
+    structural: (text, overrides) => parseStructural(text, overrides ? merge(overrides) : defaults),
     print: (nodes, overrides) => {
-      const syntax = overrides?.syntax && defaults.syntax
-        ? { ...defaults.syntax, ...overrides.syntax }
-        : overrides?.syntax ?? defaults.syntax;
+      const syntax =
+        overrides?.syntax && defaults.syntax
+          ? { ...defaults.syntax, ...overrides.syntax }
+          : (overrides?.syntax ?? defaults.syntax);
       return printStructural(nodes, { syntax });
     },
   };

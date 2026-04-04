@@ -167,9 +167,7 @@ export interface PipeHandlerDefinition {
  *   },
  * });
  */
-export const createPipeHandlers = <
-  const T extends Record<string, PipeHandlerDefinition>,
->(
+export const createPipeHandlers = <const T extends Record<string, PipeHandlerDefinition>>(
   definitions: T,
 ): { [K in keyof T]: TagHandler } => {
   const result = {} as { [K in keyof T]: TagHandler };
@@ -203,7 +201,12 @@ export const createPipeHandlers = <
   return result;
 };
 
-type PipeFormHandler = (args: PipeArgs, content: TextToken[] | string, ctx: DslContext, rawArg: string) => TokenDraft;
+type PipeFormHandler = (
+  args: PipeArgs,
+  content: TextToken[] | string,
+  ctx: DslContext,
+  rawArg: string,
+) => TokenDraft;
 
 const createPipeFormHandlers = <const T extends readonly string[]>(
   tagNames: T,
