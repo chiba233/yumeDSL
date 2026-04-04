@@ -535,6 +535,17 @@ const cases: Array<{ name: string; run: () => void }> = [
     },
   },
   {
+    name: "[Inline/Error] 已入栈后跑到 EOF 的 inline 标签 -> 仍应上报 INLINE_NOT_CLOSED 错误",
+    run: () => {
+      const { errors } = parseWithErrors("$$link(https://example.com | before $$bold(ok)$$ tail");
+      assert.equal(errors.length, 1);
+      assert.equal(errors[0].code, "INLINE_NOT_CLOSED");
+      assert.equal(errors[0].line, 1);
+      assert.equal(errors[0].column, 1);
+      assert.match(errors[0].message, /Inline tag not closed/);
+    },
+  },
+  {
     name: "[Inline/Error] 孤立闭合符 -> 应当上报 UNEXPECTED_CLOSE 错误",
     run: () => {
       const { errors } = parseWithErrors("hello )$$ world");

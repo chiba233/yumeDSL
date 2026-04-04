@@ -152,17 +152,14 @@ const stripMetaForest = (nodes: IndexedStructuralNode[]): StructuralNode[] => {
 
     if (node.type === "text") {
       parent.push({ type: "text", value: node.value, ...(pos && { position: pos }) });
-      continue;
     }
 
     if (node.type === "escape") {
       parent.push({ type: "escape", raw: node.raw, ...(pos && { position: pos }) });
-      continue;
     }
 
     if (node.type === "separator") {
       parent.push({ type: "separator", ...(pos && { position: pos }) });
-      continue;
     }
 
     if (node.type === "inline") {
@@ -171,7 +168,6 @@ const stripMetaForest = (nodes: IndexedStructuralNode[]): StructuralNode[] => {
       for (let i = node.children.length - 1; i >= 0; i--) {
         stack.push({ node: node.children[i], parent: children });
       }
-      continue;
     }
 
     if (node.type === "raw") {
@@ -186,7 +182,6 @@ const stripMetaForest = (nodes: IndexedStructuralNode[]): StructuralNode[] => {
       for (let i = node.args.length - 1; i >= 0; i--) {
         stack.push({ node: node.args[i], parent: args });
       }
-      continue;
     }
 
     if (node.type === "block") {
@@ -201,6 +196,7 @@ const stripMetaForest = (nodes: IndexedStructuralNode[]): StructuralNode[] => {
         stack.push({ node: node.args[i], parent: args });
       }
     }
+
   }
 
   return result;

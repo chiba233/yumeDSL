@@ -17,6 +17,17 @@ const cases: GoldenCase[] = [
     },
   },
   {
+    name: "[Order/onError] inline 子帧跑到 EOF 时仍应先报 INLINE_NOT_CLOSED",
+    run() {
+      const codes: string[] = [];
+      parseRichText("$$link(before (x)$$ tail", {
+        onError: (error) => codes.push(error.code),
+      });
+
+      assert.deepEqual(codes, ["INLINE_NOT_CLOSED", "UNEXPECTED_CLOSE"]);
+    },
+  },
+  {
     name: "[Order/onError] parseRichText raw 未闭合 -> 应保持 1.1.3 的错误基线",
     run() {
       const codes: string[] = [];
@@ -28,6 +39,17 @@ const cases: GoldenCase[] = [
     },
   },
   {
+    name: "[Order/onError] inline 子帧转 raw 后未闭合 -> 仍应上报 RAW_NOT_CLOSED",
+    run() {
+      const codes: string[] = [];
+      parseRichText("$$bold(before $$code(js)%\nconst x = 1", {
+        onError: (error) => codes.push(error.code),
+      });
+
+      assert.deepEqual(codes, ["INLINE_NOT_CLOSED", "RAW_NOT_CLOSED"]);
+    },
+  },
+  {
     name: "[Order/onError] parseRichText block 未闭合 -> 应保持 1.1.3 的错误基线",
     run() {
       const codes: string[] = [];
@@ -36,6 +58,17 @@ const cases: GoldenCase[] = [
       });
 
       assert.deepEqual(codes, ["BLOCK_NOT_CLOSED"]);
+    },
+  },
+  {
+    name: "[Order/onError] inline 子帧转 block 后未闭合 -> 仍应上报 BLOCK_NOT_CLOSED",
+    run() {
+      const codes: string[] = [];
+      parseRichText("$$bold(before $$info(T)*\nhello", {
+        onError: (error) => codes.push(error.code),
+      });
+
+      assert.deepEqual(codes, ["INLINE_NOT_CLOSED", "BLOCK_NOT_CLOSED"]);
     },
   },
   {

@@ -12,22 +12,18 @@ const printNodes = (nodes: StructuralNode[], s: SyntaxInput): string => {
   for (const node of nodes) {
     if (node.type === "text") {
       out += node.value;
-      continue;
     }
 
     if (node.type === "escape") {
       out += node.raw;
-      continue;
     }
 
     if (node.type === "separator") {
       out += s.tagDivider;
-      continue;
     }
 
     if (node.type === "inline") {
       out += s.tagPrefix + node.tag + s.tagOpen + printNodes(node.children, s) + s.endTag;
-      continue;
     }
 
     if (node.type === "raw") {
@@ -39,7 +35,6 @@ const printNodes = (nodes: StructuralNode[], s: SyntaxInput): string => {
         s.rawOpen +
         node.content +
         s.rawClose;
-      continue;
     }
 
     if (node.type === "block") {

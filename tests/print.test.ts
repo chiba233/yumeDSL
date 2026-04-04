@@ -76,6 +76,24 @@ const cases: GoldenCase[] = [
     },
   },
   {
+    name: "printStructural: mixed hand-built tree prints each node kind exactly once",
+    run: () => {
+      const tree: StructuralNode[] = [
+        { type: "text", value: "A" },
+        { type: "escape", raw: "\\)$$" },
+        { type: "separator" },
+        { type: "inline", tag: "b", children: [{ type: "text", value: "B" }] },
+        { type: "raw", tag: "code", args: [{ type: "text", value: "js" }], content: "C" },
+        { type: "block", tag: "box", args: [], children: [{ type: "text", value: "D" }] },
+      ];
+
+      assert.equal(
+        printStructural(tree),
+        "A\\)$$|$$b(B)$$$$code(js)%C%end$$$$box()*D*end$$",
+      );
+    },
+  },
+  {
     name: "printStructural: multiline block round-trips",
     run: () => {
       roundTrip("$$div()*\nline 1\nline 2\n*end$$");
