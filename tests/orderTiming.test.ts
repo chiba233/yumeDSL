@@ -28,6 +28,17 @@ const cases: GoldenCase[] = [
     },
   },
   {
+    name: "[Order/onError] argClose 已找到但缺少 )$$ 时仍应上报 INLINE_NOT_CLOSED",
+    run() {
+      const codes: string[] = [];
+      parseRichText("$$bold(x)", {
+        onError: (error) => codes.push(error.code),
+      });
+
+      assert.deepEqual(codes, ["INLINE_NOT_CLOSED"]);
+    },
+  },
+  {
     name: "[Order/onError] parseRichText raw 未闭合 -> 应保持 1.1.3 的错误基线",
     run() {
       const codes: string[] = [];
