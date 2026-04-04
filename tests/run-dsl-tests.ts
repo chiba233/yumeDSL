@@ -6,6 +6,9 @@ await import("./richText.golden.test.ts");
 console.log("=== Position Tracking ===");
 await import("./positions.test.ts");
 
+console.log("=== Order / Timing ===");
+await import("./orderTiming.test.ts");
+
 console.log("=== Edge Cases ===");
 await import("./edgeCases.test.ts");
 

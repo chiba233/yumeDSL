@@ -84,6 +84,41 @@ and large behavior-preserving rewrites are difficult to review safely.
   file unless the maintainer explicitly asked for them first.
 - If a fix must touch `src/structural.ts`, keep the patch minimal and include a reproducer or regression test.
 
+## Areas that are generally not open to drive-by contributions
+
+The parser is now at the stage where some parts are more like a language runtime than ordinary application code.
+Even small "cleanup" changes can silently alter semantics, timing, or hot-path cost.
+
+Unless the maintainer explicitly asked for the work first, please avoid PRs in the following areas:
+
+- **Parser hot-path rewrites** in `src/structural.ts`, `src/parse.ts`, or `src/render.ts`
+  - No architecture rewrites, parser simplification passes, VM-to-recursion rewrites, or style-only refactors
+  - No "this helper/object/closure can be cleaner" changes unless they are attached to a concrete bug with tests
+- **Public contract reshaping** for parser options and output semantics
+  - Do not widen `StructuralParseOptions`
+  - Do not move render-only fields such as `createId`, `blockTags`, `mode`, or `onError` into structural APIs
+  - Do not try to unify `parseRichText.position` with `parseStructural.position`
+- **Performance-sensitive abstraction changes**
+  - Avoid adding wrapper layers, convenience helpers, object reshaping, or extra passes on the main parse path unless the change is benchmarked and justified
+  - "Cleaner JS API" is not, by itself, enough reason to touch the hot path
+- **Cleanup-only rewrites of position tracking or error routing**
+  - `baseOffset`, `tracker`, `_meta`, and the internal error channel have intentionally different responsibilities
+  - If you touch them, the PR must explain the semantic boundary being preserved
+
+These areas are not "never touch"; they are "maintainer-led only" unless there is a concrete bug, regression, or requested task.
+
+## Required when touching parser internals
+
+If a contribution touches parser internals or parser-facing public contracts, the PR is expected to include:
+
+- A minimal reproducer for the bug or regression being fixed
+- The smallest relevant test coverage
+- If timing/order behavior is affected: explicit notes about `onError` order, handler call order, or `createId` consumption order
+- If source positions are affected: confirmation of which contract is preserved
+  - `parseStructural` owns raw source truth
+  - `parseRichText` owns normalized render truth
+- If English or Chinese docs describe the touched contract: update both, not just one side
+
 ## Testing
 
 - Tests live in the `tests/` directory.

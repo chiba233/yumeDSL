@@ -95,31 +95,38 @@ export const buildGatingContext = (
 
 // ── Shared base options ──
 
-export interface ResolvedBaseOptions {
+export interface BaseResolvedConfig {
   syntax: SyntaxConfig;
   tagName: TagNameConfig;
   depthLimit: number;
   tracker: PositionTracker | null;
+  baseOffset: number;
+  trackPositions: boolean;
 }
 
 /**
- * Resolve shared base options for both parseRichText and parseStructural.
+ * Resolve only the shared parser base config.
  *
- * `overrides.syntax` / `overrides.tagName` allow the caller to inject
- * pre-resolved values (e.g. from legacy ambient fallback in parseStructural).
- * When omitted, they are derived from `options.syntax` / `options.tagName`.
+ * Hard boundary:
+ * - allowed to share: syntax, tag-name rules, depth limit, tracker/baseOffset
+ * - not allowed to share: final `position` / `SourceSpan` semantics
+ *
+ * `parseRichText` and `parseStructural` intentionally resolve final spans in
+ * different layers because normalized render truth and raw structural truth are
+ * both valid, but not interchangeable.
  */
 export const resolveBaseOptions = (
   text: string,
   options?: ParserBaseOptions & { trackPositions?: boolean },
   overrides?: { syntax?: SyntaxConfig; tagName?: TagNameConfig },
-): ResolvedBaseOptions => {
+): BaseResolvedConfig => {
   const syntax = overrides?.syntax ?? createSyntax(options?.syntax);
   const tagName = overrides?.tagName ?? createTagNameConfig(options?.tagName);
   const depthLimit = options?.depthLimit ?? 50;
 
   const baseOffset = options?.baseOffset ?? 0;
-  const localTracker = options?.trackPositions ? buildPositionTracker(text) : null;
+  const trackPositions = options?.trackPositions ?? false;
+  const localTracker = trackPositions ? buildPositionTracker(text) : null;
   // 注意：这里的语义比较绕，不要想当然。
   // 1. `trackPositions` 只决定要不要为“当前 text”现建本地 tracker
   // 2. 只要显式传了 `options.tracker`，下面仍然会走外部 tracker 路径
@@ -129,5 +136,5 @@ export const resolveBaseOptions = (
     ? (offsetTracker(options.tracker, baseOffset) ?? options.tracker)
     : (localOffsetTracker(localTracker, baseOffset) ?? localTracker);
 
-  return { syntax, tagName, depthLimit, tracker };
+  return { syntax, tagName, depthLimit, tracker, baseOffset, trackPositions };
 };

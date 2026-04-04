@@ -24,6 +24,7 @@
   "sideEffects": false,
   "scripts": {
     "build": "tsup --target esnext",
+    "lint": "tsc --noEmit -p tsconfig.json",
     "test": "tsup --target esnext && node --import tsx tests/run-dsl-tests.ts",
     "prepublishOnly": "npm run build"
   },

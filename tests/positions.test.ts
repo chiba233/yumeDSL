@@ -522,6 +522,63 @@ const cases: GoldenCase[] = [
       assert.deepEqual(tokens[0].position, position(2, 1, 6, 2, 12, 17));
     },
   },
+  {
+    name: "[Position/Semantics] block trailing newline -> render 与 structural 的 end 必须不同",
+    run() {
+      const text = "$$info()*\nhello\n*end$$\nnext";
+      const rich = parseRichText(text, { handlers: testHandlers, trackPositions: true });
+      const structural = parseStructural(text, { handlers: testHandlers, trackPositions: true });
+
+      assert.equal(rich[0]?.type, "info");
+      assert.equal(structural[0]?.type, "block");
+      assert.equal(rich[0]?.position?.end.offset, 23);
+      assert.equal(structural[0]?.position?.end.offset, 22);
+      assert.notEqual(rich[0]?.position?.end.offset, structural[0]?.position?.end.offset);
+    },
+  },
+  {
+    name: "[Position/Semantics] block leading newline -> render 与 structural 的子节点 start 必须不同",
+    run() {
+      const text = "$$info()*\nhello\n*end$$";
+      const rich = parseRichText(text, { handlers: testHandlers, trackPositions: true });
+      const structural = parseStructural(text, { handlers: testHandlers, trackPositions: true });
+
+      assert.equal(rich[0]?.type, "info");
+      assert.equal(structural[0]?.type, "block");
+
+      const richChildren = rich[0]!.value as TextToken[];
+      const block = structural[0] as Extract<StructuralNode, { type: "block" }>;
+      assert.equal(richChildren[0]?.type, "text");
+      assert.equal(block.children[0]?.type, "text");
+      assert.equal(richChildren[0]?.position?.start.offset, 10);
+      assert.equal(block.children[0]?.position?.start.offset, 9);
+      assert.notEqual(richChildren[0]?.position?.start.offset, block.children[0]?.position?.start.offset);
+    },
+  },
+  {
+    name: "[Position/Semantics] raw plain path -> render 与 structural 位置仍应一致",
+    run() {
+      const text = "$$raw-code(ts)%\nconst x = 1\n%end$$";
+      const rich = parseRichText(text, { handlers: testHandlers, trackPositions: true });
+      const structural = parseStructural(text, { handlers: testHandlers, trackPositions: true });
+
+      assert.equal(rich[0]?.type, "raw-code");
+      assert.equal(structural[0]?.type, "raw");
+      assert.deepEqual(rich[0]?.position, structural[0]?.position);
+    },
+  },
+  {
+    name: "[Position/Semantics] inline plain path -> render 与 structural 位置仍应一致",
+    run() {
+      const text = "$$bold(hi)$$";
+      const rich = parseRichText(text, { handlers: testHandlers, trackPositions: true });
+      const structural = parseStructural(text, { handlers: testHandlers, trackPositions: true });
+
+      assert.equal(rich[0]?.type, "bold");
+      assert.equal(structural[0]?.type, "inline");
+      assert.deepEqual(rich[0]?.position, structural[0]?.position);
+    },
+  },
 ];
 
 await runGoldenCases("Position Tracking", "Position tracking case", cases);

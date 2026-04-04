@@ -223,6 +223,13 @@ void _startOffset;
 void _endOffset;
 void _zoneNodes;
 
+parseStructural("$$bold(hi)$$", {
+  // @ts-expect-error parseStructural 的公开 options 故意不暴露 onError
+  onError: (error: unknown) => {
+    void error;
+  },
+});
+
 // @ts-expect-error invalid form should be rejected
 const invalidOptions: ParseOptions = { allowForms: ["inline", "weird"] };
 void invalidOptions;

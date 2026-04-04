@@ -2,6 +2,26 @@
 
 # Changelog
 
+### 1.1.4
+
+- Performance: `parseRichText` now reuses one shared base-resolution pass instead of resolving
+  parser base config twice before entering the structural and render pipelines
+- Benchmark: on a 200 KB document (Kunpeng 920 / Node v24.14.0), `parseRichText` improved from
+  `1.1.3 ~27.4 ms` to `~22.6 ms`; `parseStructural` improved from `~19.3 ms` to `~17.8 ms`
+- Substring parsing stays fast: `baseOffset` and `tracker` scenarios were re-measured against
+  `1.1.3`, with no regression in timing or position-tracking behavior
+- No public API changes
+- No intended output-format changes for normal `parseRichText` / `parseStructural` consumers
+- Source-position semantics remain intentionally split:
+  - `parseStructural.position` still reflects raw source ranges
+  - `parseRichText.position` still reflects normalized render ranges
+- Added regression coverage to lock that boundary in, including cases where the two APIs must differ
+  and cases where they should still match
+
+In short: this patch keeps the same public contract, makes the hot path cheaper by removing
+duplicate base setup, and adds guardrails so future refactors do not collapse the two position
+semantics.
+
 ### 1.1.3
 
 - Follow-up to 1.1.2's deep-nesting work: the three independent bottlenecks removed in 1.1.2

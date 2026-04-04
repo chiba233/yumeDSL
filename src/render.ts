@@ -7,6 +7,12 @@ import type {
   SyntaxConfig,
   TextToken,
 } from "./types.js";
+
+// 设计边界，后面别顺手抹平：
+// - structural parser 负责原始源码位置真相
+// - render layer 负责规范化后的渲染位置真相
+// - 允许共享 config / tracker
+// - 不允许共享最终 spans
 import { createTextToken, materializeTextTokens } from "./builders.js";
 import { supportsInlineForm } from "./resolveOptions.js";
 import { createToken } from "./createToken.js";

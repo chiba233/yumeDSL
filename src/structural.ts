@@ -1,11 +1,20 @@
 // ═══════════════════════════════════════════════════════════════
 // structural.ts — 结构解析器
 //
+// 硬规则，后面重构别再动这条边界：
+// - 不要试图统一 parseRichText.position 和 parseStructural.position
+// - 允许共享基础配置 / tracker
+// - 禁止共享最终 span 结算
+//
+// structural parser 持有“原始源码真相”
+// render layer 持有“规范化渲染真相”
+// 这是同一份源码的两种合法视角，不是重复劳动。
+//
 // 文件导航（行号可能因编辑微调，但顺序不变）：
 //
-//    ~61  IndexedStructuralNode  内部节点类型（带 _meta）
-//   ~100  pushNode / stripMeta   节点工具（stripMeta 是迭代式后序遍历）
-//   ~182  ScanContext            跨递归层共享的不可变配置
+//    ~83  IndexedStructuralNode  内部节点类型（带 _meta）
+//   ~105  pushNode / stripMeta   节点工具（stripMeta 是迭代式后序遍历）
+//   ~181  ScanContext            跨递归层共享的不可变配置
 //   ~206  parseNodes             主入口（下面全是它的内部定义）
 //
 //  parseNodes 内部结构：
@@ -13,21 +22,21 @@
 //   ~265  makeFrame              帧工厂
 //   ~295  ── 缓冲区 ──           flushBuffer / appendBuf
 //   ~319  ── 子帧完成分发 ──     completeChild：按 returnKind 统一组装节点
-//   ~368  buildComplexMeta       raw / block 的 meta + position 构造
-//   ~390  pushInlineChild        push inline 子帧（lazy close，不预扫）
+//   ~370  buildComplexMeta       raw / block 的 meta + position 构造
+//   ~396  pushInlineChild        push inline 子帧（lazy close，不预扫）
 //
-//  主循环（~411 while）：
-//   ~414  帧完成                 textEnd 到达 / inline 未闭合处理
-//   ~435  转义序列               readEscapedSequence
-//   ~448  inline 帧 argClose     parenDepth 追踪 + )$$ / )% / )* form 判定
-//   ~570  非 inline 帧意外 endTag
-//   ~578  管道分隔符             insideArgs 时的 | 处理
-//   ~590  标签头识别             readTagStartInfo + 裸 ( 的 parenDepth++
-//   ~602  深度限制退化           skipTagBoundary
-//   ~611  inline 帧嵌套标签      gating 检查 + pushInlineChild（跳过 getTagCloserType）
-//   ~630  非 inline 帧 form 判定 getTagCloserType → inline / raw / block 分发
+//  主循环（~418 while）：
+//   ~421  帧完成                 textEnd 到达 / inline 未闭合处理
+//   ~442  转义序列               readEscapedSequence
+//   ~455  inline 帧 argClose     parenDepth 追踪 + )$$ / )% / )* form 判定
+//   ~590  非 inline 帧意外 endTag
+//   ~598  管道分隔符             insideArgs 时的 | 处理
+//   ~610  标签头识别             readTagStartInfo + 裸 ( 的 parenDepth++
+//   ~622  深度限制退化           skipTagBoundary
+//   ~631  inline 帧嵌套标签      gating 检查 + pushInlineChild（跳过 getTagCloserType）
+//   ~647  非 inline 帧 form 判定 getTagCloserType → inline / raw / block 分发
 //
-//   ~727  ── Public API ──       parseStructuralInternal / parseStructural
+//   ~759  ── Public API ──       parseStructuralWithResolved / parseStructuralInternal / parseStructural
 // ═══════════════════════════════════════════════════════════════
 
 import type {
@@ -54,7 +63,12 @@ import {
   skipTagBoundary,
 } from "./scanner.js";
 import { makePosition, type PositionTracker } from "./positions.js";
-import { type GatingContext, buildGatingContext, resolveBaseOptions } from "./resolveOptions.js";
+import {
+  type BaseResolvedConfig,
+  type GatingContext,
+  buildGatingContext,
+  resolveBaseOptions,
+} from "./resolveOptions.js";
 
 const emptyBuffer = (): BufferState => ({ content: "", start: -1, sourceEnd: -1 });
 
@@ -171,6 +185,10 @@ interface ScanContext {
   syntax: SyntaxConfig;
   tagName: TagNameConfig;
   onError?: (error: ParseError) => void;
+}
+
+interface StructuralPositionPolicy {
+  tracker: PositionTracker | null;
 }
 
 type TagStartInfo = NonNullable<ReturnType<typeof readTagStartInfo>>;
@@ -351,6 +369,7 @@ export const parseNodes = (
 
   const buildComplexMeta = (
     frame: ParseFrame,
+    tagStart: number,
     info: TagStartInfo,
     argClose: number,
     contentStart: number,
@@ -359,7 +378,7 @@ export const parseNodes = (
   ): { meta: TagMeta; pos: SourceSpan | undefined; nextI: number } => {
     const nextI = closeStart + closeLength;
     const meta: TagMeta = {
-      start: frame.baseOffset + frame.i,
+      start: frame.baseOffset + tagStart,
       end: frame.baseOffset + nextI,
       argStart: frame.baseOffset + info.argStart,
       argEnd: frame.baseOffset + argClose,
@@ -490,9 +509,15 @@ export const parseNodes = (
           // raw 正常路径：当前帧的 nodes 就是 args
           flushBuffer(frame);
           const nextI = closeStart + syntax.rawClose.length;
-          const meta = buildComplexMeta(parent, { tag: frame.tag, argStart: frame.argStartI, tagOpenPos: frame.tagOpenPos } as TagStartInfo, argClose, contentStart, closeStart, syntax.rawClose.length);
-          // 修正 meta：start 应该是 tagStartI
-          meta.meta.start = parent.baseOffset + tagStartI;
+          const meta = buildComplexMeta(
+            parent,
+            tagStartI,
+            { tag: frame.tag, argStart: frame.argStartI, tagOpenPos: frame.tagOpenPos } as TagStartInfo,
+            argClose,
+            contentStart,
+            closeStart,
+            syntax.rawClose.length,
+          );
           const args = frame.nodes;
           stack.pop();
           parent.i = nextI;
@@ -530,8 +555,15 @@ export const parseNodes = (
           // block 正常路径：当前帧的 nodes 就是 args
           flushBuffer(frame);
           const nextI = closeStart + blockClose.length;
-          const metaResult = buildComplexMeta(parent, { tag: frame.tag, argStart: frame.argStartI, tagOpenPos: frame.tagOpenPos } as TagStartInfo, argClose, contentStart, closeStart, blockClose.length);
-          metaResult.meta.start = parent.baseOffset + tagStartI;
+          const metaResult = buildComplexMeta(
+            parent,
+            tagStartI,
+            { tag: frame.tag, argStart: frame.argStartI, tagOpenPos: frame.tagOpenPos } as TagStartInfo,
+            argClose,
+            contentStart,
+            closeStart,
+            blockClose.length,
+          );
           const args = frame.nodes;
           stack.pop();
 
@@ -654,7 +686,15 @@ export const parseNodes = (
         continue;
       }
 
-      const { meta, pos, nextI } = buildComplexMeta(frame, info, closerInfo.argClose, contentStart, closeStart, syntax.rawClose.length);
+      const { meta, pos, nextI } = buildComplexMeta(
+        frame,
+        i,
+        info,
+        closerInfo.argClose,
+        contentStart,
+        closeStart,
+        syntax.rawClose.length,
+      );
       flushBuffer(frame);
       frame.i = nextI;
 
@@ -688,7 +728,15 @@ export const parseNodes = (
       continue;
     }
 
-    const { meta, pos, nextI } = buildComplexMeta(frame, info, closerInfo.argClose, contentStart, closeStart, syntax.blockClose.length);
+    const { meta, pos, nextI } = buildComplexMeta(
+      frame,
+      i,
+      info,
+      closerInfo.argClose,
+      contentStart,
+      closeStart,
+      syntax.blockClose.length,
+    );
     flushBuffer(frame);
     frame.i = nextI;
 
@@ -707,6 +755,34 @@ export const parseNodes = (
 };
 
 // ── Public API ──
+
+export const parseStructuralWithResolved = (
+  text: string,
+  resolved: BaseResolvedConfig,
+  gating: GatingContext | null,
+  onError?: (error: ParseError) => void,
+): IndexedStructuralNode[] => {
+  if (!text) return [];
+
+  const positionPolicy: StructuralPositionPolicy = {
+    tracker: resolved.tracker,
+  };
+  const ctx: ScanContext = {
+    depthLimit: resolved.depthLimit,
+    gating,
+    tracker: positionPolicy.tracker,
+    syntax: resolved.syntax,
+    tagName: resolved.tagName,
+    onError,
+  };
+  // `_meta` 必须保持“切片局部坐标”。
+  // 原因：render 的退化路径会直接用 `source.slice(_meta.start, _meta.end)` 回切源码，
+  // 如果这里偷改成绝对 offset，源码切片会直接错。
+  //
+  // tracker 可以共享，用来把公开 position 回指原文；
+  // 但 raw / render 两套最终 span 语义，仍然各自结算，不能混。
+  return parseNodes(text, 0, ctx, false, 0);
+};
 
 export const parseStructuralInternal = (
   text: string,
@@ -738,7 +814,7 @@ export const parseStructuralInternal = (
     }
   }
 
-  const { syntax, tagName, depthLimit, tracker } = resolveBaseOptions(text, options, {
+  const resolved = resolveBaseOptions(text, options, {
     syntax: legacySyntax,
     tagName: legacyTagName,
   });
@@ -746,9 +822,7 @@ export const parseStructuralInternal = (
   const gating = options?.handlers
     ? buildGatingContext(options.handlers, options.allowForms)
     : null;
-
-  const ctx: ScanContext = { depthLimit, gating, tracker, syntax, tagName, onError: options?.onError };
-  return parseNodes(text, 0, ctx, false, 0);
+  return parseStructuralWithResolved(text, resolved, gating, options?.onError);
 };
 
 /**
