@@ -70,7 +70,7 @@ import {
 } from "./scanner.js";
 import { makePosition, type PositionTracker } from "./positions.js";
 
-const emptyBuffer = (): BufferState => ({ content: "", start: -1 });
+const emptyBuffer = (): BufferState => ({ start: -1, end: -1, segments: null });
 
 // ── IndexedStructuralNode ──
 
@@ -244,9 +244,8 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
 
     // ── block 专用：两阶段中间存储 ──
     pendingArgs: TNode[] | null; // blockArgs 完成后暂存
-    contentText: string; // block content 切片
-    contentBaseOffset: number; // block content 的 baseOffset
-    rawContent: string; // raw 的正文字符串
+    contentStartI: number; // block content 起始位置
+    contentEndI: number; // block/raw content 结束位置
   }
 
   const makeFrame = (
@@ -254,13 +253,15 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     frameDepth: number,
     frameInsideArgs: boolean,
     frameBaseOffset: number,
+    frameTextStart = 0,
+    frameTextEnd = frameText.length,
   ): ParseFrame => ({
     text: frameText,
     depth: frameDepth,
     insideArgs: frameInsideArgs,
     baseOffset: frameBaseOffset,
-    i: 0,
-    textEnd: frameText.length,
+    i: frameTextStart,
+    textEnd: frameTextEnd,
     nodes: [],
     buf: emptyBuffer(),
     returnKind: null,
@@ -274,15 +275,24 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     argStartI: 0,
     tagOpenPos: 0,
     pendingArgs: null,
-    contentText: "",
-    contentBaseOffset: 0,
-    rawContent: "",
+    contentStartI: 0,
+    contentEndI: 0,
   });
 
   // ── 缓冲区 ──
 
   const flushBuffer = (frame: ParseFrame) => {
-    if (!frame.buf.content) return;
+    if (frame.buf.start < 0) return;
+    let value: string;
+    if (frame.buf.segments === null) {
+      value = frame.text.slice(frame.buf.start, frame.buf.end);
+    } else {
+      const parts: string[] = [];
+      for (let index = 0; index < frame.buf.segments.length; index += 2) {
+        parts.push(frame.text.slice(frame.buf.segments[index], frame.buf.segments[index + 1]));
+      }
+      value = parts.join("");
+    }
     const pos =
       frame.buf.start >= 0
         ? makePosition(tracker, frame.baseOffset + frame.buf.start, frame.baseOffset + frame.i)
@@ -290,20 +300,36 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     pushNode(
       frame.nodes,
       factory.text(
-        frame.buf.content,
+        value,
         frame.baseOffset + frame.buf.start,
         frame.baseOffset + frame.i,
       ),
       pos,
     );
-    frame.buf.content = "";
     frame.buf.start = -1;
+    frame.buf.end = -1;
+    frame.buf.segments = null;
   };
 
-  const appendBuf = (frame: ParseFrame, content: string, start: number) => {
-    if (!content) return;
-    if (frame.buf.start === -1) frame.buf.start = start;
-    frame.buf.content += content;
+  const appendBuf = (frame: ParseFrame, start: number, end: number) => {
+    if (start >= end) return;
+    if (frame.buf.start === -1) {
+      frame.buf.start = start;
+      frame.buf.end = end;
+      return;
+    }
+    if (start === frame.buf.end) {
+      frame.buf.end = end;
+      if (frame.buf.segments !== null) {
+        frame.buf.segments[frame.buf.segments.length - 1] = end;
+      }
+      return;
+    }
+    if (frame.buf.segments === null) {
+      frame.buf.segments = [frame.buf.start, frame.buf.end];
+    }
+    frame.buf.segments.push(start, end);
+    frame.buf.end = end;
   };
 
   // ── 子帧完成分发 ──
@@ -335,7 +361,12 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       case "rawArgs":
         pushNode(
           parent.nodes,
-          factory.raw(child.tag, childNodes, child.rawContent, child.meta!),
+          factory.raw(
+            child.tag,
+            childNodes,
+            child.text.slice(child.contentStartI, child.contentEndI),
+            child.meta!,
+          ),
           child.tagPosition,
         );
         break;
@@ -343,17 +374,21 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         // args 完成，暂存后 push content 帧
         parent.pendingArgs = childNodes;
         const content = makeFrame(
-          child.contentText,
+          child.text,
           parent.depth + 1,
           false,
-          child.contentBaseOffset,
+          parent.baseOffset,
+          child.contentStartI,
+          child.contentEndI,
         );
-        content.returnKind = "blockContent";
-        content.parentIndex = child.parentIndex;
-        content.tag = child.tag;
-        content.meta = child.meta;
-        content.tagPosition = child.tagPosition;
-        stack.push(content);
+        pushChildFrame(
+          content,
+          "blockContent",
+          child.parentIndex,
+          child.tag,
+          child.meta,
+          child.tagPosition,
+        );
         break;
       }
       case "blockContent":
@@ -393,6 +428,22 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     return { meta, pos: makePosition(tracker, meta.start, meta.end), nextI };
   };
 
+  const pushChildFrame = (
+    child: ParseFrame,
+    returnKind: ReturnKind,
+    parentIndex: number,
+    tag: string,
+    meta: TagMeta | null,
+    tagPosition: SourceSpan | undefined,
+  ) => {
+    child.returnKind = returnKind;
+    child.parentIndex = parentIndex;
+    child.tag = tag;
+    child.meta = meta;
+    child.tagPosition = tagPosition;
+    stack.push(child);
+  };
+
   // ── inline 子帧 push ──
   //
   // gating 检查 + flush + push 一体。返回 true 表示已 push，false 表示 gating 拒绝。
@@ -416,14 +467,12 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     flushBuffer(frame);
     const child = makeFrame(frame.text, frame.depth + 1, true, frame.baseOffset);
     child.i = info.argStart;
-    child.returnKind = "inline";
-    child.parentIndex = stack.length - 1;
-    child.tag = info.tag;
+    child.textEnd = frame.textEnd;
+    pushChildFrame(child, "inline", stack.length - 1, info.tag, null, undefined);
     child.closingEndTag = endTag;
     child.tagStartI = tagStartI;
     child.argStartI = info.argStart;
     child.tagOpenPos = info.tagOpenPos;
-    stack.push(child);
     return true;
   };
 
@@ -450,7 +499,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         );
         stack.pop();
         const parent = stack[frame.parentIndex];
-        appendBuf(parent, frame.text.slice(frame.tagStartI, frame.argStartI), frame.tagStartI);
+        appendBuf(parent, frame.tagStartI, frame.argStartI);
         parent.i = frame.argStartI;
         continue;
       }
@@ -490,7 +539,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         if (frame.parenDepth > 0) {
           // 匹配内层裸 (，不是 argClose
           frame.parenDepth--;
-          appendBuf(frame, tagClose, i);
+          appendBuf(frame, i, i + tagClose.length);
           frame.i += tagClose.length;
           continue;
         }
@@ -528,7 +577,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
             );
             // 降级：回退到父帧，整段当文本
             stack.pop();
-            appendBuf(parent, frameText.slice(tagStartI, contentStart), tagStartI);
+            appendBuf(parent, tagStartI, contentStart);
             parent.i = contentStart;
             continue;
           }
@@ -537,7 +586,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
             // handler 不支持 raw → 整段降级为文本
             const end = closeStart + syntax.rawClose.length;
             stack.pop();
-            appendBuf(parent, frameText.slice(tagStartI, end), tagStartI);
+            appendBuf(parent, tagStartI, end);
             parent.i = end;
             continue;
           }
@@ -588,7 +637,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
               malformed?.length ?? contentStart - tagStartI,
             );
             stack.pop();
-            appendBuf(parent, frameText.slice(tagStartI, contentStart), tagStartI);
+            appendBuf(parent, tagStartI, contentStart);
             parent.i = contentStart;
             continue;
           }
@@ -596,7 +645,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
           if (gating && !gating.handlers[frame.tag]?.block) {
             const end = closeStart + blockClose.length;
             stack.pop();
-            appendBuf(parent, frameText.slice(tagStartI, end), tagStartI);
+            appendBuf(parent, tagStartI, end);
             parent.i = end;
             continue;
           }
@@ -620,22 +669,26 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
           parent.i = nextI;
           parent.pendingArgs = args;
           const contentFrame = makeFrame(
-            frameText.slice(contentStart, closeStart),
+            frameText,
             parent.depth + 1,
             false,
-            parent.baseOffset + contentStart,
+            parent.baseOffset,
+            contentStart,
+            closeStart,
           );
-          contentFrame.returnKind = "blockContent";
-          contentFrame.parentIndex = frame.parentIndex;
-          contentFrame.tag = frame.tag;
-          contentFrame.meta = metaResult.meta;
-          contentFrame.tagPosition = metaResult.pos;
-          stack.push(contentFrame);
+          pushChildFrame(
+            contentFrame,
+            "blockContent",
+            frame.parentIndex,
+            frame.tag,
+            metaResult.meta,
+            metaResult.pos,
+          );
           continue;
         }
 
         // ) 后面不是 $$ / % / * → 普通文本
-        appendBuf(frame, tagClose, i);
+        appendBuf(frame, i, i + tagClose.length);
         frame.i += tagClose.length;
         continue;
       }
@@ -644,7 +697,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     // ── 非 inline 帧的意外 endTag ──
     if (frameText.startsWith(endTag, i)) {
       emitError(tracker, onError, "UNEXPECTED_CLOSE", frameText, i, endTag.length);
-      appendBuf(frame, endTag, i);
+      appendBuf(frame, i, i + endTag.length);
       frame.i += endTag.length;
       continue;
     }
@@ -668,7 +721,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       if (frame.closingEndTag !== null && frameText.startsWith(tagOpen, i)) {
         frame.parenDepth++;
       }
-      appendBuf(frame, frameText[i], i);
+      appendBuf(frame, i, i + 1);
       frame.i++;
       continue;
     }
@@ -677,7 +730,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     if (frame.depth >= depthLimit) {
       emitError(tracker, onError, "DEPTH_LIMIT", frameText, i, info.argStart - info.tagOpenPos);
       const degradedEnd = skipTagBoundary(frameText, info, syntax, tagName);
-      appendBuf(frame, frameText.slice(i, degradedEnd), i);
+      appendBuf(frame, i, degradedEnd);
       frame.i = degradedEnd;
       continue;
     }
@@ -692,7 +745,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     // 应该当普通字符处理，而不是盲目 push 子帧。
     if (frame.closingEndTag !== null) {
       if (!tryPushInlineChild(frame, i, info)) {
-        appendBuf(frame, frameText[i], i);
+        appendBuf(frame, i, i + 1);
         frame.i++;
       }
       continue;
@@ -716,47 +769,17 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
           info.argStart - info.tagOpenPos,
         );
       }
-      appendBuf(frame, frameText.slice(i, info.argStart), i);
+      appendBuf(frame, i, info.argStart);
       frame.i = info.argStart;
       continue;
     }
 
     const handler = gating?.handlers[info.tag];
-    const isRegistered = gating?.registeredTags.has(info.tag) ?? false;
-
-    // 某些标签在 gating 下不允许 raw/block，但仍允许 inline。
-    // 老版本这里的行为不是直接把复杂 form 整段吃掉，而是退回到
-    // “把当前标签头当成一个未闭合 inline 起点”的兼容路径：
-    // - 报 INLINE_NOT_CLOSED
-    // - 仅消费到 argStart
-    // - 后续内容继续按普通扫描流处理
-    //
-    // 这个 helper 专门保留那条旧语义，避免复杂 form gating 改变错误基线。
-    const degradeUnsupportedComplexFormAsInline = () => {
-      if (
-        !gating ||
-        gating.registeredTags.size === 0 ||
-        !supportsInlineForm(handler, gating.allowInline, isRegistered)
-      ) {
-        return false;
-      }
-      emitError(
-        tracker,
-        onError,
-        "INLINE_NOT_CLOSED",
-        frameText,
-        i,
-        info.argStart - info.tagOpenPos,
-      );
-      appendBuf(frame, frameText.slice(i, info.argStart), i);
-      frame.i = info.argStart;
-      return true;
-    };
 
     // ── Inline 形态 ──
     if (closerInfo.closer === endTag) {
       if (!tryPushInlineChild(frame, i, info)) {
-        appendBuf(frame, frameText[i], i);
+        appendBuf(frame, i, i + 1);
         frame.i++;
       }
       continue;
@@ -764,14 +787,6 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
 
     // ── Raw 形态 ──
     if (closerInfo.closer === rawClose) {
-      const degradedToInline =
-        gating && !handler?.raw && degradeUnsupportedComplexFormAsInline();
-      if (degradedToInline) {
-        continue;
-      }
-
-      // 先走“可退化为 inline”的兼容分支，再判断 raw handler 是否存在。
-      // 如果既不能退化、也没有 raw 能力，就把整段 raw 语法原样保留成文本。
       const contentStart = closerInfo.argClose + syntax.rawOpen.length;
       const closeStart = findRawClose(frameText, contentStart, syntax);
 
@@ -789,14 +804,14 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
           malformed?.index ?? i,
           malformed?.length ?? contentStart - i,
         );
-        appendBuf(frame, frameText.slice(i, contentStart), i);
+        appendBuf(frame, i, contentStart);
         frame.i = contentStart;
         continue;
       }
 
       if (gating && !handler?.raw) {
         const end = closeStart + syntax.rawClose.length;
-        appendBuf(frame, frameText.slice(i, end), i);
+        appendBuf(frame, i, end);
         frame.i = end;
         continue;
       }
@@ -815,32 +830,20 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
 
       // raw 正文不再递归扫描；只有参数区需要进入子帧继续产出结构节点。
       const child = makeFrame(
-        frameText.slice(info.argStart, closerInfo.argClose),
+        frameText,
         frame.depth + 1,
         true,
-        frame.baseOffset + info.argStart,
+        frame.baseOffset,
+        info.argStart,
+        closerInfo.argClose,
       );
-      child.returnKind = "rawArgs";
-      child.parentIndex = stack.length - 1;
-      child.tag = info.tag;
-      child.meta = meta;
-      child.tagPosition = pos;
-      child.rawContent = frameText.slice(contentStart, closeStart);
-      stack.push(child);
+      pushChildFrame(child, "rawArgs", stack.length - 1, info.tag, meta, pos);
+      child.contentStartI = contentStart;
+      child.contentEndI = closeStart;
       continue;
     }
 
     // ── Block 形态 ──
-    const degradedToInline =
-      gating && !handler?.block && degradeUnsupportedComplexFormAsInline();
-    if (degradedToInline) {
-      continue;
-    }
-
-    // block 路径与 raw 同一原则：
-    // 1. 优先保留老版本的 inline 兼容降级
-    // 2. 其次判断 block handler 是否存在
-    // 3. 都不满足时，把 block 语法原文保留进文本流
     const contentStart = closerInfo.argClose + syntax.blockOpen.length;
     const closeStart = findBlockClose(frameText, contentStart, syntax, tagName);
 
@@ -858,14 +861,14 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         malformed?.index ?? i,
         malformed?.length ?? contentStart - i,
       );
-      appendBuf(frame, frameText.slice(i, contentStart), i);
+      appendBuf(frame, i, contentStart);
       frame.i = contentStart;
       continue;
     }
 
     if (gating && !handler?.block) {
       const end = closeStart + syntax.blockClose.length;
-      appendBuf(frame, frameText.slice(i, end), i);
+      appendBuf(frame, i, end);
       frame.i = end;
       continue;
     }
@@ -887,19 +890,16 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     // 2. 再扫正文，得到 children
     // 所以这里先压入 blockArgs 子帧，completeChild 再续推 content 帧。
     const child = makeFrame(
-      frameText.slice(info.argStart, closerInfo.argClose),
+      frameText,
       frame.depth + 1,
       true,
-      frame.baseOffset + info.argStart,
+      frame.baseOffset,
+      info.argStart,
+      closerInfo.argClose,
     );
-    child.returnKind = "blockArgs";
-    child.parentIndex = stack.length - 1;
-    child.tag = info.tag;
-    child.meta = meta;
-    child.tagPosition = pos;
-    child.contentText = frameText.slice(contentStart, closeStart);
-    child.contentBaseOffset = frame.baseOffset + contentStart;
-    stack.push(child);
+    pushChildFrame(child, "blockArgs", stack.length - 1, info.tag, meta, pos);
+    child.contentStartI = contentStart;
+    child.contentEndI = closeStart;
   }
 
   return [];

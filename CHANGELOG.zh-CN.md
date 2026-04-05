@@ -2,6 +2,36 @@
 
 # 更新日志
 
+### 1.1.6
+
+- 性能：`parseStructural` 热路径继续降常数
+  - structural 扫描里的文本缓冲不再依赖反复字符串拼接
+  - raw / block 子帧现在保存源码区间，不再提前切出中间字符串
+- 基准：全量解析（~200 KB，鲲鹏 920 / Node v24.14.0，按版本隔离进程重测）
+  - `parseRichText`：当前版 `~39.8 ms`
+  - `parseStructural`：当前版 `~23.3 ms`
+- 基准：与已发布 `1.1.x` 对比，同一份 200 KB 输入上
+  - `1.1.1` 到 `1.1.5` 中最快的 `parseRichText` 是 `1.1.3 ~40.3 ms`；`1.1.6` 进一步到 `~39.8 ms`
+  - `1.1.1` 到 `1.1.5` 中最快的 `parseStructural` 是 `1.1.5 ~34.9 ms`；`1.1.6` 进一步到 `~23.3 ms`
+- 基准：同机 structural 内存画像
+  - 200 KB dense inline 文档：parse 后 `heapUsed` `48.88 MB`
+  - 2 MB dense inline 文档：parse 后 `heapUsed` `147.26 MB`
+  - 20k nested inline 文档：parse 后 `heapUsed` `14.65 MB`
+- 基准：`parseStructural(10000000)` 继续维持 `1.1.5` 这一档内存等级
+  - 解析时间 `~18.7 s`
+  - parse 后 `heapUsed` `4.96 GB`
+  - parse 后 RSS `5.21 GB`
+- 兼容性说明：补齐了 `1.1.x` 各发布版的 `onError` 行为审计
+  - `1.1.0` 和 `1.1.5` 一致
+  - `1.1.1` 单独成组
+  - `1.1.2` / `1.1.3` / `1.1.4` 三版完全一致，后续作为 `onError` 兼容性基线
+- 无公共 API 变化
+- 对正常 `parseRichText` / `parseStructural` 使用者来说，没有预期中的输出格式变化
+
+一句话：这个补丁版继续推进 structural parser 优化，进一步压低日常文档上的
+`parseStructural` 成本，并把 `1.1.x` 的 `onError` 兼容性口径明确收敛到
+`1.1.2` / `1.1.3` / `1.1.4`。
+
 ### 1.1.5
 
 - 优化：`parseStructural()` 不再先构建一棵内部 indexed tree，再通过 `_meta` 剥离生成第二棵 public

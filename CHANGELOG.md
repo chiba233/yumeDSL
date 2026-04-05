@@ -2,6 +2,36 @@
 
 # Changelog
 
+### 1.1.6
+
+- Performance: `parseStructural` hot-path constants reduced again
+  - text buffering no longer relies on repeated string concatenation in the structural scanner
+  - raw / block child frames now keep source ranges instead of eagerly slicing intermediate strings
+- Benchmark: full-document parse (~200 KB, Kunpeng 920 / Node v24.14.0, version-isolated runs)
+  - `parseRichText`: current `~39.8 ms`
+  - `parseStructural`: current `~23.3 ms`
+- Benchmark: versus published `1.1.x` builds on the same 200 KB input
+  - fastest `parseRichText` in `1.1.1` to `1.1.5` was `1.1.3 ~40.3 ms`; `1.1.6` is slightly faster at `~39.8 ms`
+  - fastest `parseStructural` in `1.1.1` to `1.1.5` was `1.1.5 ~34.9 ms`; `1.1.6` improves that to `~23.3 ms`
+- Benchmark: structural memory profile on the same machine
+  - 200 KB dense inline document: `heapUsed` after parse `48.88 MB`
+  - 2 MB dense inline document: `heapUsed` after parse `147.26 MB`
+  - 20k nested inline document: `heapUsed` after parse `14.65 MB`
+- Benchmark: `parseStructural(10000000)` stayed in the `1.1.5` memory class
+  - parse time `~18.7 s`
+  - `heapUsed` after parse `4.96 GB`
+  - RSS after parse `5.21 GB`
+- Compatibility note: `onError` behavior in `1.1.x` was audited across published versions
+  - `1.1.0` and `1.1.5` match each other
+  - `1.1.1` is its own behavior group
+  - `1.1.2` / `1.1.3` / `1.1.4` match each other exactly and are now the compatibility baseline for `onError`
+- No public API changes
+- No intended output-format changes for normal `parseRichText` / `parseStructural` consumers
+
+In short: this patch continues the structural-parser optimization work, cuts day-to-day
+`parseStructural` cost further, and documents `1.1.x` `onError` compatibility around the newly
+adopted `1.1.2` / `1.1.3` / `1.1.4` baseline.
+
 ### 1.1.5
 
 - Improve: `parseStructural()` no longer builds an internal indexed tree and then strips `_meta`

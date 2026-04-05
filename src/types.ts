@@ -330,8 +330,9 @@ export interface Zone {
 
 
 export interface BufferState {
-  content: string;
   start: number;
+  end: number;
+  segments: number[] | null;
 }
 
 
