@@ -199,21 +199,16 @@ const renderTextLikeNode = (
   dslCtx: DslContext,
   escapeMode: EscapeMode,
 ): void => {
-  switch (node.type) {
-    case "text":
-      mergeTextToken(tokens, node.value, node.position, dslCtx);
-      return;
-    case "escape": {
-      // 注意：root 层解转义（\| → |），nested 层保留原始 escape（\| 原样传给 handler）。
-      // nested 不能解是因为 parsePipeArgs 等 handler 工具需要先看到原始 \|，
-      // 否则会把它误当分隔符。这个不是 bug，是刻意语义。
-      const value = escapeMode === "root" ? readEscaped(node.raw, 0, ctx.syntax)[0] : node.raw;
-      mergeTextToken(tokens, value, node.position, dslCtx);
-      return;
-    }
-    case "separator":
-      mergeTextToken(tokens, ctx.syntax.tagDivider, node.position, dslCtx);
-      return;
+  if (node.type === "text") {
+    mergeTextToken(tokens, node.value, node.position, dslCtx);
+  } else if (node.type === "escape") {
+    // 注意：root 层解转义（\| → |），nested 层保留原始 escape（\| 原样传给 handler）。
+    // nested 不能解是因为 parsePipeArgs 等 handler 工具需要先看到原始 \|，
+    // 否则会把它误当分隔符。这个不是 bug，是刻意语义。
+    const value = escapeMode === "root" ? readEscaped(node.raw, 0, ctx.syntax)[0] : node.raw;
+    mergeTextToken(tokens, value, node.position, dslCtx);
+  } else if (node.type === "separator") {
+    mergeTextToken(tokens, ctx.syntax.tagDivider, node.position, dslCtx);
   }
 };
 
@@ -375,39 +370,32 @@ export const renderNodes = (
       }
     }
 
-    switch (node.type) {
-      case "text":
-      case "escape":
-      case "separator":
-        renderTextLikeNode(node, frame.tokens, ctx, dslCtx, frame.escapeMode);
-        break;
-      case "inline":
-        stack.push({
-          nodes: node.children,
-          index: 0,
-          escapeMode: "nested",
-          tokens: [],
-          consumeNextLB: false,
-          resume: (childTokens) => {
-            frame.consumeNextLB = renderInlineNode(node, childTokens, frame.tokens, ctx, dslCtx);
-          },
-        });
-        break;
-      case "raw":
-        frame.consumeNextLB = renderRawNode(node, frame.tokens, ctx, dslCtx);
-        break;
-      case "block":
-        stack.push({
-          nodes: node.children,
-          index: 0,
-          escapeMode: "root",
-          tokens: [],
-          consumeNextLB: false,
-          resume: (childTokens) => {
-            frame.consumeNextLB = renderBlockNode(node, childTokens, frame.tokens, ctx, dslCtx);
-          },
-        });
-        break;
+    if (node.type === "text" || node.type === "escape" || node.type === "separator") {
+      renderTextLikeNode(node, frame.tokens, ctx, dslCtx, frame.escapeMode);
+    } else if (node.type === "inline") {
+      stack.push({
+        nodes: node.children,
+        index: 0,
+        escapeMode: "nested",
+        tokens: [],
+        consumeNextLB: false,
+        resume: (childTokens) => {
+          frame.consumeNextLB = renderInlineNode(node, childTokens, frame.tokens, ctx, dslCtx);
+        },
+      });
+    } else if (node.type === "raw") {
+      frame.consumeNextLB = renderRawNode(node, frame.tokens, ctx, dslCtx);
+    } else if (node.type === "block") {
+      stack.push({
+        nodes: node.children,
+        index: 0,
+        escapeMode: "root",
+        tokens: [],
+        consumeNextLB: false,
+        resume: (childTokens) => {
+          frame.consumeNextLB = renderBlockNode(node, childTokens, frame.tokens, ctx, dslCtx);
+        },
+      });
     }
   }
 
