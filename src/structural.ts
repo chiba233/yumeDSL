@@ -6,8 +6,8 @@
 // - 允许共享基础配置 / tracker
 // - 禁止共享最终 span 结算
 //
-// structural parser 持有“原始源码真相”
-// render layer 持有“规范化渲染真相”
+// structural parser 持有"原始源码真相"
+// render layer 持有"规范化渲染真相"
 // 这是同一份源码的两种合法视角，不是重复劳动。
 //
 // 文件导航（行号可能因编辑微调，但顺序不变）：
@@ -131,7 +131,7 @@ interface ParseNodeFactory<TNode extends StructuralNode | IndexedStructuralNode>
   block(tag: string, args: TNode[], children: TNode[], meta: TagMeta): TNode;
 }
 
-// 这里故意把“扫描逻辑”和“节点 shape”拆开。
+// 这里故意把"扫描逻辑"和"节点 shape"拆开。
 // 主状态机只负责识别 structural 语法边界；最终产出 public 还是 indexed 节点，
 // 由 factory 决定。这样 public 路径不再需要先构 indexed 再 strip _meta。
 const pushNode = <TNode extends StructuralNode | IndexedStructuralNode>(
@@ -299,11 +299,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         : undefined;
     pushNode(
       frame.nodes,
-      factory.text(
-        value,
-        frame.baseOffset + frame.buf.start,
-        frame.baseOffset + frame.i,
-      ),
+      factory.text(value, frame.baseOffset + frame.buf.start, frame.baseOffset + frame.i),
       pos,
     );
     frame.buf.start = -1;
@@ -338,67 +334,63 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     const parent = stack[child.parentIndex];
     const childNodes = child.nodes;
 
-    // 所有子帧都在这里统一“回填”到父帧。
+    // 所有子帧都在这里统一"回填"到父帧。
     // 好处是主循环只负责扫描和入栈，真正的组装策略集中在一个地方，
-    // 不会在多个分支里重复写“父帧如何接 child”。
-    switch (child.returnKind) {
-      case "inline": {
-        const closeStart = child.i; // child.i 停在 endTag 的位置
-        const nextI = closeStart + endTag.length;
-        const meta: TagMeta = {
-          start: parent.baseOffset + child.tagStartI,
-          end: parent.baseOffset + nextI,
-          argStart: parent.baseOffset + child.argStartI,
-          argEnd: parent.baseOffset + closeStart,
-          contentStart: parent.baseOffset + child.argStartI,
-          contentEnd: parent.baseOffset + closeStart,
-        };
-        const pos = makePosition(tracker, meta.start, meta.end);
-        parent.i = nextI;
-        pushNode(parent.nodes, factory.inline(child.tag, childNodes, meta), pos);
-        break;
-      }
-      case "rawArgs":
-        pushNode(
-          parent.nodes,
-          factory.raw(
-            child.tag,
-            childNodes,
-            child.text.slice(child.contentStartI, child.contentEndI),
-            child.meta!,
-          ),
-          child.tagPosition,
-        );
-        break;
-      case "blockArgs": {
-        // args 完成，暂存后 push content 帧
-        parent.pendingArgs = childNodes;
-        const content = makeFrame(
-          child.text,
-          parent.depth + 1,
-          false,
-          parent.baseOffset,
-          child.contentStartI,
-          child.contentEndI,
-        );
-        pushChildFrame(
-          content,
-          "blockContent",
-          child.parentIndex,
+    // 不会在多个分支里重复写"父帧如何接 child"。
+    const kind = child.returnKind;
+    if (kind === "inline") {
+      const closeStart = child.i; // child.i 停在 endTag 的位置
+      const nextI = closeStart + endTag.length;
+      const base = parent.baseOffset;
+      const argOff = base + child.argStartI;
+      const closeOff = base + closeStart;
+      const meta: TagMeta = {
+        start: base + child.tagStartI,
+        end: base + nextI,
+        argStart: argOff,
+        argEnd: closeOff,
+        contentStart: argOff,
+        contentEnd: closeOff,
+      };
+      parent.i = nextI;
+      pushNode(parent.nodes, factory.inline(child.tag, childNodes, meta), makePosition(tracker, meta.start, meta.end));
+    } else if (kind === "rawArgs") {
+      pushNode(
+        parent.nodes,
+        factory.raw(
           child.tag,
-          child.meta,
-          child.tagPosition,
-        );
-        break;
-      }
-      case "blockContent":
-        pushNode(
-          parent.nodes,
-          factory.block(child.tag, parent.pendingArgs!, childNodes, child.meta!),
-          child.tagPosition,
-        );
-        parent.pendingArgs = null;
-        break;
+          childNodes,
+          child.text.slice(child.contentStartI, child.contentEndI),
+          child.meta!,
+        ),
+        child.tagPosition,
+      );
+    } else if (kind === "blockArgs") {
+      // args 完成，暂存后 push content 帧
+      parent.pendingArgs = childNodes;
+      const content = makeFrame(
+        child.text,
+        parent.depth + 1,
+        false,
+        parent.baseOffset,
+        child.contentStartI,
+        child.contentEndI,
+      );
+      pushChildFrame(
+        content,
+        "blockContent",
+        child.parentIndex,
+        child.tag,
+        child.meta,
+        child.tagPosition,
+      );
+    } else if (kind === "blockContent") {
+      pushNode(
+        parent.nodes,
+        factory.block(child.tag, parent.pendingArgs!, childNodes, child.meta!),
+        child.tagPosition,
+      );
+      parent.pendingArgs = null;
     }
   };
 
@@ -413,7 +405,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     closeStart: number,
     closeLength: number,
   ): { meta: TagMeta; pos: SourceSpan | undefined; nextI: number } => {
-    // raw / block 都是“先在父帧上算完整 span，再切 args/content 子帧”。
+    // raw / block 都是"先在父帧上算完整 span，再切 args/content 子帧"。
     // 这样 position 与 _meta 锚定的始终是原始源码区间，
     // 不会因为后续进入子帧扫描而丢失整体 tag 的边界。
     const nextI = closeStart + closeLength;
@@ -951,7 +943,7 @@ export const parseStructuralWithResolved = (
     tagName: resolved.tagName,
     onError,
   };
-  // `_meta` 必须保持“切片局部坐标”。
+  // `_meta` 必须保持"切片局部坐标"。
   // 原因：render 的退化路径会直接用 `source.slice(_meta.start, _meta.end)` 回切源码，
   // 如果这里偷改成绝对 offset，源码切片会直接错。
   //
