@@ -1,7 +1,7 @@
 {
   "all": true,
   "src": ["src"],
-  "exclude": ["tests/**", "dist/**", "node_modules/**", "*.config.*"],
+  "exclude": ["tests/**", "dist/**", "node_modules/**", "*.config.*","src/types.ts"],
   "reporter": ["text", "text-summary", "html"],
   "report-dir": "coverage",
   "extension": [".ts"]
