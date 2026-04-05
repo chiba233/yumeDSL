@@ -30,17 +30,28 @@ export const walkTokens = (tokens: TextToken[], visitor: WalkVisitor): void => {
           if (fn) fn(token, ctx);
         };
 
-  const walk = (list: TextToken[], parent: TextToken | null, depth: number): void => {
-    for (let i = 0; i < list.length; i++) {
-      const token = list[i];
-      visit(token, { parent, depth, index: i });
-      if (typeof token.value !== "string") {
-        walk(token.value, token, depth + 1);
-      }
-    }
-  };
+  interface WalkFrame {
+    list: TextToken[];
+    index: number;
+    parent: TextToken | null;
+    depth: number;
+  }
 
-  walk(tokens, null, 0);
+  const stack: WalkFrame[] = [{ list: tokens, index: 0, parent: null, depth: 0 }];
+
+  while (stack.length > 0) {
+    const frame = stack[stack.length - 1];
+    if (frame.index >= frame.list.length) {
+      stack.pop();
+      continue;
+    }
+    const token = frame.list[frame.index];
+    visit(token, { parent: frame.parent, depth: frame.depth, index: frame.index });
+    frame.index++;
+    if (typeof token.value !== "string") {
+      stack.push({ list: token.value, index: 0, parent: token, depth: frame.depth + 1 });
+    }
+  }
 };
 
 /**

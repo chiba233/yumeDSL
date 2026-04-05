@@ -2,6 +2,20 @@
 
 # Changelog
 
+### 1.1.8
+
+- Stack safety: `walkTokens` converted from native recursion to explicit stack iteration, matching
+  the same pattern used by `parseStructural` / `parseRichText` / `materializeTextTokens`. Deep
+  token trees (tens of thousands of levels) no longer risk call-stack overflow during traversal
+- Documentation: new **Linear-Time Complexity** wiki page
+  ([EN](https://github.com/chiba233/yumeDSL/wiki/en-Linear-Time-Complexity) /
+  [中文](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E7%BA%BF%E6%80%A7%E6%97%B6%E9%97%B4%E5%A4%8D%E6%9D%82%E5%BA%A6))
+  covering formal upper bound proof (`T(n) ≤ C·n`), worst-case input models, per-character branch
+  budget (_k_ ≈ 3–15), and empirical constants
+- Documentation: README / GUIDE updated with brief complexity explanation and link to the new wiki page
+- No public API changes
+- No intended output-format changes for normal `parseRichText` / `parseStructural` consumers
+
 ### 1.1.7
 
 - Performance: render-layer `trimBlockBoundaryTokens` no longer deep-clones the entire children

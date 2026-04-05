@@ -2,6 +2,18 @@
 
 # 更新日志
 
+### 1.1.8
+
+- 栈安全：`walkTokens` 从原生递归改为显式栈迭代，与 `parseStructural` / `parseRichText` /
+  `materializeTextTokens` 使用相同模式。深层 token 树（数万层级）遍历时不再有调用栈溢出风险
+- 文档：新增**线性时间复杂度** wiki 专页
+  （[EN](https://github.com/chiba233/yumeDSL/wiki/en-Linear-Time-Complexity) /
+  [中文](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E7%BA%BF%E6%80%A7%E6%97%B6%E9%97%B4%E5%A4%8D%E6%9D%82%E5%BA%A6)），
+  涵盖形式化上界证明（`T(n) ≤ C·n`）、最坏输入模型、单字符分支预算（_k_ ≈ 3–15）、经验常数
+- 文档：README / GUIDE 补充了简要复杂度说明并链接到新 wiki 页
+- 无公共 API 变化
+- 对正常 `parseRichText` / `parseStructural` 使用者来说，没有预期中的输出格式变化
+
 ### 1.1.7
 
 - 性能：render 层 `trimBlockBoundaryTokens` 不再对整个 children 数组做全量 clone，
