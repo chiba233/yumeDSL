@@ -40,7 +40,7 @@ Text in, token tree out — tag semantics, rendering, framework: all yours to de
 > 200 KB dense inline full parse: `parseRichText` **~39.8 ms**, `parseStructural` **~23.3 ms**.
 > Fully iterative, O(n) — no stack overflow at any nesting depth.
 >
-> Heap after structural parse: 200 KB **~40.89 MB**, 2 MB **~137.76 MB**.
+> Heap after structural parse: 200 KB **~41.03 MB**, 2 MB **~128.73 MB**.
 >
 > Substring parse: `parseRichText` slice + `baseOffset + tracker` **~20.62 µs**, `parseStructural` equivalent path **~13.47 µs**.
 >
