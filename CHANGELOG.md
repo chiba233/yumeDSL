@@ -2,6 +2,19 @@
 
 # Changelog
 
+### 1.1.7
+
+- Performance: render-layer `trimBlockBoundaryTokens` no longer deep-clones the entire children
+  array; it now checks whether trimming is needed and returns the original array in the common case,
+  cloning only the tokens that are actually modified
+- Performance: structural scanner `flushBuffer` uses direct string concatenation for the common
+  1–2 segment-pair case, avoiding a temporary parts array allocation
+- Fix: `trimBlockBoundaryTokens` crash on empty collapse blocks — when the only text token was
+  removed by leading-trim, trailing-trim did not check whether the array was already empty
+- Internal: `completeChild` converted from switch to if/else, removing one level of indirection
+- No public API changes
+- No intended output-format changes for normal `parseRichText` / `parseStructural` consumers
+
 ### 1.1.6
 
 - Performance: `parseStructural` hot-path constants reduced again

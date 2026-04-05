@@ -2,6 +2,18 @@
 
 # 更新日志
 
+### 1.1.7
+
+- 性能：render 层 `trimBlockBoundaryTokens` 不再对整个 children 数组做全量 clone，
+  改为先检测首尾是否需要 trim，绝大多数情况直接返回原数组；需要时只 clone 被修改的 token
+- 性能：structural 扫描 `flushBuffer` 对 1–2 对 segment 的常见情况直接字符串拼接，
+  避免分配临时 parts 数组
+- 修复：`trimBlockBoundaryTokens` 在空 collapse block 场景下的 `undefined` 崩溃——
+  当唯一的 text token 被首部 trim 移除后，尾部 trim 没有检查数组是否为空
+- 内部：`completeChild` 从 switch 改为 if/else，减少一层间接跳转
+- 无公共 API 变化
+- 对正常 `parseRichText` / `parseStructural` 使用者来说，没有预期中的输出格式变化
+
 ### 1.1.6
 
 - 性能：`parseStructural` 热路径继续降常数

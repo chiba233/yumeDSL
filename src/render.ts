@@ -111,32 +111,49 @@ const trimBlockBoundaryTokens = (
   tokens: TextToken[],
   tracker: PositionTracker | null,
 ): TextToken[] => {
-  const trimmed = tokens.map(cloneToken);
+  const len = tokens.length;
+  if (len === 0) return tokens;
 
-  const first = trimmed[0];
-  if (first?.type === "text" && typeof first.value === "string") {
-    const [nextValue, removed] = trimLeadingLineBreak(first.value);
+  // 先检查首尾是否需要 trim，大多数情况都不需要，直接返回原数组避免全量 clone
+  const first = tokens[0];
+  const last = tokens[len - 1];
+  const needTrimFirst = first.type === "text" && typeof first.value === "string" && (first.value.startsWith("\n") || first.value.startsWith("\r\n"));
+  const needTrimLast = last.type === "text" && typeof last.value === "string" && (last.value.endsWith("\n") || last.value.endsWith("\r\n"));
+
+  if (!needTrimFirst && !needTrimLast) return tokens;
+
+  // 只 clone 被修改的 token，其余共享引用
+  const trimmed = tokens.slice();
+
+  if (needTrimFirst) {
+    const cloned = cloneToken(first);
+    const [nextValue, removed] = trimLeadingLineBreak(cloned.value as string);
     if (removed > 0) {
       if (!nextValue) {
         trimmed.shift();
       } else {
-        first.value = nextValue;
-        if (first.position && tracker)
-          first.position = shiftPosition(first.position, tracker, "start", removed);
+        cloned.value = nextValue;
+        if (cloned.position && tracker)
+          cloned.position = shiftPosition(cloned.position, tracker, "start", removed);
+        trimmed[0] = cloned;
       }
     }
   }
 
-  const last = trimmed[trimmed.length - 1];
-  if (last?.type === "text" && typeof last.value === "string") {
-    const [nextValue, removed] = trimTrailingLineBreak(last.value);
+  if (needTrimLast && trimmed.length > 0) {
+    const lastIdx = trimmed.length - 1;
+    const target = trimmed[lastIdx];
+    // 如果 first === last 且 first 已经被 clone 过，不需要再 clone
+    const cloned = target === first && needTrimFirst ? target : cloneToken(target);
+    const [nextValue, removed] = trimTrailingLineBreak(cloned.value as string);
     if (removed > 0) {
       if (!nextValue) {
         trimmed.pop();
       } else {
-        last.value = nextValue;
-        if (last.position && tracker)
-          last.position = shiftPosition(last.position, tracker, "end", removed);
+        cloned.value = nextValue;
+        if (cloned.position && tracker)
+          cloned.position = shiftPosition(cloned.position, tracker, "end", removed);
+        trimmed[lastIdx] = cloned;
       }
     }
   }

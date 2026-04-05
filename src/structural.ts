@@ -282,25 +282,34 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
   // ── 缓冲区 ──
 
   const flushBuffer = (frame: ParseFrame) => {
-    if (frame.buf.start < 0) return;
+    const bufStart = frame.buf.start;
+    if (bufStart < 0) return;
+    const segments = frame.buf.segments;
     let value: string;
-    if (frame.buf.segments === null) {
-      value = frame.text.slice(frame.buf.start, frame.buf.end);
+    if (segments === null) {
+      value = frame.text.slice(bufStart, frame.buf.end);
     } else {
-      const parts: string[] = [];
-      for (let index = 0; index < frame.buf.segments.length; index += 2) {
-        parts.push(frame.text.slice(frame.buf.segments[index], frame.buf.segments[index + 1]));
+      const segLen = segments.length;
+      // 2 segments (1 pair) 或 4 segments (2 pairs) 时直接拼接，避免分配 parts 数组
+      if (segLen === 2) {
+        value = frame.text.slice(segments[0], segments[1]);
+      } else if (segLen === 4) {
+        value = frame.text.slice(segments[0], segments[1]) + frame.text.slice(segments[2], segments[3]);
+      } else {
+        let result = "";
+        for (let index = 0; index < segLen; index += 2) {
+          result += frame.text.slice(segments[index], segments[index + 1]);
+        }
+        value = result;
       }
-      value = parts.join("");
     }
-    const pos =
-      frame.buf.start >= 0
-        ? makePosition(tracker, frame.baseOffset + frame.buf.start, frame.baseOffset + frame.i)
-        : undefined;
+    const base = frame.baseOffset;
+    const startOff = base + bufStart;
+    const endOff = base + frame.i;
     pushNode(
       frame.nodes,
-      factory.text(value, frame.baseOffset + frame.buf.start, frame.baseOffset + frame.i),
-      pos,
+      factory.text(value, startOff, endOff),
+      makePosition(tracker, startOff, endOff),
     );
     frame.buf.start = -1;
     frame.buf.end = -1;
