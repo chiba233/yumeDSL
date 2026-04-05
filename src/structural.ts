@@ -131,6 +131,9 @@ interface ParseNodeFactory<TNode extends StructuralNode | IndexedStructuralNode>
   block(tag: string, args: TNode[], children: TNode[], meta: TagMeta): TNode;
 }
 
+// 这里故意把“扫描逻辑”和“节点 shape”拆开。
+// 主状态机只负责识别 structural 语法边界；最终产出 public 还是 indexed 节点，
+// 由 factory 决定。这样 public 路径不再需要先构 indexed 再 strip _meta。
 const pushNode = <TNode extends StructuralNode | IndexedStructuralNode>(
   nodes: TNode[],
   node: TNode,
@@ -187,6 +190,12 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
   // `i`（扫描指针）、`buf`（待 flush 的纯文本）、`nodes`（当前层结构节点）。
   // 一旦改动"何时 flush / 何时推进 i / 何时递归"，
   // raw/block/inline 的边界和 position 映射都很容易一起偏掉。
+  //
+  // 入口有两条：
+  // 1. parseNodes       -> IndexedStructuralNode[]，给内部逻辑和 render 退化路径用
+  // 2. parsePublicNodes -> StructuralNode[]，给 parseStructural() 直接返回
+  //
+  // 两条路径共用这一个扫描主循环，避免维护两套 form 判定规则。
   const { depthLimit, gating, tracker, syntax, tagName, onError } = ctx;
   const { tagClose, tagDivider, tagOpen, endTag, rawClose } = syntax;
 
@@ -303,6 +312,9 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     const parent = stack[child.parentIndex];
     const childNodes = child.nodes;
 
+    // 所有子帧都在这里统一“回填”到父帧。
+    // 好处是主循环只负责扫描和入栈，真正的组装策略集中在一个地方，
+    // 不会在多个分支里重复写“父帧如何接 child”。
     switch (child.returnKind) {
       case "inline": {
         const closeStart = child.i; // child.i 停在 endTag 的位置
@@ -366,6 +378,9 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     closeStart: number,
     closeLength: number,
   ): { meta: TagMeta; pos: SourceSpan | undefined; nextI: number } => {
+    // raw / block 都是“先在父帧上算完整 span，再切 args/content 子帧”。
+    // 这样 position 与 _meta 锚定的始终是原始源码区间，
+    // 不会因为后续进入子帧扫描而丢失整体 tag 的边界。
     const nextI = closeStart + closeLength;
     const meta: TagMeta = {
       start: frame.baseOffset + tagStart,
@@ -423,6 +438,8 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     if (frame.i >= frame.textEnd) {
       if (frame.closingEndTag !== null) {
         // inline 帧走到文本末尾仍未关闭 → 未闭合错误
+        // 这里不要整段吞掉：只把 tag 头回退成普通文本，并把父帧 i 放回 argStart。
+        // 后续正文会继续在父帧里按正常字符流扫描，这是老版本错误恢复语义。
         emitError(
           tracker,
           onError,
@@ -686,6 +703,9 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     if (!closerInfo) {
       const handler = gating?.handlers[info.tag];
       const isRegistered = gating?.registeredTags.has(info.tag) ?? false;
+      // 没识别出合法 closer，说明这不是完整 structural form。
+      // 如果 inline form 本来允许，就保持老语义：报一个 INLINE_NOT_CLOSED，
+      // 然后只把 tag 头退回文本，剩余内容继续扫描。
       if (!gating || supportsInlineForm(handler, gating.allowInline, isRegistered)) {
         emitError(
           tracker,
@@ -701,6 +721,38 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       continue;
     }
 
+    const handler = gating?.handlers[info.tag];
+    const isRegistered = gating?.registeredTags.has(info.tag) ?? false;
+
+    // 某些标签在 gating 下不允许 raw/block，但仍允许 inline。
+    // 老版本这里的行为不是直接把复杂 form 整段吃掉，而是退回到
+    // “把当前标签头当成一个未闭合 inline 起点”的兼容路径：
+    // - 报 INLINE_NOT_CLOSED
+    // - 仅消费到 argStart
+    // - 后续内容继续按普通扫描流处理
+    //
+    // 这个 helper 专门保留那条旧语义，避免复杂 form gating 改变错误基线。
+    const degradeUnsupportedComplexFormAsInline = () => {
+      if (
+        !gating ||
+        gating.registeredTags.size === 0 ||
+        !supportsInlineForm(handler, gating.allowInline, isRegistered)
+      ) {
+        return false;
+      }
+      emitError(
+        tracker,
+        onError,
+        "INLINE_NOT_CLOSED",
+        frameText,
+        i,
+        info.argStart - info.tagOpenPos,
+      );
+      appendBuf(frame, frameText.slice(i, info.argStart), i);
+      frame.i = info.argStart;
+      return true;
+    };
+
     // ── Inline 形态 ──
     if (closerInfo.closer === endTag) {
       if (!tryPushInlineChild(frame, i, info)) {
@@ -712,6 +764,14 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
 
     // ── Raw 形态 ──
     if (closerInfo.closer === rawClose) {
+      const degradedToInline =
+        gating && !handler?.raw && degradeUnsupportedComplexFormAsInline();
+      if (degradedToInline) {
+        continue;
+      }
+
+      // 先走“可退化为 inline”的兼容分支，再判断 raw handler 是否存在。
+      // 如果既不能退化、也没有 raw 能力，就把整段 raw 语法原样保留成文本。
       const contentStart = closerInfo.argClose + syntax.rawOpen.length;
       const closeStart = findRawClose(frameText, contentStart, syntax);
 
@@ -734,7 +794,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         continue;
       }
 
-      if (gating && !gating.handlers[info.tag]?.raw) {
+      if (gating && !handler?.raw) {
         const end = closeStart + syntax.rawClose.length;
         appendBuf(frame, frameText.slice(i, end), i);
         frame.i = end;
@@ -753,6 +813,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       flushBuffer(frame);
       frame.i = nextI;
 
+      // raw 正文不再递归扫描；只有参数区需要进入子帧继续产出结构节点。
       const child = makeFrame(
         frameText.slice(info.argStart, closerInfo.argClose),
         frame.depth + 1,
@@ -770,6 +831,16 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     }
 
     // ── Block 形态 ──
+    const degradedToInline =
+      gating && !handler?.block && degradeUnsupportedComplexFormAsInline();
+    if (degradedToInline) {
+      continue;
+    }
+
+    // block 路径与 raw 同一原则：
+    // 1. 优先保留老版本的 inline 兼容降级
+    // 2. 其次判断 block handler 是否存在
+    // 3. 都不满足时，把 block 语法原文保留进文本流
     const contentStart = closerInfo.argClose + syntax.blockOpen.length;
     const closeStart = findBlockClose(frameText, contentStart, syntax, tagName);
 
@@ -792,7 +863,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       continue;
     }
 
-    if (gating && !gating.handlers[info.tag]?.block) {
+    if (gating && !handler?.block) {
       const end = closeStart + syntax.blockClose.length;
       appendBuf(frame, frameText.slice(i, end), i);
       frame.i = end;
@@ -811,6 +882,10 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     flushBuffer(frame);
     frame.i = nextI;
 
+    // block 需要两阶段：
+    // 1. 先扫 args，得到 separator/text/inline 等结构
+    // 2. 再扫正文，得到 children
+    // 所以这里先压入 blockArgs 子帧，completeChild 再续推 content 帧。
     const child = makeFrame(
       frameText.slice(info.argStart, closerInfo.argClose),
       frame.depth + 1,
@@ -847,6 +922,8 @@ export const parseNodes = (
 ): IndexedStructuralNode[] =>
   parseNodesWithFactory(text, depth, ctx, insideArgs, baseOffset, indexedNodeFactory);
 
+// public structural parser 直接产出 StructuralNode[]。
+// 这条路径不再经过 stripMetaForest，也不再复制一整棵树剥离 _meta。
 const parsePublicNodes = (
   text: string,
   depth: number,
@@ -936,6 +1013,8 @@ export const parseStructural = (
   const gating = options?.handlers
     ? buildGatingContext(options.handlers, options.allowForms)
     : null;
+  // public 路径只需要 position，不需要 _meta。
+  // 因此这里直接走 parsePublicNodes，避免先构内部树再做 strip/copy。
   const ctx: ScanContext = {
     depthLimit: resolved.depthLimit,
     gating,
