@@ -54,9 +54,11 @@ Text in, token tree out — tag semantics, rendering, framework: all yours to de
 > [Full benchmark data](https://github.com/chiba233/yumeDSL/wiki/en-Performance)
 
 **Use cases:**
-game dialogue & visual novels (typewriter / shake / color tags you invent),
-chat & comments (safe UGC with graceful degradation),
-CMS & blogs, documentation pipelines, localization workflows (translators edit text, not markup)
+[game dialogue & visual novels](https://github.com/chiba233/yumeDSL/wiki/en-Tutorial-Game-Dialogue) (typewriter / shake / color tags you invent)
+
+[chat & comments](https://github.com/chiba233/yumeDSL/wiki/en-Tutorial-Safe-UGC) (safe UGC with graceful degradation)
+
+[CMS & blogs, documentation pipelines, localization workflows](https://github.com/chiba233/yumeDSL/wiki/en-Tutorial-Safe-UGC) (translators edit text, not markup)
 
 ```tsx
 // React — render tokens recursively

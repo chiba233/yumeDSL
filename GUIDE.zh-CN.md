@@ -50,9 +50,11 @@
 > [完整性能数据](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E6%80%A7%E8%83%BD)
 
 **适用场景：**
-游戏对话与视觉小说（打字机 / 抖动 / 变色——标签你自己发明），
-聊天与评论（UGC 安全降级），
-CMS 与博客、文档管线、本地化工作流（翻译人员只碰文本，不碰标记）
+[游戏对话与视觉小说](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E6%95%99%E7%A8%8B-%E6%B8%B8%E6%88%8F%E5%AF%B9%E8%AF%9D)（打字机 / 抖动 / 变色——标签你自己发明）
+
+[聊天与评论](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E6%95%99%E7%A8%8B-%E5%AE%89%E5%85%A8UGC)（UGC 安全降级）
+
+[CMS 与博客、文档管线、本地化工作流](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E6%95%99%E7%A8%8B-%E5%AE%89%E5%85%A8UGC)（翻译人员只碰文本，不碰标记）
 
 ```tsx
 // React — 递归渲染 token 树
