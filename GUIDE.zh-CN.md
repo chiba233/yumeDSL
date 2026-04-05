@@ -36,7 +36,7 @@
 > 200 KB dense inline 全量解析：`parseRichText` **~39.8 ms**，`parseStructural` **~23.3 ms**。
 > 全迭代 O(n)，任意嵌套深度均不会爆栈。
 >
-> Structural parse 后堆内存：200 KB **~48.88 MB**，2 MB **~147.26 MB**。
+> Structural parse 后堆内存：200 KB **~40.89 MB**，2 MB **~137.76 MB**。
 >
 > 子字符串解析：`parseRichText` 切片 + `baseOffset + tracker` **~20.62 µs**，`parseStructural` 同路径 **~13.47 µs**。
 >
