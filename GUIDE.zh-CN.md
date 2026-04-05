@@ -13,12 +13,17 @@
 [![Contributing](https://img.shields.io/badge/贡献指南-guide-blue.svg)](./CONTRIBUTING.zh-CN.md)
 [![Security](https://img.shields.io/badge/安全策略-policy-red.svg)](./SECURITY.md)
 
-零依赖、O(n)、给够堆内存时 public `parseStructural` 能跑完 5000 万层嵌套（`1.1.4` benchmark）的富文本 DSL 解析器。
+零依赖、**Θ(n)**、给够堆内存时 public `parseStructural` 能跑完 5000 万层嵌套（`1.1.4` benchmark）的富文本 DSL 解析器。
 文本进来，token 树出去——标签语义、渲染方式、目标框架，全部由你定义。
 
 - **不是** Markdown 渲染器、富文本编辑器或 HTML 生产线
 - **是** 一台只认语法不认语义的 token 机器——你喂它规则，它还你结构；[语法符号完全可换](#自定义语法)
 - 无正则回溯、无递归——全迭代确定性扫描，输入多长跑多久
+- **Θ(n)，n = `text.length`**（UTF-16 code units）。`1.1.2` 起 inline 帧改用 `parenDepth`
+  计数器就地判定关闭，不再前扫 `findInlineClose`；render 层 `materializeTextTokens` 用
+  `WeakSet` 跳过已处理子树——两条原 O(n²) 路径均已线性化。实际耗时取决于标签密度、节点密度、
+  嵌套深度和 API 路径（`parseRichText` ≈ structural 扫描 + render 物化）。
+  [完整复杂度分析](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E7%BA%BF%E6%80%A7%E6%97%B6%E9%97%B4%E5%A4%8D%E6%9D%82%E5%BA%A6)
 - inline / raw / block 三种标签形式，语法符号和标签名规则完全可换；内置[转义序列](#转义序列)让任何语法符号都能作为普通文本出现
 - 写错的、未知的标签[自动降级为纯文本](#错误处理)——不抛异常，不污染上下文
 - 无框架绑定、不依赖 DOM——浏览器、Node、Deno、Bun、游戏引擎或任何 JS 运行时都能跑

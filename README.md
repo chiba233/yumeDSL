@@ -13,13 +13,19 @@
 [![Contributing](https://img.shields.io/badge/Contributing-guide-blue.svg)](./CONTRIBUTING.md)
 [![Security](https://img.shields.io/badge/Security-policy-red.svg)](./SECURITY.md)
 
-Zero-dependency, O(n) rich-text DSL parser. With enough heap, public structural parse still finishes at 50 million nested layers (`1.1.4` benchmark).
+Zero-dependency, **Θ(n)** rich-text DSL parser. With enough heap, public structural parse still finishes at 50 million nested layers (`1.1.4` benchmark).
 Text in, token tree out — tag semantics, rendering, framework: all yours to define.
 
 - **Not** a Markdown renderer, rich-text editor, or HTML pipeline
 - **Is** a syntax-only token machine — you feed it rules, it returns
   structure; [syntax tokens are fully swappable](#custom-syntax)
 - No regex backtracking, no recursion — fully iterative deterministic scan, runtime proportional to input length
+- **Θ(n) where n = `text.length`** (UTF-16 code units). Since `1.1.2`, inline frames use lazy close
+  with a `parenDepth` counter instead of forward-scanning `findInlineClose`, and the render layer's
+  `materializeTextTokens` skips already-processed subtrees via `WeakSet` — both former O(n²) paths
+  are now linear. Actual wall-clock time depends on tag density, node density, nesting depth, and
+  API path (`parseRichText` ≈ structural scan + render materialization).
+  [Full complexity analysis](https://github.com/chiba233/yumeDSL/wiki/en-Linear-Time-Complexity)
 - Inline / Raw / Block — three tag forms, fully swappable syntax tokens and tag-name rules;
   built-in [escape sequences](#escape-sequences) let any syntax token appear as literal text
 - Malformed or unknown tags [degrade to plain text](#error-handling) — never throws, never corrupts surrounding
