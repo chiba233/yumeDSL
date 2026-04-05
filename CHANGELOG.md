@@ -2,6 +2,26 @@
 
 # Changelog
 
+### 1.1.5
+
+- Improve: `parseStructural()` no longer builds an internal indexed tree and then strips `_meta`
+  into a second public tree. The public path now parses directly into `StructuralNode[]`
+- Internal: the old `stripMetaForest` conversion stage is gone from the public structural API path
+- Internal: structural scanning now has two clean outputs instead of one shared union-typed hot path:
+  internal reuse still builds `IndexedStructuralNode[]`, while the public API builds `StructuralNode[]`
+  directly
+- Cleanup: removed the now-unused `parseStructuralInternal` helper
+- Benchmark: structural parse memory dropped measurably versus `1.1.3` on the same machine
+  (Kunpeng 920 / Node v24.14.0):
+  - 200 KB dense inline document: `heapUsed` after parse `56.72 MB -> 45.52 MB` (~19.8% lower)
+  - 2 MB dense inline document: `heapUsed` after parse `241.33 MB -> 142.24 MB` (~41.1% lower)
+  - 20k nested inline document: `heapUsed` after parse `68.02 MB -> 62.93 MB` (~7.5% lower)
+- No public API changes
+- No intended output-format changes for normal `parseStructural` consumers
+
+In short: this patch removes the public structural tree duplication step, lowers memory use on real
+documents, and keeps the user-facing contract unchanged.
+
 ### 1.1.4
 
 - Performance: `parseRichText` now reuses one shared base-resolution pass instead of resolving

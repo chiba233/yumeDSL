@@ -2,6 +2,24 @@
 
 # 更新日志
 
+### 1.1.5
+
+- 优化：`parseStructural()` 不再先构建一棵内部 indexed tree，再通过 `_meta` 剥离生成第二棵 public
+  tree。公开路径现在直接产出 `StructuralNode[]`
+- 内部：public structural API 路径上的 `stripMetaForest` 转换阶段已经移除
+- 内部：structural 扫描现在明确分成两条输出路径，不再共用一个带联合类型的热路径：
+  internal 复用继续产出 `IndexedStructuralNode[]`，public API 直接产出 `StructuralNode[]`
+- 清理：删除已无调用点的 `parseStructuralInternal`
+- 基准：相对 `1.1.3`，同机（鲲鹏 920 / Node v24.14.0）下 structural parse 的内存占用有明确下降：
+  - 200 KB dense inline 文档：parse 后 `heapUsed` 从 `56.72 MB` 降到 `45.52 MB`（约 `19.8%`）
+  - 2 MB dense inline 文档：parse 后 `heapUsed` 从 `241.33 MB` 降到 `142.24 MB`（约 `41.1%`）
+  - 20k nested inline 文档：parse 后 `heapUsed` 从 `68.02 MB` 降到 `62.93 MB`（约 `7.5%`）
+- 无公共 API 变化
+- 对正常 `parseStructural` 使用者来说，没有预期中的输出格式变化
+
+一句话：这个补丁版把 public structural 路径上的“双树转换”彻底拿掉了，真实文档内存更低，
+对外契约保持不变。
+
 ### 1.1.4
 
 - 性能：`parseRichText` 现在会复用同一份基础配置解析结果，不再在进入 structural / render

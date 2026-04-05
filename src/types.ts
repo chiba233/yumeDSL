@@ -332,7 +332,6 @@ export interface Zone {
 export interface BufferState {
   content: string;
   start: number;
-  sourceEnd: number;
 }
 
 

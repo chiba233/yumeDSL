@@ -13,7 +13,7 @@
 // 文件导航（行号可能因编辑微调，但顺序不变）：
 //
 //    ~83  IndexedStructuralNode  内部节点类型（带 _meta）
-//   ~125  pushNode / stripMeta   节点工具（stripMeta 是显式栈展开）
+//   ~125  pushNode / node工厂     节点工具
 //   ~212  ScanContext            跨递归层共享的不可变配置
 //   ~237  parseNodes             主入口（下面全是它的内部定义）
 //
@@ -36,7 +36,7 @@
 //   ~759  inline 帧嵌套标签      gating 检查 + pushInlineChild（跳过 getTagCloserType）
 //   ~775  非 inline 帧 form 判定 getTagCloserType → inline / raw / block 分发
 //
-//   ~926  ── Public API ──       parseStructuralWithResolved / parseStructuralInternal / parseStructural
+//   ~926  ── Public API ──       parseStructuralWithResolved / parseStructural
 // ═══════════════════════════════════════════════════════════════
 
 import type {
@@ -70,7 +70,7 @@ import {
 } from "./scanner.js";
 import { makePosition, type PositionTracker } from "./positions.js";
 
-const emptyBuffer = (): BufferState => ({ content: "", start: -1, sourceEnd: -1 });
+const emptyBuffer = (): BufferState => ({ content: "", start: -1 });
 
 // ── IndexedStructuralNode ──
 
@@ -122,84 +122,40 @@ export type IndexedStructuralNode =
       position?: SourceSpan;
     };
 
-const pushNode = (
-  nodes: IndexedStructuralNode[],
-  node: IndexedStructuralNode,
+interface ParseNodeFactory<TNode extends StructuralNode | IndexedStructuralNode> {
+  text(value: string, start: number, end: number): TNode;
+  escape(raw: string, start: number, end: number): TNode;
+  separator(start: number, end: number): TNode;
+  inline(tag: string, children: TNode[], meta: TagMeta): TNode;
+  raw(tag: string, args: TNode[], content: string, meta: TagMeta): TNode;
+  block(tag: string, args: TNode[], children: TNode[], meta: TagMeta): TNode;
+}
+
+const pushNode = <TNode extends StructuralNode | IndexedStructuralNode>(
+  nodes: TNode[],
+  node: TNode,
   position: SourceSpan | undefined,
 ) => {
   if (position) node.position = position;
   nodes.push(node);
 };
 
-const stripMetaForest = (nodes: IndexedStructuralNode[]): StructuralNode[] => {
-  interface StripFrame {
-    node: IndexedStructuralNode;
-    parent: StructuralNode[];
-  }
+const publicNodeFactory: ParseNodeFactory<StructuralNode> = {
+  text: (value) => ({ type: "text", value }),
+  escape: (raw) => ({ type: "escape", raw }),
+  separator: () => ({ type: "separator" }),
+  inline: (tag, children) => ({ type: "inline", tag, children }),
+  raw: (tag, args, content) => ({ type: "raw", tag, args, content }),
+  block: (tag, args, children) => ({ type: "block", tag, args, children }),
+};
 
-  const result: StructuralNode[] = [];
-  const stack: StripFrame[] = [];
-
-  for (let i = nodes.length - 1; i >= 0; i--) {
-    stack.push({ node: nodes[i], parent: result });
-  }
-
-  while (stack.length > 0) {
-    const frame = stack.pop()!;
-
-    const { node, parent } = frame;
-    const pos = node.position;
-
-    if (node.type === "text") {
-      parent.push({ type: "text", value: node.value, ...(pos && { position: pos }) });
-    }
-
-    if (node.type === "escape") {
-      parent.push({ type: "escape", raw: node.raw, ...(pos && { position: pos }) });
-    }
-
-    if (node.type === "separator") {
-      parent.push({ type: "separator", ...(pos && { position: pos }) });
-    }
-
-    if (node.type === "inline") {
-      const children: StructuralNode[] = [];
-      parent.push({ type: "inline", tag: node.tag, children, ...(pos && { position: pos }) });
-      for (let i = node.children.length - 1; i >= 0; i--) {
-        stack.push({ node: node.children[i], parent: children });
-      }
-    }
-
-    if (node.type === "raw") {
-      const args: StructuralNode[] = [];
-      parent.push({
-        type: "raw",
-        tag: node.tag,
-        args,
-        content: node.content,
-        ...(pos && { position: pos }),
-      });
-      for (let i = node.args.length - 1; i >= 0; i--) {
-        stack.push({ node: node.args[i], parent: args });
-      }
-    }
-
-    if (node.type === "block") {
-      const args: StructuralNode[] = [];
-      const children: StructuralNode[] = [];
-      parent.push({ type: "block", tag: node.tag, args, children, ...(pos && { position: pos }) });
-      // These frames write into different output arrays, so push order does not affect result shape.
-      for (let i = node.children.length - 1; i >= 0; i--) {
-        stack.push({ node: node.children[i], parent: children });
-      }
-      for (let i = node.args.length - 1; i >= 0; i--) {
-        stack.push({ node: node.args[i], parent: args });
-      }
-    }
-
-  }
-
-  return result;
+const indexedNodeFactory: ParseNodeFactory<IndexedStructuralNode> = {
+  text: (value, start, end) => ({ type: "text", value, _meta: { start, end } }),
+  escape: (raw, start, end) => ({ type: "escape", raw, _meta: { start, end } }),
+  separator: (start, end) => ({ type: "separator", _meta: { start, end } }),
+  inline: (tag, children, meta) => ({ type: "inline", tag, children, _meta: meta }),
+  raw: (tag, args, content, meta) => ({ type: "raw", tag, args, content, _meta: meta }),
+  block: (tag, args, children, meta) => ({ type: "block", tag, args, children, _meta: meta }),
 };
 
 // ── Structural parser ──
@@ -214,36 +170,31 @@ interface ScanContext {
   onError?: (error: ParseError) => void;
 }
 
-interface StructuralPositionPolicy {
-  tracker: PositionTracker | null;
-}
-
 type TagStartInfo = NonNullable<ReturnType<typeof readTagStartInfo>>;
 
 // ── 主循环 ──
 
-/**
- * Core structural scanning loop.
- *
- * Exported for internal reuse (e.g. zone grouping) — not part of the
- * public API surface. Call {@link parseStructural} for normal use.
- *
- * @internal
- */
-export const parseNodes = (
+const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralNode>(
   text: string,
   depth: number,
   ctx: ScanContext,
   insideArgs: boolean,
   baseOffset: number,
-): IndexedStructuralNode[] => {
+  factory: ParseNodeFactory<TNode>,
+): TNode[] => {
   // 注意：这是 structural parser 的主状态机。
   // 它不走 handler，也不产出运行时 token；这里只有三类核心状态：
   // `i`（扫描指针）、`buf`（待 flush 的纯文本）、`nodes`（当前层结构节点）。
   // 一旦改动"何时 flush / 何时推进 i / 何时递归"，
   // raw/block/inline 的边界和 position 映射都很容易一起偏掉。
   const { depthLimit, gating, tracker, syntax, tagName, onError } = ctx;
-  const { tagDivider, tagOpen, endTag, rawClose } = syntax;
+  const { tagClose, tagDivider, tagOpen, endTag, rawClose } = syntax;
+
+  if (!endTag.startsWith(tagClose)) {
+    throw new Error(
+      `Invalid structural syntax: endTag "${endTag}" must start with tagClose "${tagClose}" for inline parsing.`,
+    );
+  }
 
   // ── 帧定义 ──
   //
@@ -265,7 +216,7 @@ export const parseNodes = (
     baseOffset: number;
     i: number;
     textEnd: number; // scan boundary; inline 帧初始为 text.length，其余等于 text.length
-    nodes: IndexedStructuralNode[];
+    nodes: TNode[];
     buf: BufferState;
 
     // ── 返回槽位 ──
@@ -283,7 +234,7 @@ export const parseNodes = (
     tagOpenPos: number; // info.tagOpenPos，用于 error span
 
     // ── block 专用：两阶段中间存储 ──
-    pendingArgs: IndexedStructuralNode[] | null; // blockArgs 完成后暂存
+    pendingArgs: TNode[] | null; // blockArgs 完成后暂存
     contentText: string; // block content 切片
     contentBaseOffset: number; // block content 的 baseOffset
     rawContent: string; // raw 的正文字符串
@@ -329,16 +280,15 @@ export const parseNodes = (
         : undefined;
     pushNode(
       frame.nodes,
-      {
-        type: "text",
-        value: frame.buf.content,
-        _meta: { start: frame.baseOffset + frame.buf.start, end: frame.baseOffset + frame.i },
-      },
+      factory.text(
+        frame.buf.content,
+        frame.baseOffset + frame.buf.start,
+        frame.baseOffset + frame.i,
+      ),
       pos,
     );
     frame.buf.content = "";
     frame.buf.start = -1;
-    frame.buf.sourceEnd = -1;
   };
 
   const appendBuf = (frame: ParseFrame, content: string, start: number) => {
@@ -367,23 +317,13 @@ export const parseNodes = (
         };
         const pos = makePosition(tracker, meta.start, meta.end);
         parent.i = nextI;
-        pushNode(
-          parent.nodes,
-          { type: "inline", tag: child.tag, children: childNodes, _meta: meta },
-          pos,
-        );
+        pushNode(parent.nodes, factory.inline(child.tag, childNodes, meta), pos);
         break;
       }
       case "rawArgs":
         pushNode(
           parent.nodes,
-          {
-            type: "raw",
-            tag: child.tag,
-            args: childNodes,
-            content: child.rawContent,
-            _meta: child.meta!,
-          },
+          factory.raw(child.tag, childNodes, child.rawContent, child.meta!),
           child.tagPosition,
         );
         break;
@@ -407,13 +347,7 @@ export const parseNodes = (
       case "blockContent":
         pushNode(
           parent.nodes,
-          {
-            type: "block",
-            tag: child.tag,
-            args: parent.pendingArgs!,
-            children: childNodes,
-            _meta: child.meta!,
-          },
+          factory.block(child.tag, parent.pendingArgs!, childNodes, child.meta!),
           child.tagPosition,
         );
         parent.pendingArgs = null;
@@ -426,7 +360,7 @@ export const parseNodes = (
   const buildComplexMeta = (
     frame: ParseFrame,
     tagStart: number,
-    info: TagStartInfo,
+    argStart: number,
     argClose: number,
     contentStart: number,
     closeStart: number,
@@ -436,7 +370,7 @@ export const parseNodes = (
     const meta: TagMeta = {
       start: frame.baseOffset + tagStart,
       end: frame.baseOffset + nextI,
-      argStart: frame.baseOffset + info.argStart,
+      argStart: frame.baseOffset + argStart,
       argEnd: frame.baseOffset + argClose,
       contentStart: frame.baseOffset + contentStart,
       contentEnd: frame.baseOffset + closeStart,
@@ -519,11 +453,7 @@ export const parseNodes = (
       flushBuffer(frame);
       pushNode(
         frame.nodes,
-        {
-          type: "escape",
-          raw: frameText.slice(i, next),
-          _meta: { start: frame.baseOffset + i, end: frame.baseOffset + next },
-        },
+        factory.escape(frameText.slice(i, next), frame.baseOffset + i, frame.baseOffset + next),
         makePosition(tracker, frame.baseOffset + i, frame.baseOffset + next),
       );
       frame.i = next;
@@ -601,11 +531,7 @@ export const parseNodes = (
           const meta = buildComplexMeta(
             parent,
             tagStartI,
-            {
-              tag: frame.tag,
-              argStart: frame.argStartI,
-              tagOpenPos: frame.tagOpenPos,
-            } as TagStartInfo,
+            frame.argStartI,
             argClose,
             contentStart,
             closeStart,
@@ -616,13 +542,7 @@ export const parseNodes = (
           parent.i = nextI;
           pushNode(
             parent.nodes,
-            {
-              type: "raw",
-              tag: frame.tag,
-              args,
-              content: frameText.slice(contentStart, closeStart),
-              _meta: meta.meta,
-            },
+            factory.raw(frame.tag, args, frameText.slice(contentStart, closeStart), meta.meta),
             meta.pos,
           );
           continue;
@@ -670,11 +590,7 @@ export const parseNodes = (
           const metaResult = buildComplexMeta(
             parent,
             tagStartI,
-            {
-              tag: frame.tag,
-              argStart: frame.argStartI,
-              tagOpenPos: frame.tagOpenPos,
-            } as TagStartInfo,
+            frame.argStartI,
             argClose,
             contentStart,
             closeStart,
@@ -721,10 +637,7 @@ export const parseNodes = (
       flushBuffer(frame);
       pushNode(
         frame.nodes,
-        {
-          type: "separator",
-          _meta: { start: frame.baseOffset + i, end: frame.baseOffset + i + tagDivider.length },
-        },
+        factory.separator(frame.baseOffset + i, frame.baseOffset + i + tagDivider.length),
         makePosition(tracker, frame.baseOffset + i, frame.baseOffset + i + tagDivider.length),
       );
       frame.i += tagDivider.length;
@@ -831,7 +744,7 @@ export const parseNodes = (
       const { meta, pos, nextI } = buildComplexMeta(
         frame,
         i,
-        info,
+        info.argStart,
         closerInfo.argClose,
         contentStart,
         closeStart,
@@ -889,7 +802,7 @@ export const parseNodes = (
     const { meta, pos, nextI } = buildComplexMeta(
       frame,
       i,
-      info,
+      info.argStart,
       closerInfo.argClose,
       contentStart,
       closeStart,
@@ -917,6 +830,32 @@ export const parseNodes = (
   return [];
 };
 
+/**
+ * Core structural scanning loop.
+ *
+ * Exported for internal reuse (e.g. zone grouping) — not part of the
+ * public API surface. Call {@link parseStructural} for normal use.
+ *
+ * @internal
+ */
+export const parseNodes = (
+  text: string,
+  depth: number,
+  ctx: ScanContext,
+  insideArgs: boolean,
+  baseOffset: number,
+): IndexedStructuralNode[] =>
+  parseNodesWithFactory(text, depth, ctx, insideArgs, baseOffset, indexedNodeFactory);
+
+const parsePublicNodes = (
+  text: string,
+  depth: number,
+  ctx: ScanContext,
+  insideArgs: boolean,
+  baseOffset: number,
+): StructuralNode[] =>
+  parseNodesWithFactory(text, depth, ctx, insideArgs, baseOffset, publicNodeFactory);
+
 // ── Public API ──
 
 export const parseStructuralWithResolved = (
@@ -927,13 +866,10 @@ export const parseStructuralWithResolved = (
 ): IndexedStructuralNode[] => {
   if (!text) return [];
 
-  const positionPolicy: StructuralPositionPolicy = {
-    tracker: resolved.tracker,
-  };
   const ctx: ScanContext = {
     depthLimit: resolved.depthLimit,
     gating,
-    tracker: positionPolicy.tracker,
+    tracker: resolved.tracker,
     syntax: resolved.syntax,
     tagName: resolved.tagName,
     onError,
@@ -947,10 +883,26 @@ export const parseStructuralWithResolved = (
   return parseNodes(text, 0, ctx, false, 0);
 };
 
-export const parseStructuralInternal = (
+/**
+ * Parse rich-text DSL into a structural tree that preserves tag forms.
+ *
+ * When `handlers` is provided, tag recognition and form gating follow the
+ * exact same rules as {@link parseRichText}:
+ *
+ * - Only registered tags are recognized; unknown tags pass through as inline.
+ * - `allowForms` restricts which syntactic forms are accepted.
+ * - Handler method presence (`inline` / `raw` / `block`) determines per-tag form support.
+ *
+ * When `handlers` is omitted, **all** tags in **all** forms are accepted.
+ *
+ * When `syntax` / `tagName` are omitted, defaults to {@link DEFAULT_SYNTAX} /
+ * {@link DEFAULT_TAG_NAME}. Legacy `withSyntax` / `withTagNameConfig` ambient
+ * wrapping is detected and used as a fallback with a deprecation warning.
+ */
+export const parseStructural = (
   text: string,
-  options?: StructuralParseOptions & { onError?: (error: ParseError) => void },
-): IndexedStructuralNode[] => {
+  options?: StructuralParseOptions,
+): StructuralNode[] => {
   if (!text) return [];
 
   let legacySyntax: SyntaxConfig | undefined;
@@ -981,32 +933,15 @@ export const parseStructuralInternal = (
     syntax: legacySyntax,
     tagName: legacyTagName,
   });
-
   const gating = options?.handlers
     ? buildGatingContext(options.handlers, options.allowForms)
     : null;
-  return parseStructuralWithResolved(text, resolved, gating, options?.onError);
-};
-
-/**
- * Parse rich-text DSL into a structural tree that preserves tag forms.
- *
- * When `handlers` is provided, tag recognition and form gating follow the
- * exact same rules as {@link parseRichText}:
- *
- * - Only registered tags are recognized; unknown tags pass through as inline.
- * - `allowForms` restricts which syntactic forms are accepted.
- * - Handler method presence (`inline` / `raw` / `block`) determines per-tag form support.
- *
- * When `handlers` is omitted, **all** tags in **all** forms are accepted.
- *
- * When `syntax` / `tagName` are omitted, defaults to {@link DEFAULT_SYNTAX} /
- * {@link DEFAULT_TAG_NAME}. Legacy `withSyntax` / `withTagNameConfig` ambient
- * wrapping is detected and used as a fallback with a deprecation warning.
- */
-export const parseStructural = (
-  text: string,
-  options?: StructuralParseOptions,
-): StructuralNode[] => {
-  return stripMetaForest(parseStructuralInternal(text, options));
+  const ctx: ScanContext = {
+    depthLimit: resolved.depthLimit,
+    gating,
+    tracker: resolved.tracker,
+    syntax: resolved.syntax,
+    tagName: resolved.tagName,
+  };
+  return parsePublicNodes(text, 0, ctx, false, 0);
 };
