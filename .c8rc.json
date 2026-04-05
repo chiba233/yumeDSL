@@ -1,0 +1,8 @@
+{
+  "all": true,
+  "src": ["src"],
+  "exclude": ["tests/**", "dist/**", "node_modules/**", "*.config.*"],
+  "reporter": ["text", "text-summary", "html"],
+  "report-dir": "coverage",
+  "extension": [".ts"]
+}

@@ -26,6 +26,7 @@
     "build": "tsup --target esnext",
     "lint": "tsc --noEmit -p tsconfig.json",
     "test": "tsup --target esnext && node --import tsx tests/run-dsl-tests.ts",
+    "test:coverage": "tsup --target esnext && c8 node --import tsx tests/run-dsl-tests.ts",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -57,6 +58,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
+    "c8": "^11.0.0",
     "tsup": "^8.5.1",
     "tsx": "^4.21.0",
     "typescript": "^5.7.0"
