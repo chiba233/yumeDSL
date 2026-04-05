@@ -45,7 +45,7 @@ Text in, token tree out — tag semantics, rendering, framework: all yours to de
 > Substring parse: `parseRichText` slice + `baseOffset + tracker` **~20.62 µs**, `parseStructural` equivalent path **~13.47 µs**.
 >
 > Incremental parse (edit one 36-char tag in a ~200 KB document): `nodeAtOffset` **~456.76 µs** + `parseSlice` **~8.36 µs**;
-> full `parseRichText` on the same document takes **~19.45 ms** — the incremental path is three orders of magnitude faster.
+> full `parseRichText` on the same document takes **~19.45 ms** — the incremental path is roughly **42x faster**.
 >
 > Stress test: 50 million-layer single-chain inline nesting (~500 MB), `parseStructural` **~224.1 s** (`1.1.4` data; not re-measured for `1.1.6`).
 > Large-scale deep-nesting runs use an expanded heap budget; see the performance page for exact conditions.

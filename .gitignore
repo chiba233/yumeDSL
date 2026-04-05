@@ -28,6 +28,7 @@ pnpm-workspace.yaml
 *.njsproj
 *.sln
 *.sw?
+.codex
 yume-dsl-rich-text*.tgz
 
 

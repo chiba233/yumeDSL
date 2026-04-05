@@ -41,7 +41,7 @@
 > 子字符串解析：`parseRichText` 切片 + `baseOffset + tracker` **~20.62 µs**，`parseStructural` 同路径 **~13.47 µs**。
 >
 > 增量解析（~200 KB 文档里改一个 36 字符标签）：`nodeAtOffset` **~456.76 µs** + `parseSlice` **~8.36 µs**；
-> 同文档全量 `parseRichText` 需要 **~19.45 ms**——增量路径快三个数量级。
+> 同文档全量 `parseRichText` 需要 **~19.45 ms**——增量路径快约 **42 倍**。
 >
 > 极限压测：5000 万层单链 inline 嵌套（~500 MB）`parseStructural` **~224.1 s**（`1.1.4` 数据，`1.1.6` 未重测）。
 > 大规模深嵌套基准使用放宽后的堆预算；具体条件见性能页。
