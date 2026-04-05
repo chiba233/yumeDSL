@@ -13,7 +13,7 @@
 [![Contributing](https://img.shields.io/badge/Contributing-guide-blue.svg)](./CONTRIBUTING.md)
 [![Security](https://img.shields.io/badge/Security-policy-red.svg)](./SECURITY.md)
 
-Zero-dependency, O(n) rich-text DSL parser. 50 million nested layers, public structural parse still finishes with enough heap.
+Zero-dependency, O(n) rich-text DSL parser. With enough heap, public structural parse still finishes at 50 million nested layers (`1.1.4` benchmark).
 Text in, token tree out — tag semantics, rendering, framework: all yours to define.
 
 - **Not** a Markdown renderer, rich-text editor, or HTML pipeline
@@ -35,25 +35,22 @@ Text in, token tree out — tag semantics, rendering, framework: all yours to de
 
 **Edit tags in real time, toggle handlers on/off, watch the token tree update as you type.**
 
-> **200 KB daily benchmark (Kunpeng 920 / Node v24.14.0, current re-run):**
-> `parseRichText` **~22.6 ms**, `parseStructural` ~17.8 ms.
-> Fully iterative, O(n) — no stack overflow at any depth.
-> The three independent deep-nesting bottlenecks removed in 1.1.2 remain gone.
-> Compared with the published `1.1.3` package, current full-document parse is still faster
-> (`parseRichText` ~27.4 ms → ~22.6 ms, `parseStructural` ~19.3 ms → ~17.8 ms).
-> 
-> **50 000 000-layer single-chain inline nesting (~500 MB): public `parseStructural` ~224.1 s.**
-> 
-> **20 000 000-layer single-chain inline nesting:** full `parseRichText` is also part of the
-> large-scale deep-nesting benchmark envelope now.
-> Large-scale deep-nesting measurements use an expanded heap budget; see the performance page for the
-> exact memory notes and run conditions.
-> Parsing a substring instead of the whole document? Relative to `1.1.3`, current substring paths stay
-> flat to faster (`parseRichText` slice + `baseOffset + tracker`: ~46.7 µs → ~41.1 µs;
-> `parseStructural` slice + `baseOffset + tracker`: ~24.6 µs → ~24.8 µs).
-> Edit a 36-char tag in a 200 KB document? Pair with
-> [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker)'s `parseSlice` — only the touched
-> region gets re-parsed.
+> **`1.1.6` benchmark — Kunpeng 920 aarch64 / Node v24.14.0**
+>
+> 200 KB dense inline full parse: `parseRichText` **~39.8 ms**, `parseStructural` **~23.3 ms**.
+> Fully iterative, O(n) — no stack overflow at any nesting depth.
+>
+> Heap after structural parse: 200 KB **~48.88 MB**, 2 MB **~147.26 MB**.
+>
+> Substring parse: `parseRichText` slice + `baseOffset + tracker` **~20.62 µs**, `parseStructural` equivalent path **~13.47 µs**.
+>
+> Incremental parse (edit one 36-char tag in a ~200 KB document): `nodeAtOffset` **~456.76 µs** + `parseSlice` **~8.36 µs**;
+> full `parseRichText` on the same document takes **~19.45 ms** — the incremental path is three orders of magnitude faster.
+>
+> Stress test: 50 million-layer single-chain inline nesting (~500 MB), `parseStructural` **~224.1 s** (`1.1.4` data; not re-measured for `1.1.6`).
+> Large-scale deep-nesting runs use an expanded heap budget; see the performance page for exact conditions.
+>
+> Pair with [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker)'s `parseSlice` — only the touched region gets re-parsed.
 > [Full benchmark data](https://github.com/chiba233/yumeDSL/wiki/en-Performance)
 
 **Use cases:**
