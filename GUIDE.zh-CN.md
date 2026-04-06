@@ -36,12 +36,12 @@
 
 **实时编辑标签、开关 handler、边打字边看 token 树更新。**
 
-> **`1.1.6` 实测 — 鲲鹏 920 aarch64 / Node v24.14.0**
+> **`1.1.7` 实测 — 鲲鹏 920 aarch64 / Node v24.14.0**
 >
-> 200 KB dense inline 全量解析：`parseRichText` **~39.8 ms**，`parseStructural` **~23.3 ms**。
+> 200 KB dense inline 全量解析：`parseRichText` **~30.6 ms**，`parseStructural` **~23.3 ms**。
 > 全迭代 O(n)，任意嵌套深度均不会爆栈。
 >
-> Structural parse 后堆内存：200 KB **~41.03 MB**，2 MB **~128.73 MB**。
+> Structural parse 后堆内存：200 KB **~21.60 MB**，2 MB **~138.51 MB**。
 >
 > 子字符串解析：`parseRichText` 切片 + `baseOffset + tracker` **~20.62 µs**，`parseStructural` 同路径 **~13.47 µs**。
 >

@@ -41,12 +41,12 @@ Text in, token tree out — tag semantics, rendering, framework: all yours to de
 
 **Edit tags in real time, toggle handlers on/off, watch the token tree update as you type.**
 
-> **`1.1.6` benchmark — Kunpeng 920 aarch64 / Node v24.14.0**
+> **`1.1.7` benchmark — Kunpeng 920 aarch64 / Node v24.14.0**
 >
-> 200 KB dense inline full parse: `parseRichText` **~39.8 ms**, `parseStructural` **~23.3 ms**.
+> 200 KB dense inline full parse: `parseRichText` **~30.6 ms**, `parseStructural` **~23.3 ms**.
 > Fully iterative, O(n) — no stack overflow at any nesting depth.
 >
-> Heap after structural parse: 200 KB **~41.03 MB**, 2 MB **~128.73 MB**.
+> Heap after structural parse: 200 KB **~21.60 M**, 2 MB **~138.51 MB**.
 >
 > Substring parse: `parseRichText` slice + `baseOffset + tracker` **~20.62 µs**, `parseStructural` equivalent path **~13.47 µs**.
 >
