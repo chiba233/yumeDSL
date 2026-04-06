@@ -807,6 +807,47 @@ const cases: Array<{ name: string; run: () => void }> = [
     },
   },
   {
+    name: "[Structural/Syntax] 非法 syntax: endTag 不以 tagClose 开头 -> 应抛出明确错误",
+    run: () => {
+      assert.throws(
+        () =>
+          parseStructural("@@bold<<x>>/@@", {
+            syntax: {
+              tagPrefix: "@@",
+              tagOpen: "<<",
+              tagClose: ">>",
+              tagDivider: "||",
+              endTag: "/@@",
+              rawOpen: ">>%",
+              blockOpen: ">>*",
+              rawClose: "%end@@",
+              blockClose: "*end@@",
+              escapeChar: "~",
+            },
+          }),
+        /Invalid structural syntax/,
+      );
+    },
+  },
+  {
+    name: "[Structural/Recovery] raw close 行格式错误 -> structural parse 应整体退化为文本",
+    run: () => {
+      assert.deepEqual(
+        normalizeStructuralNodes(parseStructural("$$code(ts)%\nraw\nx%end$$", { handlers: helperHandlers })),
+        [{ type: "text", value: "$$code(ts)%\nraw\nx%end$$" }],
+      );
+    },
+  },
+  {
+    name: "[Structural/Recovery] block close 行格式错误 -> structural parse 应整体退化为文本",
+    run: () => {
+      assert.deepEqual(
+        normalizeStructuralNodes(parseStructural("$$info(title)*\nbody\nx*end$$", { handlers: helperHandlers })),
+        [{ type: "text", value: "$$info(title)*\nbody\nx*end$$" }],
+      );
+    },
+  },
+  {
     name: "[Structural/Closure] createParser.structural -> 应继承闭包默认 handlers 与 allowForms 门控",
     run: () => {
       const parser = createParser({
@@ -1299,6 +1340,54 @@ const cases: Array<{ name: string; run: () => void }> = [
       });
       assert.deepEqual(normalizeTokens(tokens), [
         { type: "bold", value: [{ type: "text", value: "a" }] },
+        { type: "text", value: "\nnext" },
+      ]);
+    },
+  },
+  {
+    name: "[Inline/BlockTag] 用户声明 forms 应覆盖自动推导，不应继承原 handler 的其它 multiline form",
+    run: () => {
+      const tokens = parseRichText("$$info(title)$$\nnext", {
+        handlers: helperHandlers,
+        blockTags: declareMultilineTags([{ tag: "info", forms: ["inline"] }]),
+      });
+      assert.deepEqual(normalizeTokens(tokens), [
+        { type: "text", value: "$$info(title)$$\nnext" },
+      ]);
+    },
+  },
+  {
+    name: "[Block/BlockTag] 用户声明 forms 应覆盖自动推导，禁用 block 归一化后应保留尾随换行",
+    run: () => {
+      const tokens = parseRichText("$$info()*\nhello\n*end$$\nnext", {
+        handlers: testHandlers,
+        blockTags: declareMultilineTags([{ tag: "info", forms: ["raw"] }]),
+      });
+      assert.deepEqual(normalizeTokens(tokens), [
+        {
+          type: "info",
+          title: "Info",
+          value: [{ type: "text", value: "\nhello\n" }],
+        },
+        { type: "text", value: "\nnext" },
+      ]);
+    },
+  },
+  {
+    name: "[Raw/BlockTag] 用户声明 forms 应覆盖自动推导，禁用 raw 归一化后应保留尾随换行",
+    run: () => {
+      const tokens = parseRichText("$$raw-code(ts)%\nconst x = 1\n%end$$\nnext", {
+        handlers: testHandlers,
+        blockTags: declareMultilineTags([{ tag: "raw-code", forms: ["block"] }]),
+      });
+      assert.deepEqual(normalizeTokens(tokens), [
+        {
+          type: "raw-code",
+          codeLang: "typescript",
+          title: "Code:",
+          label: "",
+          value: "\nconst x = 1\n",
+        },
         { type: "text", value: "\nnext" },
       ]);
     },

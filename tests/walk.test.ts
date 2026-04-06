@@ -53,6 +53,16 @@ const cases: GoldenCase[] = [
     },
   },
   {
+    name: "walkTokens: record visitor misses unknown types without crashing",
+    run: () => {
+      const calls: string[] = [];
+      walkTokens(tree, {
+        underline: () => calls.push("underline"),
+      });
+      assert.deepEqual(calls, []);
+    },
+  },
+  {
     name: "walkTokens: context provides parent, depth, index",
     run: () => {
       const log: Array<{ type: string; parent: string | null; depth: number; index: number }> = [];
@@ -153,6 +163,32 @@ const cases: GoldenCase[] = [
 
       // root visitor should see child already mapped to "b"
       assert.deepEqual(seen, ["b"]);
+    },
+  },
+  {
+    name: "mapTokens: ctx.parent points to original input token",
+    run: () => {
+      const input = [branch("root", [branch("wrap", [leaf("text", "a")])])];
+      let seenParentChildCount: number | null = null;
+
+      mapTokens(input, (token, ctx) => {
+        if (token.type === "wrap") {
+          seenParentChildCount = Array.isArray(ctx.parent?.value) ? ctx.parent.value.length : null;
+        }
+
+        if (token.type === "wrap") {
+          return {
+            ...token,
+            value: [leaf("text", "mapped")],
+          };
+        }
+
+        return token.type === "text"
+          ? { ...token, value: `${token.value as string}!` }
+          : token;
+      });
+
+      assert.equal(seenParentChildCount, 1);
     },
   },
   {

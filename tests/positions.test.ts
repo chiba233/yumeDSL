@@ -331,6 +331,17 @@ const cases: GoldenCase[] = [
       assert.deepEqual(nodes[0].position, position(1, 1, 0, 3, 7, text.length));
     },
   },
+  {
+    name: "[Position/Structural] separator 节点 -> position 应仅覆盖 divider 本身",
+    run() {
+      const text = "$$link(a | b)$$";
+      const nodes = parseStructural(text, { trackPositions: true });
+      assert.equal(nodes.length, 1);
+      const inline = nodes[0] as Extract<StructuralNode, { type: "inline" }>;
+      assert.equal(inline.children[1]?.type, "separator");
+      assert.deepEqual(inline.children[1]?.position, position(1, 10, 9, 1, 11, 10));
+    },
+  },
 
   // ── Structural: nested children have correct offset ──
   {

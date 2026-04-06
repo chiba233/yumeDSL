@@ -35,3 +35,4 @@ yume-dsl-rich-text*.tgz
 .eslintcache
 /node_modules/
 /dist/
+/coverage/

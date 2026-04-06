@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
 import { createEasyStableId, createParser } from "../src/index.ts";
 import type { TokenDraft } from "../src/index.ts";
+import type { TextToken } from "../src/types.ts";
 import { testHandlers } from "./handlers.ts";
 import type { GoldenCase } from "./testHarness.ts";
 import { runGoldenCases } from "./testHarness.ts";
+
+const textDraft = (value: string, id: string): TextToken => ({ type: "text", value, id });
+const branchDraft = (type: string, value: TextToken[], id: string): TextToken => ({ type, value, id });
 
 const cases: GoldenCase[] = [
   {
@@ -78,6 +82,53 @@ const cases: GoldenCase[] = [
 
       assert.equal(a[0].id, b[0].id);
       assert.notEqual(a[0].id, c[0].id);
+    },
+  },
+  {
+    name: "[StableId/Text] 直接生成 text draft id -> 重复值应追加后缀",
+    run() {
+      const createId = createEasyStableId();
+
+      const first = createId({ type: "text", value: "hello" });
+      const second = createId({ type: "text", value: "hello" });
+      const third = createId({ type: "text", value: "world" });
+
+      assert.equal(first.startsWith("s-"), true);
+      assert.equal(second, `${first}-1`);
+      assert.notEqual(third, first);
+    },
+  },
+  {
+    name: "[StableId/Nested] 默认 fingerprint -> 嵌套结构变化应影响 id",
+    run() {
+      const createId = createEasyStableId();
+
+      const first: TokenDraft = {
+        ...branchDraft("bold", [
+          textDraft("a", "text-a-1"),
+          branchDraft("italic", [textDraft("b", "text-b-1")], "italic-b-1"),
+        ], "bold-ab-1"),
+      };
+      const same: TokenDraft = {
+        ...branchDraft("bold", [
+          textDraft("a", "text-a-2"),
+          branchDraft("italic", [textDraft("b", "text-b-2")], "italic-b-2"),
+        ], "bold-ab-2"),
+      };
+      const changed: TokenDraft = {
+        ...branchDraft("bold", [
+          textDraft("a", "text-a-3"),
+          branchDraft("italic", [textDraft("c", "text-c-1")], "italic-c-1"),
+        ], "bold-ac-1"),
+      };
+
+      const firstId = createId(first);
+      const secondId = createId(same);
+      const changedId = createId(changed);
+
+      assert.equal(secondId, `${firstId}-1`);
+      assert.notEqual(changedId, firstId);
+      assert.notEqual(changedId, secondId);
     },
   },
 ];

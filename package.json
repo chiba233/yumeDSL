@@ -26,7 +26,7 @@
     "build": "tsup --target esnext",
     "lint": "tsc --noEmit -p tsconfig.json",
     "test": "tsup --target esnext && node --import tsx tests/run-dsl-tests.ts",
-    "test:coverage": "tsup --target esnext && c8 node --import tsx tests/run-dsl-tests.ts",
+    "test:coverage": "YUME_DSL_COVERAGE_SOURCEMAP=1 tsup --target esnext && c8 node --enable-source-maps --import tsx tests/run-dsl-tests.ts",
     "prepublishOnly": "npm run build"
   },
   "keywords": [

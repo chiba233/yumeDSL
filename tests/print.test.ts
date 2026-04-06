@@ -120,6 +120,52 @@ const cases: GoldenCase[] = [
     },
   },
   {
+    name: "printStructural: custom syntax serializes escape/separator/raw/block correctly",
+    run: () => {
+      const syntax = {
+        tagPrefix: "@@",
+        tagOpen: "[",
+        tagClose: "]",
+        tagDivider: ";",
+        endTag: "]@@",
+        rawOpen: "]%",
+        blockOpen: "]*",
+        rawClose: "%end@@",
+        blockClose: "*end@@",
+        escapeChar: "~",
+      };
+      const tree: StructuralNode[] = [
+        { type: "text", value: "A" },
+        { type: "escape", raw: "~]@@" },
+        {
+          type: "raw",
+          tag: "code",
+          args: [
+            { type: "text", value: "ts" },
+            { type: "separator" },
+            { type: "text", value: "demo" },
+          ],
+          content: "\nconst x = 1\n",
+        },
+        {
+          type: "block",
+          tag: "panel",
+          args: [{ type: "text", value: "title" }],
+          children: [
+            { type: "text", value: "\n" },
+            { type: "inline", tag: "bold", children: [{ type: "text", value: "ok" }] },
+            { type: "text", value: "\n" },
+          ],
+        },
+      ];
+
+      assert.equal(
+        printStructural(tree, { syntax }),
+        "A~]@@@@code[ts;demo]%\nconst x = 1\n%end@@@@panel[title]*\n@@bold[ok]@@\n*end@@",
+      );
+    },
+  },
+  {
     name: "printStructural: hand-built tree serializes correctly",
     run: () => {
       const tree: StructuralNode[] = [
@@ -232,6 +278,32 @@ const cases: GoldenCase[] = [
 
       // 不带 override 应当仍用 defaults
       assert.equal(dsl.print(tree), "@@bold[ok]@@");
+    },
+  },
+  {
+    name: "printStructural: createParser.print without default syntax uses per-call override directly",
+    run: () => {
+      const dsl = createParser({});
+      const tree: StructuralNode[] = [
+        { type: "inline", tag: "bold", children: [{ type: "text", value: "ok" }] },
+      ];
+      assert.equal(
+        dsl.print(tree, {
+          syntax: {
+            tagPrefix: "@@",
+            tagOpen: "[",
+            tagClose: "]",
+            tagDivider: ";",
+            endTag: "]@@",
+            rawOpen: "]%",
+            blockOpen: "]*",
+            rawClose: "%end@@",
+            blockClose: "*end@@",
+            escapeChar: "~",
+          },
+        }),
+        "@@bold[ok]@@",
+      );
     },
   },
 ];
