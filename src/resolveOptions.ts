@@ -120,15 +120,19 @@ export const resolveBaseOptions = (
 
   const baseOffset = options?.baseOffset ?? 0;
   const trackPositions = options?.trackPositions ?? false;
-  const localTracker = trackPositions ? buildPositionTracker(text) : null;
   // 注意：这里的语义比较绕，不要想当然。
-  // 1. `trackPositions` 只决定要不要为“当前 text”现建本地 tracker
+  // 1. `trackPositions` 只决定要不要为”当前 text”现建本地 tracker
   // 2. 只要显式传了 `options.tracker`，下面仍然会走外部 tracker 路径
   // 3. `baseOffset` 只偏 offset；line/column 要不要跟着回指，取决于 tracker 来源
   // 这里改错后，slice 场景的位置很容易整体错位。
+  //
+  // localTracker 惰性构建：如果外部已传入 tracker，则无需为当前 text 建本地 tracker。
   const tracker = options?.tracker
     ? (offsetTracker(options.tracker, baseOffset) ?? options.tracker)
-    : (localOffsetTracker(localTracker, baseOffset) ?? localTracker);
+    : (() => {
+        const localTracker = trackPositions ? buildPositionTracker(text) : null;
+        return localOffsetTracker(localTracker, baseOffset) ?? localTracker;
+      })();
 
   return { syntax, tagName, depthLimit, tracker, baseOffset, trackPositions };
 };

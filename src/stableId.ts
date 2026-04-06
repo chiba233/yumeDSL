@@ -1,4 +1,4 @@
-import type { CreateId, TokenDraft } from "./types.js";
+import type { CreateId, TextToken, TokenDraft } from "./types.js";
 
 export interface EasyStableIdOptions {
   /** Prefix prepended to every generated ID. Default: `"s"`. */
@@ -54,28 +54,86 @@ const feed = (h: number, s: string): number => {
   return h;
 };
 
-/**
- * Serialize a TokenDraft's `type` + `value` structure into a running
- * FNV-1a hash state and return the updated state.
- *
- * Produces the same hash as `fnv1a(defaultFingerprint(draft))` — the
- * character sequence fed into the hash is identical, just without
- * building the intermediate fingerprint string.
- */
-const hashDraftInto = (h: number, draft: TokenDraft): number => {
-  h = feed(h, draft.type);
-  if (typeof draft.value === "string") {
-    h = feed(h, ":");
-    h = feed(h, draft.value);
-    return h;
-  }
-  h = feed(h, ":[");
-  for (let i = 0; i < draft.value.length; i++) {
-    if (i > 0) h = feed(h, ",");
-    h = hashDraftInto(h, draft.value[i]);
-  }
-  h = feed(h, "]");
+/** Feed a uint32 (4 bytes, little-endian) into a running FNV-1a state. */
+const feedU32 = (h: number, v: number): number => {
+  h ^= v & 0xff;
+  h = Math.imul(h, FNV_PRIME);
+  h ^= (v >>> 8) & 0xff;
+  h = Math.imul(h, FNV_PRIME);
+  h ^= (v >>> 16) & 0xff;
+  h = Math.imul(h, FNV_PRIME);
+  h ^= (v >>> 24) & 0xff;
+  h = Math.imul(h, FNV_PRIME);
   return h;
+};
+
+/**
+ * Compute a standalone FNV-1a hash for a TokenDraft.
+ *
+ * Uses `arrayCache` to avoid re-hashing subtrees whose `value` arrays
+ * have already been processed.  In the normal bottom-up flow (leaves
+ * created before parents), every child array is already cached, making
+ * each call O(type.length) instead of O(subtree_size).
+ *
+ * For manually constructed deep trees (no prior caching), the function
+ * collects all uncached arrays via an iterative DFS and hashes them
+ * bottom-up — no recursion, fully stack-safe.
+ */
+const hashDraft = (root: TokenDraft, arrayCache: WeakMap<TextToken[], number>): number => {
+  let h = FNV_OFFSET;
+  h = feed(h, root.type);
+
+  if (typeof root.value === "string") {
+    h = feed(h, ":");
+    return feed(h, root.value) >>> 0;
+  }
+
+  const rootArr = root.value;
+  const cachedRoot = arrayCache.get(rootArr);
+  if (cachedRoot !== undefined) {
+    return feedU32(feed(h, ":"), cachedRoot) >>> 0;
+  }
+
+  // ── 迭代收集 + 自底向上哈希 ──
+  // 注意：正常 createToken 流程是自底向上调用 createId 的，
+  // 所以子数组一定已被缓存，这里的收集循环通常只包含 rootArr 自身。
+  // 手动构造的深层 TokenDraft（如测试用例）才会真正触发多层收集。
+  const uncached: TextToken[][] = [];
+  const visiting = new Set<TextToken[]>();
+  const collectStack: TextToken[][] = [rootArr];
+
+  while (collectStack.length > 0) {
+    const arr = collectStack.pop()!;
+    if (arrayCache.has(arr) || visiting.has(arr)) continue;
+    visiting.add(arr);
+    uncached.push(arr);
+    for (let i = arr.length - 1; i >= 0; i--) {
+      const child = arr[i];
+      if (typeof child.value !== "string") {
+        collectStack.push(child.value);
+      }
+    }
+  }
+
+  // 逆序处理：叶子数组先算，父数组后算，保证子数组哈希在需要时已就绪
+  for (let i = uncached.length - 1; i >= 0; i--) {
+    const arr = uncached[i];
+    let ah = FNV_OFFSET;
+    for (let j = 0; j < arr.length; j++) {
+      if (j > 0) ah = feed(ah, ",");
+      const child = arr[j];
+      ah = feed(ah, child.type);
+      ah = feed(ah, ":");
+      if (typeof child.value === "string") {
+        ah = feed(ah, child.value);
+      } else {
+        ah = feedU32(ah, arrayCache.get(child.value)!);
+      }
+    }
+    arrayCache.set(arr, ah >>> 0);
+  }
+
+  return feedU32(feed(h, ":"), arrayCache.get(rootArr)!) >>> 0;
 };
 
 /**
@@ -122,9 +180,13 @@ export const createEasyStableId = (options?: EasyStableIdOptions): CreateId => {
   const prefix = options?.prefix ?? "s";
   const fingerprint = options?.fingerprint;
   const seen = new Map<string, number>();
+  // 子数组哈希缓存：createToken 自底向上调用 createId，
+  // 子 token 的 value 数组引用被 `{ ...draft, id }` 共享，
+  // 所以父 token 处理时子数组一定已缓存，hashDraft 降为 O(1)。
+  const arrayCache = new WeakMap<TextToken[], number>();
 
   return (token: TokenDraft): string => {
-    const h = fingerprint ? fnv1a(fingerprint(token)) : hashDraftInto(FNV_OFFSET, token) >>> 0;
+    const h = fingerprint ? fnv1a(fingerprint(token)) : hashDraft(token, arrayCache);
     const key = `${prefix}-${h.toString(36)}`;
 
     const count = seen.get(key) ?? 0;

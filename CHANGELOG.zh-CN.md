@@ -8,6 +8,15 @@
 - 内部：重构了 `printNodes` 与 `mapTokens` 的逻辑，引入了更清晰的调度器与状态帧（Frame）以提升可维护性
 - 无公共 API 变化
 - 对正常 `printStructural` / `mapTokens` 使用者来说，没有预期中的行为或输出格式变化
+- 性能：`resolveBaseOptions` 现在会检测 `options.tracker`，如果外部已提供则不再重复构建本地位置追踪器
+- 性能：`materializedTailTokens` 移除了 `slice().flat()` 调用。针对单段内容走快速路径，多段内容使用 `for` 循环手动合并，减少临时数组分配
+- 性能：`renderRawNode` 优化了原始块内容的行处理逻辑。使用 `charCodeAt` 预判首字符结合 `startsWith` 扫描替代 `split`/`join` 组合，实现零中间数组开销
+- 性能：`materializeTextTokens` 增强了 Token 复用。当 `unescapeInline` 返回原字符串引用（即无转义）时，直接复用原 Token 对象而不进行对象展开（spread），降低堆内存压力
+- 性能：`splitTokensByPipe` 引入快速路径。当不含 `escapeChar` 或 `tagDivider` 时直接推入原始 Token；在慢路径中若未发生切分，也尽可能复用原始 Token 引用
+- 性能：`createEasyStableId` 默认指纹哈希从递归子树遍历改为迭代收集 + 自底向上哈希，并在生成器闭包内引入 `WeakMap<TextToken[], number>` 缓存（以 value 数组引用为键，该引用在 `TokenDraft` 与 `createToken` 的展开结果之间共享）。在正常自底向上的 `createToken` 流程中，子数组一定已被缓存，使单次 `hashDraft` 调用从 O(子树大小) 降为 O(type.length)；整个 parse 的总哈希开销从 O(N × 深度) 降为 O(N)。对手动构造的深层 `TokenDraft`，迭代收集器保证完全栈安全
+- 无公共 API 变化
+- 对正常 `parseRichText` / `parseStructural` 使用者来说，没有预期中的输出格式变化
+- `createEasyStableId`（默认指纹）生成的 Stable ID 值因哈希缓存策略变更会与之前版本不同。相同输入产生相同输出的确定性和碰撞特性保持不变
 
 ### 1.1.8
 

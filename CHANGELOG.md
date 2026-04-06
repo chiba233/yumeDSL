@@ -12,6 +12,15 @@
   improved maintainability
 - No public API changes
 - No intended output-format changes for normal `printStructural` / `mapTokens` consumers
+- Performance: `resolveBaseOptions` now detects `options.tracker` and skips building a redundant local position tracker if one is already provided
+- Performance: `materializedTailTokens` removed `slice().flat()` calls. It now uses a fast path for single segments and a manual `for` loop for merging multiple segments, reducing temporary array allocations
+- Performance: `renderRawNode` optimized raw-block line processing. Replaced `split`/`join` with a `charCodeAt` first-character check and `startsWith` scanning, achieving zero intermediate array overhead
+- Performance: `materializeTextTokens` improved token reuse. When `unescapeInline` returns the original string reference (meaning no escapes were found), the original token object is reused directly instead of being spread into a new object, reducing heap pressure
+- Performance: `splitTokensByPipe` introduced a fast path that pushes original tokens directly when no `escapeChar` or `tagDivider` is present. It also reuses original token references in the slow path when no actual split occurs
+- Performance: `createEasyStableId` default fingerprint hashing converted from recursive tree traversal to iterative collection with bottom-up hashing, and introduced a per-generator `WeakMap<TextToken[], number>` cache keyed by value-array references (shared between `TokenDraft` and the spread result from `createToken`). In the normal bottom-up `createToken` flow, child arrays are always pre-cached, reducing each `hashDraft` call from O(subtree) to O(type.length). Total hashing cost across a full parse drops from O(N × depth) to O(N). For manually constructed deep `TokenDraft` trees, the iterative collector ensures full stack safety
+- No public API changes
+- No intended output-format changes for normal `parseRichText` / `parseStructural` consumers
+- Stable ID values produced by `createEasyStableId` (default fingerprint) will differ from previous versions due to the hash-caching strategy change. The same-input-same-output and collision properties are preserved
 
 ### 1.1.8
 

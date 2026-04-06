@@ -74,9 +74,13 @@ export const materializeTextTokens = (tokens: TextToken[], ctx?: DslContext): Te
 
     const token = frame.source[frame.index++];
     if (typeof token.value === "string") {
-      frame.output.push(
-        token.type === "text" ? { ...token, value: unescapeInline(token.value, syntax) } : token,
-      );
+      if (token.type === "text") {
+        const unescaped = unescapeInline(token.value, syntax);
+        // unescapeInline 在无转义时返回原字符串引用，此时复用原 token 避免展开
+        frame.output.push(unescaped === token.value ? token : { ...token, value: unescaped });
+      } else {
+        frame.output.push(token);
+      }
       continue;
     }
 
@@ -127,13 +131,27 @@ export const splitTokensByPipe = (tokens: TextToken[], ctx?: DslContext): TextTo
       continue;
     }
 
-    let i = 0;
     const val = token.value;
+
+    // 快速路径：如果整串既不含 escapeChar 也不含 tagDivider，直接复用原 token
+    if (!val.includes(escapeChar) && !val.includes(tagDivider)) {
+      parts[parts.length - 1].push(token);
+      continue;
+    }
+
+    let i = 0;
     let runStart = 0;
+    // 记录是否发生过切分或转义，用于判断能否复用原 token
+    let split = false;
 
     const flushRun = (end: number) => {
       if (end > runStart) {
-        parts[parts.length - 1].push(createTextToken(val.slice(runStart, end), ctx));
+        // 未发生切分且覆盖完整原串时，复用原 token 避免 createTextToken 开销
+        if (!split && runStart === 0 && end === val.length) {
+          parts[parts.length - 1].push(token);
+        } else {
+          parts[parts.length - 1].push(createTextToken(val.slice(runStart, end), ctx));
+        }
       }
     };
 
@@ -141,6 +159,7 @@ export const splitTokensByPipe = (tokens: TextToken[], ctx?: DslContext): TextTo
       const [escaped, next] = readEscapedSequence(val, i, s);
       if (escaped !== null) {
         flushRun(i);
+        split = true;
         parts[parts.length - 1].push(createTextToken(escapeChar + escaped, ctx));
         i = next;
         runStart = i;
@@ -149,6 +168,7 @@ export const splitTokensByPipe = (tokens: TextToken[], ctx?: DslContext): TextTo
 
       if (val.startsWith(tagDivider, i)) {
         flushRun(i);
+        split = true;
         parts.push([]);
         i += tagDivider.length;
         while (i < val.length && val[i] === " ") i++;
@@ -188,10 +208,17 @@ export const parsePipeArgs = (tokens: TextToken[], ctx?: DslContext): PipeArgs =
       has(index) ? unescapeInline(extractText(parts[index] ?? []), s).trim() : fallback,
     materializedTokens: (index, fallback = []) =>
       has(index) ? materializeTextTokens(parts[index] ?? [], ctx) : fallback,
-    materializedTailTokens: (startIndex, fallback = []) =>
-      startIndex >= 0 && startIndex < parts.length
-        ? materializeTextTokens(parts.slice(startIndex).flat(), ctx)
-        : fallback,
+    materializedTailTokens: (startIndex, fallback = []) => {
+      if (startIndex < 0 || startIndex >= parts.length) return fallback;
+      // 单段快速路径：避免 slice + flat 分配中间数组
+      if (startIndex === parts.length - 1) return materializeTextTokens(parts[startIndex], ctx);
+      const merged: TextToken[] = [];
+      for (let j = startIndex; j < parts.length; j++) {
+        const seg = parts[j];
+        for (let k = 0; k < seg.length; k++) merged.push(seg[k]);
+      }
+      return materializeTextTokens(merged, ctx);
+    },
   };
 };
 

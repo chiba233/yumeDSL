@@ -257,11 +257,31 @@ const renderRawNode = (
   const { argStart, argEnd, contentStart, contentEnd } = node._meta;
   const arg = ctx.source.slice(argStart, argEnd).trim();
   const rawContent = ctx.source.slice(contentStart, contentEnd);
-  // 注意：raw 正文里的转义闭合符（如 \%end$$）要还原成字面量，
-  // 这里用 split/join 而不是 replace 是因为 escapeChar 可能是多字符。
-  const unescaped = rawContent
-    .split(ctx.syntax.escapeChar + ctx.syntax.rawClose)
-    .join(ctx.syntax.rawClose);
+  // 注意：raw 正文里的转义闭合符（如 \%end$$）要还原成字面量。
+  // 手写单扫描替换 escapeChar+rawClose → rawClose，避免 split/join 的中间数组开销。
+  const escSeq = ctx.syntax.escapeChar + ctx.syntax.rawClose;
+  const escSeqLen = escSeq.length;
+  const rawCloseStr = ctx.syntax.rawClose;
+  let unescaped = rawContent;
+  if (rawContent.length >= escSeqLen) {
+    const parts: string[] = [];
+    let pos = 0;
+    let runStart = 0;
+    while (pos <= rawContent.length - escSeqLen) {
+      if (rawContent.charCodeAt(pos) === escSeq.charCodeAt(0) && rawContent.startsWith(escSeq, pos)) {
+        if (pos > runStart) parts.push(rawContent.slice(runStart, pos));
+        parts.push(rawCloseStr);
+        pos += escSeqLen;
+        runStart = pos;
+      } else {
+        pos++;
+      }
+    }
+    if (runStart > 0) {
+      if (runStart < rawContent.length) parts.push(rawContent.slice(runStart));
+      unescaped = parts.join("");
+    }
+  }
   const { content } = normalizeBlockTagContent(node.tag, unescaped, ctx.blockTagSet, "raw");
   const draft = handler.raw(arg, content, dslCtx);
   appendToken(
