@@ -5,16 +5,21 @@
 
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { runGoldenCases } from "./testHarness.ts";
 import { testHandlers } from "./handlers.ts";
 import type { DslContext, PipeArgs, TextToken, TokenDraft, Zone } from "../src/index.ts";
 
 // ── Load both module formats ──
 
-const esm = await import("yume-dsl-rich-text");
+const here = dirname(fileURLToPath(import.meta.url));
+const distRoot = resolve(here, "../dist");
+
+const esm = await import(pathToFileURL(resolve(distRoot, "index.js")).href);
 
 const require = createRequire(import.meta.url);
-const cjs = require("yume-dsl-rich-text");
+const cjs = require(resolve(distRoot, "index.cjs"));
 
 // ── helpers ──
 
