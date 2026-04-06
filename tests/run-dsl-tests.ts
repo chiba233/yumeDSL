@@ -38,3 +38,6 @@ await import("./print.test.ts");
 
 console.log("=== Zones ===");
 await import("./zones.test.ts");
+
+console.log("=== Coverage Supplement ===");
+await import("./coverage.test.ts");
