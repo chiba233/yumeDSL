@@ -2,6 +2,13 @@
 
 # 更新日志
 
+### 1.1.9
+
+- 栈安全：`printStructural` 与 `mapTokens` 从原生递归改为显式栈迭代。至此，所有核心树处理与转换 API（包括解析、序列化、遍历、映射）均已完成栈安全转换，确保即使是极深层级（数万层）的树结构在处理时也不会有调用栈溢出风险
+- 内部：重构了 `printNodes` 与 `mapTokens` 的逻辑，引入了更清晰的调度器与状态帧（Frame）以提升可维护性
+- 无公共 API 变化
+- 对正常 `printStructural` / `mapTokens` 使用者来说，没有预期中的行为或输出格式变化
+
 ### 1.1.8
 
 - 栈安全：`walkTokens` 从原生递归改为显式栈迭代，与 `parseStructural` / `parseRichText` /

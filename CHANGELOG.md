@@ -2,6 +2,17 @@
 
 # Changelog
 
+### 1.1.9
+
+- Stack safety: `printStructural` and `mapTokens` converted from native recursion to explicit stack
+  iteration. This completes the stack-safety transition for all core tree-processing and
+  transformation APIs, ensuring that even extremely deep trees (tens of thousands of levels) can be
+  serialized or transformed without risking call-stack overflow
+- Internal: Refactored `printNodes` and `mapTokens` with cleaner dispatchers and state frames for
+  improved maintainability
+- No public API changes
+- No intended output-format changes for normal `printStructural` / `mapTokens` consumers
+
 ### 1.1.8
 
 - Stack safety: `walkTokens` converted from native recursion to explicit stack iteration, matching
