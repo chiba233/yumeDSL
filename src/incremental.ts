@@ -4,6 +4,11 @@ import type {
   IncrementalDocument,
   IncrementalEdit,
   IncrementalParseOptions,
+  IncrementalSessionFallbackReason,
+  IncrementalSessionOptions,
+  IncrementalSession,
+  IncrementalSessionApplyResult,
+  IncrementalSessionStrategy,
   IncrementalUpdateError,
   IncrementalUpdateErrorCode,
   IncrementalUpdateResult,
@@ -294,6 +299,11 @@ export const parseIncremental = (
 /**
  * Update an incremental structural snapshot with one edit and a new full source.
  *
+ * @experimental
+ * Low-level updater for controlled integration paths.
+ * For production applications, prefer `createIncrementalSession(...).applyEdit(...)`,
+ * which guarantees fallback to full rebuild on errors.
+ *
  * Assumption:
  * - Left boundary stabilization is conservative but fixed to one-zone lookbehind.
  * - Right boundary is expanded until stable (or EOF).
@@ -379,6 +389,11 @@ export const updateIncremental = (
   };
 };
 
+/**
+ * @experimental
+ * Low-level result-style updater.
+ * For production applications, prefer `createIncrementalSession(...).applyEdit(...)`.
+ */
 export const tryUpdateIncremental = (
   doc: IncrementalDocument,
   edit: IncrementalEdit,
@@ -405,4 +420,148 @@ export const tryUpdateIncremental = (
       ),
     };
   }
+};
+
+export const createIncrementalSession = (
+  source: string,
+  options?: IncrementalParseOptions,
+  sessionOptions?: IncrementalSessionOptions,
+): IncrementalSession => {
+  let currentDoc = parseIncremental(source, options);
+  const strategy: IncrementalSessionStrategy = sessionOptions?.strategy ?? "auto";
+  const sampleWindowSize = Math.max(4, sessionOptions?.sampleWindowSize ?? 24);
+  const minSamplesForAdaptation = Math.max(2, sessionOptions?.minSamplesForAdaptation ?? 6);
+  const maxFallbackRate = Math.min(1, Math.max(0, sessionOptions?.maxFallbackRate ?? 0.35));
+  const switchToFullMultiplier = Math.max(1, sessionOptions?.switchToFullMultiplier ?? 1.1);
+  const fullPreferenceCooldownEdits = Math.max(1, sessionOptions?.fullPreferenceCooldownEdits ?? 12);
+  const maxEditRatioForIncremental = Math.min(
+    1,
+    Math.max(0, sessionOptions?.maxEditRatioForIncremental ?? 0.2),
+  );
+
+  const now: () => number =
+    typeof performance !== "undefined" ? () => performance.now() : () => Date.now();
+
+  let preferFullMode = false;
+  let cooldownRemaining = 0;
+  const incrementalDurations: number[] = [];
+  const fallbackMarks: number[] = [];
+  const fullDurations: number[] = [];
+
+  const enterFullPreference = () => {
+    preferFullMode = true;
+    cooldownRemaining = fullPreferenceCooldownEdits;
+    incrementalDurations.length = 0;
+    fallbackMarks.length = 0;
+  };
+
+  const recordBounded = (bucket: number[], value: number) => {
+    bucket.push(value);
+    if (bucket.length > sampleWindowSize) {
+      bucket.shift();
+    }
+  };
+
+  const average = (values: readonly number[]): number => {
+    if (values.length === 0) return 0;
+    let total = 0;
+    for (let i = 0; i < values.length; i++) {
+      total += values[i];
+    }
+    return total / values.length;
+  };
+
+  const runRebuild = (
+    nextSource: string,
+    nextOptions: IncrementalParseOptions | undefined,
+    fallbackReason: IncrementalSessionFallbackReason,
+  ): IncrementalSessionApplyResult => {
+    const start = now();
+    currentDoc = parseIncremental(nextSource, nextOptions ?? currentDoc.parseOptions);
+    const elapsedMs = now() - start;
+    recordBounded(fullDurations, elapsedMs);
+    return {
+      doc: currentDoc,
+      mode: "full-fallback",
+      fallbackReason,
+    };
+  };
+
+  const maybeAdaptPolicy = () => {
+    if (strategy !== "auto") return;
+    const incrementalSampleCount = incrementalDurations.length;
+    if (incrementalSampleCount < minSamplesForAdaptation) return;
+
+    const fallbackRate = average(fallbackMarks);
+    if (fallbackRate > maxFallbackRate) {
+      enterFullPreference();
+      return;
+    }
+
+    if (fullDurations.length < minSamplesForAdaptation) return;
+    const avgIncrementalMs = average(incrementalDurations);
+    const avgFullMs = average(fullDurations);
+    if (avgIncrementalMs > avgFullMs * switchToFullMultiplier) {
+      enterFullPreference();
+    }
+  };
+
+  const rebuild = (nextSource: string, nextOptions?: IncrementalParseOptions): IncrementalDocument => {
+    currentDoc = parseIncremental(nextSource, nextOptions ?? currentDoc.parseOptions);
+    return currentDoc;
+  };
+
+  const applyEdit = (
+    edit: IncrementalEdit,
+    newSource: string,
+    nextOptions?: IncrementalParseOptions,
+  ): IncrementalSessionApplyResult => {
+    if (strategy === "full-only") {
+      return runRebuild(newSource, nextOptions, "FULL_ONLY_STRATEGY");
+    }
+
+    const previousLength = Math.max(1, currentDoc.source.length);
+    const replacedLength = Math.max(0, edit.oldEndOffset - edit.startOffset);
+    const writtenLength = edit.newText.length;
+    const editRatio = Math.max(replacedLength, writtenLength) / previousLength;
+
+    if (strategy === "auto" && editRatio > maxEditRatioForIncremental) {
+      const rebuiltResult = runRebuild(newSource, nextOptions, "AUTO_LARGE_EDIT");
+      maybeAdaptPolicy();
+      return rebuiltResult;
+    }
+
+    if (strategy === "auto" && preferFullMode && cooldownRemaining > 0) {
+      cooldownRemaining -= 1;
+      if (cooldownRemaining === 0) {
+        preferFullMode = false;
+      }
+      const rebuiltResult = runRebuild(newSource, nextOptions, "AUTO_COOLDOWN");
+      maybeAdaptPolicy();
+      return rebuiltResult;
+    }
+
+    const incrementalStart = now();
+    const result = tryUpdateIncremental(currentDoc, edit, newSource, nextOptions);
+    const incrementalElapsedMs = now() - incrementalStart;
+    recordBounded(incrementalDurations, incrementalElapsedMs);
+
+    if (result.ok) {
+      currentDoc = result.value;
+      recordBounded(fallbackMarks, 0);
+      maybeAdaptPolicy();
+      return { doc: currentDoc, mode: "incremental" };
+    }
+
+    recordBounded(fallbackMarks, 1);
+    const rebuiltResult = runRebuild(newSource, nextOptions, result.error.code);
+    maybeAdaptPolicy();
+    return rebuiltResult;
+  };
+
+  return {
+    getDocument: () => currentDoc,
+    applyEdit,
+    rebuild,
+  };
 };

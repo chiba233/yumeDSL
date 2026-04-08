@@ -375,6 +375,58 @@ export type IncrementalUpdateResult =
   | { ok: true; value: IncrementalDocument }
   | { ok: false; error: IncrementalUpdateError };
 
+/**
+ * Result mode returned by the high-level incremental session API.
+ */
+export type IncrementalSessionApplyMode = "incremental" | "full-fallback";
+
+export type IncrementalSessionStrategy = "auto" | "incremental-only" | "full-only";
+
+export type IncrementalSessionFallbackReason =
+  | IncrementalUpdateErrorCode
+  | "FULL_ONLY_STRATEGY"
+  | "AUTO_COOLDOWN"
+  | "AUTO_LARGE_EDIT";
+
+export interface IncrementalSessionOptions {
+  strategy?: IncrementalSessionStrategy;
+  sampleWindowSize?: number;
+  minSamplesForAdaptation?: number;
+  maxFallbackRate?: number;
+  switchToFullMultiplier?: number;
+  fullPreferenceCooldownEdits?: number;
+  maxEditRatioForIncremental?: number;
+}
+
+/**
+ * Safe update result for one edit in an incremental session.
+ *
+ * - `mode: "incremental"` means the update path succeeded.
+ * - `mode: "full-fallback"` means the session rebuilt from `newSource`.
+ */
+export interface IncrementalSessionApplyResult {
+  doc: IncrementalDocument;
+  mode: IncrementalSessionApplyMode;
+  fallbackReason?: IncrementalSessionFallbackReason;
+}
+
+/**
+ * High-level incremental parsing session.
+ *
+ * Provides correctness-first semantics:
+ * - Apply edits via incremental update when possible.
+ * - Fall back to full rebuild when validation or update fails.
+ */
+export interface IncrementalSession {
+  getDocument: () => IncrementalDocument;
+  applyEdit: (
+    edit: IncrementalEdit,
+    newSource: string,
+    options?: IncrementalParseOptions,
+  ) => IncrementalSessionApplyResult;
+  rebuild: (newSource: string, options?: IncrementalParseOptions) => IncrementalDocument;
+}
+
 // ── Internal types (not re-exported from index) ──
 
 

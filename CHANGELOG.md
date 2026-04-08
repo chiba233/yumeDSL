@@ -4,6 +4,22 @@
 
 ### 1.2.1
 
+- **New API: `createIncrementalSession(...)`**
+  - Added a correctness-first session entry for editor workflows
+  - `session.applyEdit(...)` now provides a stable high-level contract: use incremental updates when possible, and auto-fallback to full rebuild when needed
+  - Added session result metadata (`mode`, `fallbackReason`) for observability and tuning
+- **Adaptive strategy controls**
+  - Added `sessionOptions.strategy` with `"auto"` (default), `"incremental-only"`, and `"full-only"`
+  - Added auto-policy knobs (`maxEditRatioForIncremental`, fallback-rate threshold, performance multiplier, cooldown window, sampling window)
+  - Goal: avoid both premature full rebuilds and pathological incremental attempts, while preserving correctness guarantees
+- **Experimental surface clarified**
+  - Low-level `updateIncremental(...)` / `tryUpdateIncremental(...)` are now explicitly documented as advanced / experimental paths
+  - Public guidance now prefers session-level API for production integration
+- **Documentation updates**
+  - Updated README / GUIDE export tables for new incremental session exports and types
+  - Updated Incremental Parsing wiki pages (EN / 中文) with session-first usage, adaptive strategy examples, boundary rules, and fallback reason mapping
+- No breaking changes to existing `parseRichText` / `parseStructural` APIs
+
 - **Incremental Update Stack Safety:** Replaced the recursive deep-copy + position-shift path used for right-side zone reuse in `updateIncremental` with explicit stack iteration, so deep nested updates no longer depend on JS call-stack depth
 - **Boundary Expansion Guard:** Added a cumulative reparse-byte budget to the right-boundary stabilization loop; when expansion cost grows beyond the threshold, the updater now falls back to full `parseIncremental` rebuild
 - **Internal Refactor:** Consolidated duplicated child-shift flow across `inline` / `raw` / `block` branches into shared logic while preserving existing external behavior and error semantics

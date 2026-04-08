@@ -4,6 +4,22 @@
 
 ### 1.2.1
 
+- **新增 API：`createIncrementalSession(...)`**
+  - 新增面向编辑器工作流的 correctness-first 会话入口
+  - `session.applyEdit(...)` 提供稳定的高层契约：可增量则增量，必要时自动回退全量重建
+  - 增加会话结果元信息（`mode`、`fallbackReason`），便于观测与调优
+- **自适应策略能力**
+  - 新增 `sessionOptions.strategy`：`"auto"`（默认）、`"incremental-only"`、`"full-only"`
+  - 新增 auto 策略参数（`maxEditRatioForIncremental`、回退率阈值、性能倍率、冷却窗口、采样窗口）
+  - 目标是在保证语义正确的前提下，避免“过早全量”与“病态增量”两类极端
+- **实验面收口说明**
+  - 底层 `updateIncremental(...)` / `tryUpdateIncremental(...)` 现在在文档中明确为进阶 / 实验路径
+  - 生产接入建议默认使用会话级 API
+- **文档同步更新**
+  - README / GUIDE 导出表补充 incremental session 新导出与类型
+  - 增量解析 wiki（中英）更新为 session-first 示例，并补充自适应策略、边界规则、fallback reason 对照
+- 现有 `parseRichText` / `parseStructural` 等公共 API 无破坏性变更
+
 - **增量更新栈安全：** `updateIncremental` 右侧 zone 复用的深拷贝 + 位置平移从递归实现改为显式栈迭代，深层嵌套文档更新时不再依赖 JS 调用栈深度
 - **边界扩展防退化：** 为右侧边界稳定循环增加累计重解析字节预算；当扩窗累计成本超过阈值时自动回退为全量 `parseIncremental`，避免异常场景下的过度反复扩窗
 - **内部重构：** 合并 `inline/raw/block` 子节点平移中的重复流程为共享逻辑，减少重复代码并保持现有对外行为与错误语义不变

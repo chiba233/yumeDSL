@@ -85,7 +85,12 @@ export type { PositionTracker, SourcePosition, SourceSpan } from "./types.js";
 
 // ── Zone grouping ──
 export { buildZones } from "./zones.js";
-export { parseIncremental, updateIncremental, tryUpdateIncremental } from "./incremental.js";
+export {
+  parseIncremental,
+  updateIncremental,
+  tryUpdateIncremental,
+  createIncrementalSession,
+} from "./incremental.js";
 
 // ── Types: structural ──
 export type {
@@ -98,6 +103,12 @@ export type {
   IncrementalUpdateErrorCode,
   IncrementalUpdateError,
   IncrementalUpdateResult,
+  IncrementalSessionApplyMode,
+  IncrementalSessionApplyResult,
+  IncrementalSessionFallbackReason,
+  IncrementalSessionStrategy,
+  IncrementalSessionOptions,
+  IncrementalSession,
 } from "./types.js";
 
 export type { PipeArgs } from "./builders.js";
