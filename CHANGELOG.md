@@ -2,6 +2,14 @@
 
 # Changelog
 
+### 1.2.1
+
+- **Incremental Update Stack Safety:** Replaced the recursive deep-copy + position-shift path used for right-side zone reuse in `updateIncremental` with explicit stack iteration, so deep nested updates no longer depend on JS call-stack depth
+- **Boundary Expansion Guard:** Added a cumulative reparse-byte budget to the right-boundary stabilization loop; when expansion cost grows beyond the threshold, the updater now falls back to full `parseIncremental` rebuild
+- **Internal Refactor:** Consolidated duplicated child-shift flow across `inline` / `raw` / `block` branches into shared logic while preserving existing external behavior and error semantics
+- No public API changes
+- No intended output-format changes for normal `parseRichText` / `parseStructural` consumers
+
 ### 1.2.0
 
 - **New Feature: Incremental Structural Parsing**

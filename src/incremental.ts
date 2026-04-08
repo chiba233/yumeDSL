@@ -103,7 +103,11 @@ const assertUnreachable = (value: never): never => {
   throw new Error(`shiftNode(): unexpected node type: ${String((value as { type?: unknown }).type)}`);
 };
 
-const shiftNode = (node: StructuralNode, delta: number, tracker: PositionTracker): StructuralNode => {
+const createShiftedNodeShell = (
+  node: StructuralNode,
+  delta: number,
+  tracker: PositionTracker,
+): StructuralNode => {
   const position = node.position
     ? {
         start: shiftPosition(node.position.start, delta, tracker)!,
@@ -127,7 +131,7 @@ const shiftNode = (node: StructuralNode, delta: number, tracker: PositionTracker
     return {
       type: "inline",
       tag: node.tag,
-      children: node.children.map((child) => shiftNode(child, delta, tracker)),
+      children: [],
       position,
     };
   }
@@ -136,7 +140,7 @@ const shiftNode = (node: StructuralNode, delta: number, tracker: PositionTracker
     return {
       type: "raw",
       tag: node.tag,
-      args: node.args.map((arg) => shiftNode(arg, delta, tracker)),
+      args: [],
       content: node.content,
       position,
     };
@@ -146,13 +150,65 @@ const shiftNode = (node: StructuralNode, delta: number, tracker: PositionTracker
     return {
       type: "block",
       tag: node.tag,
-      args: node.args.map((arg) => shiftNode(arg, delta, tracker)),
-      children: node.children.map((child) => shiftNode(child, delta, tracker)),
+      args: [],
+      children: [],
       position,
     };
   }
 
   return assertUnreachable(node);
+};
+
+const shiftNode = (node: StructuralNode, delta: number, tracker: PositionTracker): StructuralNode => {
+  const root = createShiftedNodeShell(node, delta, tracker);
+  const stack: Array<{ source: StructuralNode; target: StructuralNode }> = [{ source: node, target: root }];
+  const shouldExpandNestedNode = (candidate: StructuralNode): boolean =>
+    candidate.type === "inline" || candidate.type === "raw" || candidate.type === "block";
+  const appendShiftedNodes = (
+    sourceNodes: readonly StructuralNode[],
+    targetNodes: StructuralNode[],
+  ): void => {
+    for (let i = 0; i < sourceNodes.length; i++) {
+      const sourceNode = sourceNodes[i];
+      const targetNode = createShiftedNodeShell(sourceNode, delta, tracker);
+      targetNodes.push(targetNode);
+      if (shouldExpandNestedNode(sourceNode)) {
+        stack.push({ source: sourceNode, target: targetNode });
+      }
+    }
+  };
+
+  while (stack.length > 0) {
+    const frame = stack.pop()!;
+
+    if (frame.source.type === "inline" && frame.target.type === "inline") {
+      appendShiftedNodes(frame.source.children, frame.target.children);
+      continue;
+    }
+
+    if (frame.source.type === "raw" && frame.target.type === "raw") {
+      appendShiftedNodes(frame.source.args, frame.target.args);
+      continue;
+    }
+
+    if (frame.source.type === "block" && frame.target.type === "block") {
+      appendShiftedNodes(frame.source.args, frame.target.args);
+      appendShiftedNodes(frame.source.children, frame.target.children);
+      continue;
+    }
+
+    if (
+      frame.source.type === "text" ||
+      frame.source.type === "escape" ||
+      frame.source.type === "separator"
+    ) {
+      continue;
+    }
+
+    throw new Error(`shiftNode(): unsupported frame source type: ${frame.source.type}`);
+  }
+
+  return root;
 };
 
 const shiftZone = (zone: Zone, delta: number, tracker: PositionTracker): Zone => ({
@@ -266,11 +322,13 @@ export const updateIncremental = (
 
   const parseOptions = options ? cloneParseOptions(options) : doc.parseOptions;
   const newTracker = buildPositionTracker(newSource);
+  const cumulativeBudget = Math.max(newSource.length * 2, 1024);
+  let cumulativeReparsedBytes = 0;
 
   const delta = newSource.length - doc.source.length;
   const dirty = findDirtyRange(doc.zones, edit);
 
-  let dirtyFrom = dirty.from;
+  const dirtyFrom = dirty.from;
   let dirtyTo = dirty.to;
   let dirtyZones: Zone[] = [];
 
@@ -282,6 +340,12 @@ export const updateIncremental = (
     const dirtyEndOld = doc.zones[dirtyTo].endOffset;
     const dirtyStartNew = mapOldOffsetToNew(edit, delta, dirtyStartOld);
     const dirtyEndNew = mapOldOffsetToNew(edit, delta, dirtyEndOld);
+    const reparsedWindowSize = dirtyEndNew - dirtyStartNew;
+    cumulativeReparsedBytes += reparsedWindowSize;
+
+    if (cumulativeReparsedBytes > cumulativeBudget) {
+      return parseIncremental(newSource, parseOptions);
+    }
 
     const dirtyTree = parseWithPositions(
       newSource.slice(dirtyStartNew, dirtyEndNew),
