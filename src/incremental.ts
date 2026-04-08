@@ -16,9 +16,9 @@ import { buildZones } from "./zones.js";
 
 // Performance note:
 // This implementation reparses only the dirty range.
-// Zones strictly to the right are lazily reprojected with Proxy-backed nodes, so
-// update-time cost avoids recursive deep-copy of untouched subtrees.
-// Traversing those right-side nodes later will pay projection cost on demand.
+// Zones strictly to the right are reprojected via recursive deep-copy.
+// This keeps returned nodes as plain data objects (no Proxy semantics), but
+// updates near the beginning of very large documents may still pay O(right-side size).
 
 const createIncrementalEditError = (
   code: IncrementalUpdateErrorCode,
@@ -100,80 +100,65 @@ const shiftPosition = (
 };
 
 const assertUnreachable = (value: never): never => {
-  throw new Error(`shiftNode(): unexpected node type: ${String((value as { type?: unknown }).type)}`);
+  throw new Error(`shiftNode(): unexpected node type: ${String(value)}`);
 };
 
-const createNodeProjector = (delta: number, tracker: PositionTracker) => {
-  const cache = new WeakMap<StructuralNode, StructuralNode>();
+const shiftNode = (node: StructuralNode, delta: number, tracker: PositionTracker): StructuralNode => {
+  const position = node.position
+    ? {
+        start: shiftPosition(node.position.start, delta, tracker)!,
+        end: shiftPosition(node.position.end, delta, tracker)!,
+      }
+    : undefined;
 
-  const projectNode = (node: StructuralNode): StructuralNode => {
-    const cached = cache.get(node);
-    if (cached) return cached;
+  if (node.type === "text") {
+    return { type: "text", value: node.value, position };
+  }
 
-    let positionResolved = false;
-    let projectedPosition: StructuralNode["position"];
-    let projectedArgs: StructuralNode[] | undefined;
-    let projectedChildren: StructuralNode[] | undefined;
+  if (node.type === "escape") {
+    return { type: "escape", raw: node.raw, position };
+  }
 
-    const projected = new Proxy(node, {
-      get(target, property, receiver) {
-        if (property === "position") {
-          if (!positionResolved) {
-            projectedPosition = target.position
-              ? {
-                  start: shiftPosition(target.position.start, delta, tracker)!,
-                  end: shiftPosition(target.position.end, delta, tracker)!,
-                }
-              : undefined;
-            positionResolved = true;
-          }
-          return projectedPosition;
-        }
+  if (node.type === "separator") {
+    return { type: "separator", position };
+  }
 
-        if (property === "args") {
-          if (target.type === "raw" || target.type === "block") {
-            if (!projectedArgs) {
-              projectedArgs = target.args.map((arg) => projectNode(arg));
-            }
-            return projectedArgs;
-          }
-          return Reflect.get(target, property, receiver);
-        }
+  if (node.type === "inline") {
+    return {
+      type: "inline",
+      tag: node.tag,
+      children: node.children.map((child) => shiftNode(child, delta, tracker)),
+      position,
+    };
+  }
 
-        if (property === "children") {
-          if (target.type === "inline" || target.type === "block") {
-            if (!projectedChildren) {
-              projectedChildren = target.children.map((child) => projectNode(child));
-            }
-            return projectedChildren;
-          }
-          return Reflect.get(target, property, receiver);
-        }
+  if (node.type === "raw") {
+    return {
+      type: "raw",
+      tag: node.tag,
+      args: node.args.map((arg) => shiftNode(arg, delta, tracker)),
+      content: node.content,
+      position,
+    };
+  }
 
-        return Reflect.get(target, property, receiver);
-      },
-    }) as StructuralNode;
+  if (node.type === "block") {
+    return {
+      type: "block",
+      tag: node.tag,
+      args: node.args.map((arg) => shiftNode(arg, delta, tracker)),
+      children: node.children.map((child) => shiftNode(child, delta, tracker)),
+      position,
+    };
+  }
 
-    if (node.type === "text" || node.type === "escape" || node.type === "separator") {
-      cache.set(node, projected);
-      return projected;
-    }
-
-    if (node.type === "inline" || node.type === "raw" || node.type === "block") {
-      cache.set(node, projected);
-      return projected;
-    }
-
-    return assertUnreachable(node);
-  };
-
-  return projectNode;
+  return assertUnreachable(node);
 };
 
-const shiftZone = (zone: Zone, delta: number, projectNode: (node: StructuralNode) => StructuralNode): Zone => ({
+const shiftZone = (zone: Zone, delta: number, tracker: PositionTracker): Zone => ({
   startOffset: zone.startOffset + delta,
   endOffset: zone.endOffset + delta,
-  nodes: zone.nodes.map((node) => projectNode(node)),
+  nodes: zone.nodes.map((node) => shiftNode(node, delta, tracker)),
 });
 
 const findDirtyRange = (zones: readonly Zone[], edit: IncrementalEdit): { from: number; to: number } => {
@@ -274,7 +259,7 @@ export const updateIncremental = (
   }
 
   // Defensive fallback for malformed snapshots where zones do not cover the tail.
-  // Normal parser output should not hit this branch.
+  // Normal parser output should not hit that branch.
   if (hasUnsafeZoneCoverageTailGap(doc, edit)) {
     return parseIncremental(newSource, options ?? doc.parseOptions);
   }
@@ -316,10 +301,9 @@ export const updateIncremental = (
   }
 
   const leftZones = doc.zones.slice(0, dirtyFrom);
-  const projectNode = createNodeProjector(delta, newTracker);
   const rightZones = doc.zones
     .slice(dirtyTo + 1)
-    .map((zone) => shiftZone(zone, delta, projectNode));
+    .map((zone) => shiftZone(zone, delta, newTracker));
 
   const zones = [...leftZones, ...dirtyZones, ...rightZones];
 

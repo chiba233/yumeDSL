@@ -6,11 +6,12 @@
 
 - **新功能：增量结构化解析 (Incremental Structural Parsing)**
   - 引入 `parseIncremental`、`updateIncremental` 和 `tryUpdateIncremental` API，为实时编辑器等高频更新场景提供结构化解析的高性能方案
-  - 通过仅重新解析受影响的区域（Dirty Zones）并对未更改区域进行延迟投射，实现近乎瞬时的文档状态更新
-  - **延迟投射 (Lazy Projection)：** 编辑区域右侧的节点通过 Proxy 进行镜像代理。这避免了对大型 AST 子树进行昂贵的深拷贝，同时能根据编辑带来的偏移增量（Delta）动态修正源码位置
+  - 通过仅重解析一个保守的“脏区”切片，并把左右未命中的 zones 拼回去，增量维护 `StructuralNode[]` / `Zone[]` 快照
+  - **右侧复用：** 脏区右侧 zones 通过递归深拷贝 + 位置平移复用（纯数据对象语义；不引入 Proxy）
+  - **性能权衡：** 大文档头部编辑时可能仍会付出 O(右侧子树大小) 的复制成本；对这类工作负载，全量重建有时反而更快
   - **边界稳定 (Boundary Stabilization)：** 算法会自动向右扩展脏区域直到解析状态稳定，确保在块合并或拆分等复杂场景下的解析正确性
   - **Result 模式：** `tryUpdateIncremental` 提供了类型安全的错误处理方式，可捕获编辑范围校验失败等异常情况（如 `INVALID_EDIT_RANGE`）
-- **文档更新：** README 和 GUIDE 中增加了指向 [增量解析](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%A2%9E%E9%87%8F%E8%A7%A3%E6%9E%90) 百科页面的链接
+- **文档更新：** README / GUIDE 与 wiki 同步更新了 [增量解析](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%A2%9E%E9%87%8F%E8%A7%A3%E6%9E%90)（含边界约束、错误码与编辑器接入说明）
 - **内部实现：** 新增 `src/incremental.ts` 核心逻辑及 `tests/incremental.test.ts` 单元测试覆盖
 - 现有 `parseRichText` 或 `parseStructural` 等公共 API 无破坏性变更
 

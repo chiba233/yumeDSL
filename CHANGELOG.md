@@ -6,11 +6,12 @@
 
 - **New Feature: Incremental Structural Parsing**
   - Introduced `parseIncremental`, `updateIncremental`, and `tryUpdateIncremental` APIs for high-performance structural updates in real-time editors
-  - Achieves near-instantaneous updates by re-parsing only the affected zones and lazily re-projecting untouched nodes
-  - **Lazy Projection:** Nodes to the right of an edit are mirrored via Proxy-backed objects. This avoids expensive deep-cloning of large AST subtrees while maintaining correct source positions after an edit's offset delta
+  - Updates a cached `StructuralNode[]` / `Zone[]` snapshot by re-parsing only a conservative "dirty" range, then stitching untouched zones back in
+  - **Right-Side Reuse:** Zones strictly to the right of the dirty range are re-used by recursive deep-copy with position shifting (plain objects; no Proxy semantics)
+  - **Performance Tradeoff:** Head-of-file edits on very large documents may still pay O(right-side subtree size) copying cost; for those workloads a full rebuild can be faster
   - **Boundary Stabilization:** The re-parse logic automatically expands the "dirty" range until the parse state stabilizes, ensuring correctness even when edits merge or split block-level structures
   - **Result Pattern:** `tryUpdateIncremental` provides a type-safe way to handle edit validation errors (`INVALID_EDIT_RANGE`, etc.) without catching exceptions
-- **Documentation:** README and GUIDE updated with links to the new [Incremental Parsing](https://github.com/chiba233/yumeDSL/wiki/en-Incremental-Parsing) wiki pages
+- **Documentation:** README / GUIDE and wiki updated with the new [Incremental Parsing](https://github.com/chiba233/yumeDSL/wiki/en-Incremental-Parsing) page (API, boundary rules, and editor integration notes)
 - **Internal:** Added `src/incremental.ts` and comprehensive test coverage in `tests/incremental.test.ts`
 - No breaking changes to existing `parseRichText` or `parseStructural` APIs
 
