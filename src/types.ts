@@ -326,6 +326,55 @@ export interface Zone {
   nodes: StructuralNode[];
 }
 
+// ── Incremental structural parse types ──
+
+/**
+ * Parse options used by incremental structural parsing.
+ *
+ * Position fields are always tracked internally and cannot be overridden.
+ * `baseOffset` / `tracker` are also internal for incremental updates.
+ */
+export type IncrementalParseOptions = Omit<
+  StructuralParseOptions,
+  "trackPositions" | "baseOffset" | "tracker"
+>;
+
+/**
+ * Single text edit against the previous source.
+ *
+ * Offsets are based on the old source (`doc.source`) and `oldEndOffset` is exclusive.
+ */
+export interface IncrementalEdit {
+  startOffset: number;
+  oldEndOffset: number;
+  newText: string;
+}
+
+/**
+ * Cached document snapshot for incremental structural updates.
+ */
+export interface IncrementalDocument {
+  source: string;
+  zones: Zone[];
+  tree: StructuralNode[];
+  /** Optional parser config carried forward across updates. */
+  parseOptions?: IncrementalParseOptions;
+}
+
+export type IncrementalUpdateErrorCode =
+  | "INVALID_EDIT_RANGE"
+  | "NEW_SOURCE_LENGTH_MISMATCH"
+  | "EDIT_TEXT_MISMATCH"
+  | "UNKNOWN";
+
+export interface IncrementalUpdateError extends Error {
+  code: IncrementalUpdateErrorCode;
+}
+
+export type IncrementalUpdateResult =
+  | { ok: true; value: IncrementalDocument }
+  | { ok: false; error: IncrementalUpdateError };
+
 // ── Internal types (not re-exported from index) ──
 
 

@@ -85,9 +85,20 @@ export type { PositionTracker, SourcePosition, SourceSpan } from "./types.js";
 
 // ── Zone grouping ──
 export { buildZones } from "./zones.js";
+export { parseIncremental, updateIncremental, tryUpdateIncremental } from "./incremental.js";
 
 // ── Types: structural ──
-export type { StructuralNode, StructuralParseOptions, Zone } from "./types.js";
+export type {
+  StructuralNode,
+  StructuralParseOptions,
+  Zone,
+  IncrementalParseOptions,
+  IncrementalEdit,
+  IncrementalDocument,
+  IncrementalUpdateErrorCode,
+  IncrementalUpdateError,
+  IncrementalUpdateResult,
+} from "./types.js";
 
 export type { PipeArgs } from "./builders.js";
 export type { PipeHandlerDefinition } from "./handlerHelpers.js";

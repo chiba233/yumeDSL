@@ -2,6 +2,18 @@
 
 # Changelog
 
+### 1.2.0
+
+- **New Feature: Incremental Structural Parsing**
+  - Introduced `parseIncremental`, `updateIncremental`, and `tryUpdateIncremental` APIs for high-performance structural updates in real-time editors
+  - Achieves near-instantaneous updates by re-parsing only the affected zones and lazily re-projecting untouched nodes
+  - **Lazy Projection:** Nodes to the right of an edit are mirrored via Proxy-backed objects. This avoids expensive deep-cloning of large AST subtrees while maintaining correct source positions after an edit's offset delta
+  - **Boundary Stabilization:** The re-parse logic automatically expands the "dirty" range until the parse state stabilizes, ensuring correctness even when edits merge or split block-level structures
+  - **Result Pattern:** `tryUpdateIncremental` provides a type-safe way to handle edit validation errors (`INVALID_EDIT_RANGE`, etc.) without catching exceptions
+- **Documentation:** README and GUIDE updated with links to the new [Incremental Parsing](https://github.com/chiba233/yumeDSL/wiki/en-Incremental-Parsing) wiki pages
+- **Internal:** Added `src/incremental.ts` and comprehensive test coverage in `tests/incremental.test.ts`
+- No breaking changes to existing `parseRichText` or `parseStructural` APIs
+
 ### 1.1.10
 
 - Performance: reduced worst-case block-boundary scan cost on malformed nested tag heads. `findBlockClose` now memoizes both inline-close boundary lookups and tag-arg-close lookups per call, preventing repeated scan-to-EOF rescans when block content contains many malformed nested inline heads

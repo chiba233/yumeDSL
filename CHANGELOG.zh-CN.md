@@ -2,6 +2,18 @@
 
 # 更新日志
 
+### 1.2.0
+
+- **新功能：增量结构化解析 (Incremental Structural Parsing)**
+  - 引入 `parseIncremental`、`updateIncremental` 和 `tryUpdateIncremental` API，为实时编辑器等高频更新场景提供结构化解析的高性能方案
+  - 通过仅重新解析受影响的区域（Dirty Zones）并对未更改区域进行延迟投射，实现近乎瞬时的文档状态更新
+  - **延迟投射 (Lazy Projection)：** 编辑区域右侧的节点通过 Proxy 进行镜像代理。这避免了对大型 AST 子树进行昂贵的深拷贝，同时能根据编辑带来的偏移增量（Delta）动态修正源码位置
+  - **边界稳定 (Boundary Stabilization)：** 算法会自动向右扩展脏区域直到解析状态稳定，确保在块合并或拆分等复杂场景下的解析正确性
+  - **Result 模式：** `tryUpdateIncremental` 提供了类型安全的错误处理方式，可捕获编辑范围校验失败等异常情况（如 `INVALID_EDIT_RANGE`）
+- **文档更新：** README 和 GUIDE 中增加了指向 [增量解析](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%A2%9E%E9%87%8F%E8%A7%A3%E6%9E%90) 百科页面的链接
+- **内部实现：** 新增 `src/incremental.ts` 核心逻辑及 `tests/incremental.test.ts` 单元测试覆盖
+- 现有 `parseRichText` 或 `parseStructural` 等公共 API 无破坏性变更
+
 ### 1.1.10
 
 - 性能：降低 malformed nested tag 头场景下的 block-boundary 最坏扫描开销。`findBlockClose` 现在在单次调用内同时缓存 inline close 边界查询和 tag arg close 查询，避免 block 内容中出现大量 malformed nested inline 头时反复扫描到 EOF
