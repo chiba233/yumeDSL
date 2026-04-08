@@ -100,7 +100,7 @@ const shiftPosition = (
 };
 
 const assertUnreachable = (value: never): never => {
-  throw new Error(`shiftNode(): unexpected node type: ${String(value)}`);
+  throw new Error(`shiftNode(): unexpected node type: ${String((value as { type?: unknown }).type)}`);
 };
 
 const shiftNode = (node: StructuralNode, delta: number, tracker: PositionTracker): StructuralNode => {
@@ -259,7 +259,7 @@ export const updateIncremental = (
   }
 
   // Defensive fallback for malformed snapshots where zones do not cover the tail.
-  // Normal parser output should not hit that branch.
+  // Normal parser output should not hit this branch.
   if (hasUnsafeZoneCoverageTailGap(doc, edit)) {
     return parseIncremental(newSource, options ?? doc.parseOptions);
   }
