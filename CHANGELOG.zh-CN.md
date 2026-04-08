@@ -2,6 +2,14 @@
 
 # 更新日志
 
+### 1.1.10
+
+- 性能：降低 malformed nested tag 头场景下的 block-boundary 最坏扫描开销。`findBlockClose` 现在在单次调用内同时缓存 inline close 边界查询和 tag arg close 查询，避免 block 内容中出现大量 malformed nested inline 头时反复扫描到 EOF
+- 内部：为带缓存的 inline 边界扫描补充了显式同步说明，要求其 escape/head/end-tag 语义与 `scanInlineBoundary` 保持一致
+- 内部：`findBlockClose` 改为惰性分配缓存，简单 block 路径不再无条件创建 `Map`
+- 无公共 API 变化
+- 对正常 `parseRichText` / `parseStructural` 使用者来说，没有预期中的输出格式变化
+
 ### 1.1.9
 
 - 栈安全：`printStructural` 与 `mapTokens` 从原生递归改为显式栈迭代。至此，所有核心树处理与转换 API（包括解析、序列化、遍历、映射）均已完成栈安全转换，确保即使是极深层级（数万层）的树结构在处理时也不会有调用栈溢出风险

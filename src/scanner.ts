@@ -31,6 +31,68 @@ export const findTagArgClose = (text: string, start: number, syntax: SyntaxConfi
   return -1;
 };
 
+const fillTagArgCloseCacheFrom = (
+  text: string,
+  start: number,
+  syntax: SyntaxConfig,
+  cache: Map<number, number>,
+): void => {
+  // 注意：这里是 findTagArgClose 的“可缓存等价扫描”。
+  // escape 跳过、tagOpen/tagClose 深度规则必须与 findTagArgClose 保持同步。
+  const cached = cache.get(start);
+  if (cached !== undefined) return;
+
+  const { tagOpen, tagClose } = syntax;
+  let pos = start;
+  const openStack: number[] = [start];
+
+  while (pos < text.length) {
+    const [escaped, next] = readEscapedSequence(text, pos, syntax);
+    if (escaped !== null) {
+      pos = next;
+      continue;
+    }
+
+    if (text.startsWith(tagOpen, pos)) {
+      openStack.push(pos + tagOpen.length);
+      pos += tagOpen.length;
+      continue;
+    }
+
+    if (text.startsWith(tagClose, pos)) {
+      const opener = openStack.pop();
+      if (opener !== undefined) {
+        cache.set(opener, pos);
+      }
+
+      pos += tagClose.length;
+
+      if (openStack.length === 0) {
+        return;
+      }
+
+      continue;
+    }
+
+    pos++;
+  }
+
+  for (let i = 0; i < openStack.length; i++) {
+    cache.set(openStack[i], -1);
+  }
+};
+
+const findTagArgCloseWithCache = (
+  text: string,
+  start: number,
+  syntax: SyntaxConfig,
+  cache: Map<number, number>,
+): number => {
+  fillTagArgCloseCacheFrom(text, start, syntax, cache);
+  const argClose = cache.get(start);
+  return argClose === undefined ? -1 : argClose;
+};
+
 const readTagHeadAt = (
   text: string,
   pos: number,
@@ -119,17 +181,91 @@ const scanInlineBoundary = (
   return mode.fallbackToTextEnd ? text.length : -1;
 };
 
-export const getTagCloserType = (
+const fillInlineCloseCacheFrom = (
   text: string,
-  tagOpenIndex: number,
+  start: number,
   syntax: SyntaxConfig,
-): { closer: string; argClose: number } | null => {
-  // 注意：这里决定“这个 tag 语法长得像 inline / raw / block 哪一种”。
-  // 它只根据 arg-close 后面紧跟的 token 判断，不看 handler。
-  // 一旦这里判断错，后面整条分支都会走错，而且通常不是直接报错，而是悄悄退化错位。
+  tagName: TagNameConfig,
+  cache: Map<number, number>,
+): void => {
+  // 注意：这里是 scanInlineBoundary 的“可缓存等价扫描”。
+  // escape 跳过、head 识别、endTag 消费语义必须与 scanInlineBoundary 保持同步。
+  const { endTag } = syntax;
+  const cached = cache.get(start);
+  if (cached !== undefined) return;
+
+  let pos = start;
+  const openStack: number[] = [start];
+
+  while (pos < text.length) {
+    const [escaped, next] = readEscapedSequence(text, pos, syntax);
+    if (escaped !== null) {
+      pos = next;
+      continue;
+    }
+
+    const head = readTagHeadAt(text, pos, syntax, tagName);
+    if (head) {
+      const nestedCached = cache.get(head.argStart);
+      if (nestedCached !== undefined) {
+        if (nestedCached === -1) {
+          for (let i = 0; i < openStack.length; i++) {
+            cache.set(openStack[i], -1);
+          }
+          return;
+        }
+
+        pos = nestedCached + endTag.length;
+        continue;
+      }
+
+      openStack.push(head.argStart);
+      pos = head.argStart;
+      continue;
+    }
+
+    if (text.startsWith(endTag, pos)) {
+      const opener = openStack.pop();
+      if (opener !== undefined) {
+        cache.set(opener, pos);
+      }
+
+      pos += endTag.length;
+
+      if (openStack.length === 0) {
+        return;
+      }
+
+      continue;
+    }
+
+    pos++;
+  }
+
+  for (let i = 0; i < openStack.length; i++) {
+    cache.set(openStack[i], -1);
+  }
+};
+
+const findInlineCloseWithCache = (
+  text: string,
+  start: number,
+  syntax: SyntaxConfig,
+  tagName: TagNameConfig,
+  cache: Map<number, number>,
+): number => {
+  // 语义与 findInlineClose 一致：返回 close 起点；未闭合返回 -1。
+  fillInlineCloseCacheFrom(text, start, syntax, tagName, cache);
+  const closeStart = cache.get(start);
+  return closeStart === undefined ? -1 : closeStart;
+};
+
+const classifyCloserByArgClose = (
+  text: string,
+  argClose: number,
+  syntax: SyntaxConfig,
+): { closer: string; argClose: number } => {
   const { blockOpen, blockClose, rawOpen, rawClose, endTag } = syntax;
-  const argClose = findTagArgClose(text, tagOpenIndex, syntax);
-  if (argClose === -1) return null;
 
   if (text.startsWith(blockOpen, argClose)) {
     return { closer: blockClose, argClose };
@@ -140,6 +276,19 @@ export const getTagCloserType = (
   }
 
   return { closer: endTag, argClose };
+};
+
+export const getTagCloserType = (
+  text: string,
+  tagOpenIndex: number,
+  syntax: SyntaxConfig,
+): { closer: string; argClose: number } | null => {
+  // 注意：这里决定“这个 tag 语法长得像 inline / raw / block 哪一种”。
+  // 它只根据 arg-close 后面紧跟的 token 判断，不看 handler。
+  // 一旦这里判断错，后面整条分支都会走错，而且通常不是直接报错，而是悄悄退化错位。
+  const argClose = findTagArgClose(text, tagOpenIndex, syntax);
+  if (argClose === -1) return null;
+  return classifyCloserByArgClose(text, argClose, syntax);
 };
 
 export const findInlineClose = (
@@ -169,6 +318,8 @@ export const findBlockClose = (
   const { blockClose, rawClose, rawOpen, blockOpen, endTag } = syntax;
   let pos = start;
   let depth = 1;
+  let tagArgCloseCache: Map<number, number> | null = null;
+  let inlineCloseCache: Map<number, number> | null = null;
 
   while (pos < text.length) {
     const [escaped, next] = readEscapedSequence(text, pos, syntax);
@@ -186,7 +337,9 @@ export const findBlockClose = (
 
     const head = readTagHeadAt(text, pos, syntax, tagName);
     if (head) {
-      const tagInfo = getTagCloserType(text, head.argStart, syntax);
+      tagArgCloseCache ??= new Map<number, number>();
+      const argClose = findTagArgCloseWithCache(text, head.argStart, syntax, tagArgCloseCache);
+      const tagInfo = argClose === -1 ? null : classifyCloserByArgClose(text, argClose, syntax);
 
       if (tagInfo?.closer === rawClose) {
         // 注意：内层 raw 不能递增 block depth，只能整段跳过。
@@ -206,7 +359,14 @@ export const findBlockClose = (
 
       if (tagInfo?.closer === endTag) {
         // 注意：inline 在 block 里不会影响 depth，但必须整段跳过，不能按字符慢慢磨。
-        const inlineEnd = findInlineClose(text, head.argStart, syntax, tagName);
+        inlineCloseCache ??= new Map<number, number>();
+        const inlineEnd = findInlineCloseWithCache(
+          text,
+          head.argStart,
+          syntax,
+          tagName,
+          inlineCloseCache,
+        );
         if (inlineEnd === -1) {
           pos = head.argStart;
           continue;

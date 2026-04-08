@@ -2,6 +2,14 @@
 
 # Changelog
 
+### 1.1.10
+
+- Performance: reduced worst-case block-boundary scan cost on malformed nested tag heads. `findBlockClose` now memoizes both inline-close boundary lookups and tag-arg-close lookups per call, preventing repeated scan-to-EOF rescans when block content contains many malformed nested inline heads
+- Internal: added explicit synchronization note for the cached inline-boundary scanner to keep its escape/head/end-tag semantics aligned with `scanInlineBoundary`
+- Internal: lazy cache allocation in `findBlockClose` avoids unconditional `Map` creation on simple block paths
+- No public API changes
+- No intended output-format changes for normal `parseRichText` / `parseStructural` consumers
+
 ### 1.1.9
 
 - Stack safety: `printStructural` and `mapTokens` converted from native recursion to explicit stack
