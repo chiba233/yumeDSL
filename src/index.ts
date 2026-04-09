@@ -98,12 +98,7 @@ export type {
   IncrementalParseOptions,
   IncrementalEdit,
   IncrementalDocument,
-  IncrementalSessionApplyMode,
-  IncrementalSessionApplyResult,
-  IncrementalSessionFallbackReason,
-  IncrementalSessionStrategy,
   IncrementalSessionOptions,
-  IncrementalSession,
 } from "./types.js";
 
 export type { PipeArgs } from "./builders.js";

@@ -7,6 +7,7 @@
 - **Incremental API surface cleanup**
   - Removed low-level updater exports from package public surface (`updateIncremental(...)` / `tryUpdateIncremental(...)`)
   - Public incremental entry is now session-first: `createIncrementalSession(...)` (+ `parseIncremental(...)` for initial snapshot)
+  - Trimmed session-only type exports from the public surface; infer session types from `ReturnType<typeof createIncrementalSession>`
   - Kept mode reporting as an internal implementation detail for session statistics (`"incremental"` / `"internal-full-rebuild"`)
 - **Guardrail rollback (YAGNI + perf direction)**
   - Reverted left-side probe/expansion additions and restored one-zone left lookbehind
