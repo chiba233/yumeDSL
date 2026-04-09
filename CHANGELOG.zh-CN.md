@@ -5,9 +5,9 @@
 ### 1.2.3
 
 - **增量 API 导出面清理**
-  - 从公开 `updateIncremental(...)` / `tryUpdateIncremental(...)` 签名中移除 `__internalObserver`
+  - 从包的公开导出面移除 low-level updater（`updateIncremental(...)` / `tryUpdateIncremental(...)`）
+  - 公共增量接入入口收敛为 session-first：`createIncrementalSession(...)`（`parseIncremental(...)` 用于初始化快照）
   - 内部仅保留 mode 级观测（`"incremental"` / `"internal-full-rebuild"`）供 session 统计使用
-  - 本次主要是收敛误暴露的公共 API 噪音，不引入新的公开能力
 - **保护逻辑回退（YAGNI + 性能方向纠偏）**
   - 回退左侧 seam probe / 扩展重试逻辑，左回看恢复为 1 个 zone
   - 回退基于右侧字节量的早退全量策略，避免在 cheap-shift 场景误触发全量重建

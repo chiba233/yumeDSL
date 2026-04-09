@@ -5,9 +5,9 @@
 ### 1.2.3
 
 - **Incremental API surface cleanup**
-  - Removed `__internalObserver` from public `updateIncremental(...)` / `tryUpdateIncremental(...)` signatures
+  - Removed low-level updater exports from package public surface (`updateIncremental(...)` / `tryUpdateIncremental(...)`)
+  - Public incremental entry is now session-first: `createIncrementalSession(...)` (+ `parseIncremental(...)` for initial snapshot)
   - Kept mode reporting as an internal implementation detail for session statistics (`"incremental"` / `"internal-full-rebuild"`)
-  - No intentional public behavior change; this release removes accidental public API noise
 - **Guardrail rollback (YAGNI + perf direction)**
   - Reverted left-side probe/expansion additions and restored one-zone left lookbehind
   - Reverted shifted-right-byte early-fallback heuristics that could force full rebuild on cheap-shift cases

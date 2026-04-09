@@ -87,8 +87,6 @@ export type { PositionTracker, SourcePosition, SourceSpan } from "./types.js";
 export { buildZones } from "./zones.js";
 export {
   parseIncremental,
-  updateIncremental,
-  tryUpdateIncremental,
   createIncrementalSession,
 } from "./incremental.js";
 
@@ -100,9 +98,6 @@ export type {
   IncrementalParseOptions,
   IncrementalEdit,
   IncrementalDocument,
-  IncrementalUpdateErrorCode,
-  IncrementalUpdateError,
-  IncrementalUpdateResult,
   IncrementalSessionApplyMode,
   IncrementalSessionApplyResult,
   IncrementalSessionFallbackReason,

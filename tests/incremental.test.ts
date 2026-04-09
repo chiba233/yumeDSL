@@ -8,10 +8,8 @@ import {
   buildZones,
   parseIncremental,
   parseStructural,
-  tryUpdateIncremental,
-  updateIncremental,
 } from "../src/index.ts";
-import { __setIncrementalDebugSink } from "../src/incremental.ts";
+import { __setIncrementalDebugSink, tryUpdateIncremental, updateIncremental } from "../src/incremental.ts";
 import { runGoldenCases, type GoldenCase } from "./testHarness.ts";
 
 const parseFull = (source: string, options?: Parameters<typeof parseStructural>[1]) => {
