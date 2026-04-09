@@ -6,8 +6,15 @@
 
 - **增量 API 导出面清理**
   - 从公开 `updateIncremental(...)` / `tryUpdateIncremental(...)` 签名中移除 `__internalObserver`
-  - observer 观测能力保留在内部实现，用于 session 统计语义
-  - 增量算法行为不变；本次主要是收敛误暴露的公共 API 噪音
+  - 内部仅保留 mode 级观测（`"incremental"` / `"internal-full-rebuild"`）供 session 统计使用
+  - 本次主要是收敛误暴露的公共 API 噪音，不引入新的公开能力
+- **保护逻辑回退（YAGNI + 性能方向纠偏）**
+  - 回退左侧 seam probe / 扩展重试逻辑，左回看恢复为 1 个 zone
+  - 回退基于右侧字节量的早退全量策略，避免在 cheap-shift 场景误触发全量重建
+  - 移除对应的白盒测试（仅验证分支执行，不验证正确性收益）
+- **Session auto 策略简化**
+  - 移除冗余派生指标桶（`internalFullRebuildMarks`、`reparseWorkBytes`）
+  - 自适应判断继续基于回退率与 incremental/full 耗时对比
 
 ### 1.2.2
 

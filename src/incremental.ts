@@ -131,6 +131,7 @@ const flattenZones = (zones: readonly Zone[]): StructuralNode[] => {
 // `updateIncremental(...)` only reuses shifted right-side zones after a seam probe reparse
 // confirms boundary-adjacent structure remains stable. Mismatch => full rebuild.
 
+const LEFT_LOOKBEHIND_ZONES = 1;
 const RIGHT_REUSE_PROBE_ZONES = 2;
 const RIGHT_REUSE_PROBE_EXTRA_ZONES = 1;
 
@@ -418,7 +419,7 @@ const findDirtyRange = (zones: readonly Zone[], edit: IncrementalEdit): { from: 
 
   if (firstOverlap !== -1) {
     return {
-      from: Math.max(0, firstOverlap - 1),
+      from: Math.max(0, firstOverlap - LEFT_LOOKBEHIND_ZONES),
       to: Math.min(zones.length - 1, lastOverlap + 1),
     };
   }
@@ -432,9 +433,68 @@ const findDirtyRange = (zones: readonly Zone[], edit: IncrementalEdit): { from: 
   }
 
   return {
-    from: Math.max(0, insertionIndex - 1),
+    from: Math.max(0, insertionIndex - LEFT_LOOKBEHIND_ZONES),
     to: Math.min(zones.length - 1, insertionIndex),
   };
+};
+
+const reparseDirtyWindowUntilStable = (
+  doc: IncrementalDocument,
+  dirtyFrom: number,
+  dirtyTo: number,
+  edit: IncrementalEdit,
+  delta: number,
+  newSource: string,
+  tracker: PositionTracker,
+  parseOptions: IncrementalParseOptions | undefined,
+  cumulativeBudget: number,
+  cumulativeReparsedBytes: number,
+): {
+  budgetExceeded: boolean;
+  dirtyTo: number;
+  dirtyZones: Zone[];
+  cumulativeReparsedBytes: number;
+} => {
+  let nextDirtyTo = dirtyTo;
+  let nextDirtyZones: Zone[] = [];
+  let nextCumulativeReparsedBytes = cumulativeReparsedBytes;
+
+  while (true) {
+    const dirtyStartOld = doc.zones[dirtyFrom].startOffset;
+    const dirtyEndOld = doc.zones[nextDirtyTo].endOffset;
+    const dirtyStartNew = mapOldOffsetToNew(edit, delta, dirtyStartOld);
+    const dirtyEndNew = mapOldOffsetToNew(edit, delta, dirtyEndOld);
+    const reparsedWindowSize = dirtyEndNew - dirtyStartNew;
+    nextCumulativeReparsedBytes += reparsedWindowSize;
+    if (nextCumulativeReparsedBytes > cumulativeBudget) {
+      return {
+        budgetExceeded: true,
+        dirtyTo: nextDirtyTo,
+        dirtyZones: nextDirtyZones,
+        cumulativeReparsedBytes: nextCumulativeReparsedBytes,
+      };
+    }
+
+    const dirtyTree = parseWithPositions(
+      newSource.slice(dirtyStartNew, dirtyEndNew),
+      tracker,
+      parseOptions,
+      dirtyStartNew,
+    );
+    nextDirtyZones = buildZones(dirtyTree);
+
+    const reparsedEnd =
+      nextDirtyZones.length > 0 ? nextDirtyZones[nextDirtyZones.length - 1].endOffset : dirtyStartNew;
+    if (reparsedEnd === dirtyEndNew || nextDirtyTo === doc.zones.length - 1) {
+      return {
+        budgetExceeded: false,
+        dirtyTo: nextDirtyTo,
+        dirtyZones: nextDirtyZones,
+        cumulativeReparsedBytes: nextCumulativeReparsedBytes,
+      };
+    }
+    nextDirtyTo += 1;
+  }
 };
 
 const assertValidEdit = (doc: IncrementalDocument, edit: IncrementalEdit, newSource: string) => {
@@ -548,44 +608,31 @@ const updateIncrementalInternal = (
   const delta = newSource.length - doc.source.length;
   const dirty = findDirtyRange(doc.zones, edit);
 
-  const dirtyFrom = dirty.from;
+  let dirtyFrom = dirty.from;
   let dirtyTo = dirty.to;
   let dirtyZones: Zone[] = [];
 
-  // Boundary stabilization is right-expanding only.
-  // We conservatively include one zone to the left in `findDirtyRange(...)`, then keep
-  // expanding right until the reparsed right boundary matches or we reach EOF.
-  while (true) {
-    const dirtyStartOld = doc.zones[dirtyFrom].startOffset;
-    const dirtyEndOld = doc.zones[dirtyTo].endOffset;
-    const dirtyStartNew = mapOldOffsetToNew(edit, delta, dirtyStartOld);
-    const dirtyEndNew = mapOldOffsetToNew(edit, delta, dirtyEndOld);
-    const reparsedWindowSize = dirtyEndNew - dirtyStartNew;
-    cumulativeReparsedBytes += reparsedWindowSize;
-
-    if (cumulativeReparsedBytes > cumulativeBudget) {
-      const rebuilt = parseIncremental(newSource, parseOptions);
-      emitDebug(true);
-      __internalObserver?.("internal-full-rebuild");
-      return rebuilt;
-    }
-
-    const dirtyTree = parseWithPositions(
-      newSource.slice(dirtyStartNew, dirtyEndNew),
-      newTracker,
-      parseOptions,
-      dirtyStartNew,
-    );
-    dirtyZones = buildZones(dirtyTree);
-
-    const reparsedEnd = dirtyZones.length > 0 ? dirtyZones[dirtyZones.length - 1].endOffset : dirtyStartNew;
-
-    if (reparsedEnd === dirtyEndNew || dirtyTo === doc.zones.length - 1) {
-      break;
-    }
-
-    dirtyTo += 1;
+  const firstReparse = reparseDirtyWindowUntilStable(
+    doc,
+    dirtyFrom,
+    dirtyTo,
+    edit,
+    delta,
+    newSource,
+    newTracker,
+    parseOptions,
+    cumulativeBudget,
+    cumulativeReparsedBytes,
+  );
+  cumulativeReparsedBytes = firstReparse.cumulativeReparsedBytes;
+  if (firstReparse.budgetExceeded) {
+    const rebuilt = parseIncremental(newSource, parseOptions);
+    emitDebug(true);
+    __internalObserver?.("internal-full-rebuild");
+    return rebuilt;
   }
+  dirtyTo = firstReparse.dirtyTo;
+  dirtyZones = firstReparse.dirtyZones;
 
   const leftZones = doc.zones.slice(0, dirtyFrom);
   const oldRightZones = doc.zones.slice(dirtyTo + 1);
@@ -793,16 +840,17 @@ export const createIncrementalSession = (
     }
 
     const incrementalStart = now();
-    let lastInternalUpdateMode: InternalUpdateMode | undefined;
-    const result = tryUpdateIncrementalInternal(currentDoc, edit, newSource, nextOptions, (mode) => {
-      lastInternalUpdateMode = mode;
+    let mode: InternalUpdateMode | undefined;
+    const result = tryUpdateIncrementalInternal(currentDoc, edit, newSource, nextOptions, (nextTelemetry) => {
+      mode = nextTelemetry;
     });
     const incrementalElapsedMs = now() - incrementalStart;
     recordBounded(incrementalDurations, incrementalElapsedMs);
 
     if (result.ok) {
       currentDoc = result.value;
-      recordBounded(fallbackMarks, lastInternalUpdateMode === "internal-full-rebuild" ? 1 : 0);
+      const internalFullRebuild = mode === "internal-full-rebuild";
+      recordBounded(fallbackMarks, internalFullRebuild ? 1 : 0);
       maybeAdaptPolicy();
       return { doc: currentDoc, mode: "incremental" };
     }

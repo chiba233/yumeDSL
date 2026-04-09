@@ -25,7 +25,11 @@ const applyEdit = (source: string, start: number, end: number, newText: string):
 
 const captureIncrementalDebug = (run: () => void) => {
   let captured:
-    | { cumulativeReparsedBytes: number; probeSliceBytes: number; fellBackToFull: boolean }
+    | {
+        cumulativeReparsedBytes: number;
+        probeSliceBytes: number;
+        fellBackToFull: boolean;
+      }
     | undefined;
   __setIncrementalDebugSink((stats) => {
     captured = stats;

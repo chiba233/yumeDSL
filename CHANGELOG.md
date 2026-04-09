@@ -6,8 +6,15 @@
 
 - **Incremental API surface cleanup**
   - Removed `__internalObserver` from public `updateIncremental(...)` / `tryUpdateIncremental(...)` signatures
-  - Kept observer-based telemetry as internal implementation detail for session statistics
-  - No behavior change to incremental algorithm; this release removes accidental public API noise
+  - Kept mode reporting as an internal implementation detail for session statistics (`"incremental"` / `"internal-full-rebuild"`)
+  - No intentional public behavior change; this release removes accidental public API noise
+- **Guardrail rollback (YAGNI + perf direction)**
+  - Reverted left-side probe/expansion additions and restored one-zone left lookbehind
+  - Reverted shifted-right-byte early-fallback heuristics that could force full rebuild on cheap-shift cases
+  - Removed matching white-box tests that only asserted guard execution rather than correctness outcomes
+- **Session auto policy simplification**
+  - Removed redundant/derived buckets (`internalFullRebuildMarks`, `reparseWorkBytes`)
+  - Auto adaptation now continues to rely on fallback-rate and incremental-vs-full timing signals
 
 ### 1.2.2
 
