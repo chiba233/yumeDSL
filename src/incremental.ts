@@ -495,9 +495,8 @@ export const parseIncremental = (
  * If your edit may invalidate parsing state further left than one zone, prefer a full
  * rebuild via `parseIncremental(newSource, options)` for correctness.
  *
- * @internal `__internalObserver` is for session-level telemetry only.
  */
-export const updateIncremental = (
+const updateIncrementalInternal = (
   doc: IncrementalDocument,
   edit: IncrementalEdit,
   newSource: string,
@@ -625,14 +624,20 @@ export const updateIncremental = (
   return updated;
 };
 
+export const updateIncremental = (
+  doc: IncrementalDocument,
+  edit: IncrementalEdit,
+  newSource: string,
+  options?: IncrementalParseOptions,
+): IncrementalDocument => updateIncrementalInternal(doc, edit, newSource, options);
+
 /**
  * @experimental
  * Low-level result-style updater.
  * For production applications, prefer `createIncrementalSession(...).applyEdit(...)`.
  *
- * @internal `__internalObserver` is for session-level telemetry only.
  */
-export const tryUpdateIncremental = (
+const tryUpdateIncrementalInternal = (
   doc: IncrementalDocument,
   edit: IncrementalEdit,
   newSource: string,
@@ -642,7 +647,7 @@ export const tryUpdateIncremental = (
   try {
     return {
       ok: true,
-      value: updateIncremental(doc, edit, newSource, options, __internalObserver),
+      value: updateIncrementalInternal(doc, edit, newSource, options, __internalObserver),
     };
   } catch (error) {
     if (isIncrementalUpdateError(error)) {
@@ -660,6 +665,13 @@ export const tryUpdateIncremental = (
     };
   }
 };
+
+export const tryUpdateIncremental = (
+  doc: IncrementalDocument,
+  edit: IncrementalEdit,
+  newSource: string,
+  options?: IncrementalParseOptions,
+): IncrementalUpdateResult => tryUpdateIncrementalInternal(doc, edit, newSource, options);
 
 export const createIncrementalSession = (
   source: string,
@@ -782,7 +794,7 @@ export const createIncrementalSession = (
 
     const incrementalStart = now();
     let lastInternalUpdateMode: InternalUpdateMode | undefined;
-    const result = tryUpdateIncremental(currentDoc, edit, newSource, nextOptions, (mode) => {
+    const result = tryUpdateIncrementalInternal(currentDoc, edit, newSource, nextOptions, (mode) => {
       lastInternalUpdateMode = mode;
     });
     const incrementalElapsedMs = now() - incrementalStart;

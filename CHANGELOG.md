@@ -2,6 +2,13 @@
 
 # Changelog
 
+### 1.2.3
+
+- **Incremental API surface cleanup**
+  - Removed `__internalObserver` from public `updateIncremental(...)` / `tryUpdateIncremental(...)` signatures
+  - Kept observer-based telemetry as internal implementation detail for session statistics
+  - No behavior change to incremental algorithm; this release removes accidental public API noise
+
 ### 1.2.2
 
 - **Session fallback accounting fix (auto strategy)**

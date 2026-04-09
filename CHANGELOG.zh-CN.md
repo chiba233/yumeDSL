@@ -2,6 +2,13 @@
 
 # 更新日志
 
+### 1.2.3
+
+- **增量 API 导出面清理**
+  - 从公开 `updateIncremental(...)` / `tryUpdateIncremental(...)` 签名中移除 `__internalObserver`
+  - observer 观测能力保留在内部实现，用于 session 统计语义
+  - 增量算法行为不变；本次主要是收敛误暴露的公共 API 噪音
+
 ### 1.2.2
 
 - **会话回退统计修正（auto 策略）**
