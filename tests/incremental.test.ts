@@ -307,9 +307,12 @@ const cases: GoldenCase[] = [
   {
     name: "[Incremental/Options] external handler mutation should not affect captured snapshot",
     run: () => {
-      const source = "$$bold(x)$$";
+      // 文档需要 >1 zone 才能走增量路径（≤1 zone 会被 guard 短路到 full rebuild）
+      const source = "$$bold(x)$$\n$$code(ts)%\nhello\n%end$$";
       const baseHandlers = createSimpleInlineHandlers(["bold"]);
-      const handlers: Record<string, TagHandler & { meta: { unstable: boolean } }> = {
+      const rawHandlers = createSimpleRawHandlers(["code"]);
+      const handlers: Record<string, TagHandler & { meta?: { unstable: boolean } }> = {
+        ...rawHandlers,
         bold: {
           ...baseHandlers.bold,
           meta: { unstable: true },
@@ -321,10 +324,10 @@ const cases: GoldenCase[] = [
         | undefined;
       assert.equal(snapshotHandlers?.bold.meta?.unstable, true);
 
-      handlers.bold.meta.unstable = false;
+      handlers.bold.meta!.unstable = false;
       assert.equal(snapshotHandlers?.bold.meta?.unstable, true);
 
-      const nextSource = "$$bold(y)$$";
+      const nextSource = "$$bold(y)$$\n$$code(ts)%\nhello\n%end$$";
       const stats = captureIncrementalDebug(() => {
         updateIncremental(
           doc,
@@ -629,8 +632,10 @@ const cases: GoldenCase[] = [
   {
     name: "[Incremental/Session] adaptive policy should enter and exit cooldown",
     run: () => {
-      const source = "abc";
-      const session = createIncrementalSession(source, undefined, {
+      // 需要 >1 zone 才能走增量路径（≤1 zone 被 guard 短路到 full rebuild）
+      const rawHandlers = createSimpleRawHandlers(["code"]);
+      const source = "abc\n$$code(ts)%\nx\n%end$$\nz";
+      const session = createIncrementalSession(source, { handlers: rawHandlers }, {
         strategy: "auto",
         sampleWindowSize: 4,
         minSamplesForAdaptation: 2,
@@ -639,6 +644,7 @@ const cases: GoldenCase[] = [
         maxEditRatioForIncremental: 1,
       });
 
+      // mismatch edit: newSource 长度不匹配 → 触发 fallback
       const mismatchEdit = { startOffset: 1, oldEndOffset: 2, newText: "ZZ" };
       const mismatchResult1 = session.applyEdit(mismatchEdit, source);
       const mismatchResult2 = session.applyEdit(mismatchEdit, source);
@@ -664,8 +670,10 @@ const cases: GoldenCase[] = [
   {
     name: "[Incremental/Session] internal full rebuild should count as fallback mark",
     run: () => {
-      const source = "abc";
-      const session = createIncrementalSession(source, undefined, {
+      // 需要 >1 zone 才能走增量路径
+      const rawHandlers = createSimpleRawHandlers(["code"]);
+      const source = "abc\n$$code(ts)%\nx\n%end$$\nz";
+      const session = createIncrementalSession(source, { handlers: rawHandlers }, {
         strategy: "auto",
         sampleWindowSize: 4,
         minSamplesForAdaptation: 2,
@@ -675,10 +683,15 @@ const cases: GoldenCase[] = [
       });
 
       const noOpEdit = { startOffset: 1, oldEndOffset: 2, newText: "b" };
-      const syntaxShiftedOptions = { allowForms: ["inline"] as const };
-      const first = session.applyEdit(noOpEdit, source, syntaxShiftedOptions);
-      const second = session.applyEdit(noOpEdit, source);
-      const cooldown = session.applyEdit(noOpEdit, source);
+      // 用不同 handler set 制造 fingerprint 不匹配 → INTERNAL_FULL_REBUILD
+      // 但保留 raw handler 以保持 >1 zone
+      const altRawHandlers = createSimpleRawHandlers(["code"]);
+      const inlineHandlers = createSimpleInlineHandlers(["bold"]);
+      const shiftedOptions = { handlers: { ...altRawHandlers, ...inlineHandlers } };
+      const first = session.applyEdit(noOpEdit, source, shiftedOptions);
+      // 第二次用同样的 options → fingerprint 一致 → 走增量
+      const second = session.applyEdit(noOpEdit, source, shiftedOptions);
+      const cooldown = session.applyEdit(noOpEdit, source, shiftedOptions);
 
       assert.equal(first.mode, "full-fallback");
       assert.equal(first.fallbackReason, "INTERNAL_FULL_REBUILD");
@@ -700,8 +713,10 @@ const cases: GoldenCase[] = [
       };
 
       try {
-        const source = "abc";
-        const session = createIncrementalSession(source, undefined, {
+        // 需要 >1 zone 才能走增量路径
+        const rawHandlers = createSimpleRawHandlers(["code"]);
+        const source = "abc\n$$code(ts)%\nx\n%end$$\nz";
+        const session = createIncrementalSession(source, { handlers: rawHandlers }, {
           strategy: "auto",
           minSamplesForAdaptation: 2,
           sampleWindowSize: 8,
@@ -832,8 +847,11 @@ const cases: GoldenCase[] = [
   {
     name: "[Incremental/Fingerprint] handlers shape controls reuse eligibility",
     run: () => {
-      const handlers = createSimpleInlineHandlers(["bold"]);
-      const source = "$$bold(x)$$\n$$bold(y)$$";
+      // 需要 >1 zone：使用 raw handler 产生 zone breaker
+      const rawHandlers = createSimpleRawHandlers(["code"]);
+      const inlineHandlers = createSimpleInlineHandlers(["bold"]);
+      const handlers = { ...rawHandlers, ...inlineHandlers };
+      const source = "$$bold(x)$$\n$$code(ts)%\nhello\n%end$$\n$$bold(y)$$";
       const doc = parseIncremental(source, { handlers });
       const editAt = source.indexOf("x");
       const newSource = applyEdit(source, editAt, editAt + 1, "z");
@@ -863,7 +881,7 @@ const cases: GoldenCase[] = [
             handlers: {
               ...handlers,
               bold: {
-                ...handlers.bold,
+                ...inlineHandlers.bold,
                 inline: (tokens) => ({
                   type: "bold",
                   value: tokens,

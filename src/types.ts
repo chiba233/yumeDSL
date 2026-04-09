@@ -398,6 +398,17 @@ export interface IncrementalSessionOptions {
   switchToFullMultiplier?: number;
   fullPreferenceCooldownEdits?: number;
   maxEditRatioForIncremental?: number;
+  /**
+   * Maximum number of non-breaker nodes per soft zone.
+   *
+   * Controls the granularity of incremental zone splitting for documents
+   * that contain few or no raw/block nodes (e.g. pure inline text).
+   * Smaller values produce more zones (finer incremental windows but higher
+   * overhead); larger values produce fewer zones (coarser windows).
+   *
+   * @default 64
+   */
+  softZoneNodeCap?: number;
 }
 
 /**

@@ -4,6 +4,14 @@
 
 ### 1.2.4
 
+- **纯 inline 文档 zone 切分（`softZoneNodeCap`）**
+  - 内部 zone 构建器现在会在非 breaker 节点（text / escape / separator / inline）连续超过可配软上限时自动切分（`SOFT_ZONE_NODE_CAP`，默认 64）。
+  - 公开 API `buildZones(...)` 行为不变——始终返回与之前相同的结果。zone 切分仅在增量内部路径（`buildZonesInternal`）生效。
+  - 以前没有 `raw` / `block` 节点的文档（纯 inline）只产生 1 个 zone，增量解析等于没用。切分后 1 MB 纯 inline 文档产生约 800 个 zone，相比全量重建加速 14.6 倍。
+  - 新增会话选项 `softZoneNodeCap?: number`（`IncrementalSessionOptions`），允许调用方根据自身场景调节 zone 粒度。最小有效值 2（内部 clamp）。
+- **低 zone 数量守卫**
+  - 上一快照 zone 数 ≤ 1（如极短文档或无 handler 的纯文本）时，增量路径直接跳过、走全量重建。避免在无法复用 zone 的场景浪费增量开销。
+  - 触发时返回 `INTERNAL_FULL_REBUILD` 回退原因。
 - **增量性能优化：惰性右侧平移**
   - 右侧 zone 复用从即时深拷贝 + 递归平移改为 O(1) 惰性 delta 累积（`deferShiftZone`）。
   - 首次消费时才物化节点位置（`materializeZone`），通过 `Object.defineProperty` 惰性 getter 延迟 `tree` / `zones` 展开。
@@ -19,7 +27,13 @@
   - `createShiftedNodeShell` 分支压缩为单行 return。
   - `shiftNode` 移除 `shouldExpandNestedNode` 间接层，帧分发合并。
   - syntax fingerprint 8 字段重复调用改为 `syntaxKeys` 数组循环。
-- 无公共 API 变化
+- **基准测试数据（1 MB 文档，鲲鹏 920 aarch64，Node 24）**
+  - 全量 `parseIncremental`（初始快照）：~130 ms
+  - 纯 inline（zone 切分，softCap=64，~264 zone）：增量 ~12 ms → **约 10 倍加速**
+  - 中等 raw/block 密度（~3700 zone）：增量 ~15 ms → **约 9 倍加速**
+  - 密集 raw/block（~17000+ zone）：增量 ~38 ms → ~3.5 倍（zone 组装开销占主导）
+  - GC 稳定性：50 次连续 inline 编辑无手动 GC，median ~9 ms，无退化
+- 无公共 API 破坏性变化（会话选项 `softZoneNodeCap` 为可选新增）
 
 ### 1.2.3
 

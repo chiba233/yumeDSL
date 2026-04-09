@@ -69,7 +69,7 @@ import type {
   StructuralNode,
   Zone,
 } from "./types.js";
-import { buildZones } from "./zones.js";
+import { buildZonesInternal, SOFT_ZONE_NODE_CAP } from "./zones.js";
 
 // 性能备忘：
 // 只重解析脏区间。右侧 zone 用 lazy delta——只存 offset 偏移量，
@@ -359,7 +359,7 @@ type InternalUpdateObserver = (mode: InternalUpdateMode) => void;
 let incrementalDebugSink: IncrementalDebugSink | undefined;
 
 /** @internal test-only hook */
-export const __setIncrementalDebugSink = (sink?: IncrementalDebugSink): void => {
+export const __setIncrementalDebugSink: (sink?: IncrementalDebugSink) => void = (sink) => {
   incrementalDebugSink = sink;
 };
 
@@ -479,6 +479,7 @@ const isSafeRightReuse = (
   delta: number,
   tracker: PositionTracker,
   parseOptions: IncrementalParseOptions | undefined,
+  zoneCap: number,
 ): { ok: boolean; probeSliceBytes: number } => {
   if (oldRightZones.length === 0) return { ok: true, probeSliceBytes: 0 };
 
@@ -498,7 +499,7 @@ const isSafeRightReuse = (
     parseOptions,
     seamNewOffset,
   );
-  const probeZones = buildZones(probeTree);
+  const probeZones = buildZonesInternal(probeTree, zoneCap);
   if (probeZones.length < probeZoneCount) return { ok: false, probeSliceBytes: probeLength };
   const signatureBudget: SignatureBudget = {
     remaining: RIGHT_REUSE_PROBE_SIGNATURE_NODE_BUDGET,
@@ -747,6 +748,7 @@ const reparseDirtyWindowUntilStable = (
   parseOptions: IncrementalParseOptions | undefined,
   cumulativeBudget: number,
   cumulativeReparsedBytes: number,
+  zoneCap: number,
 ): {
   budgetExceeded: boolean;
   dirtyTo: number;
@@ -779,7 +781,7 @@ const reparseDirtyWindowUntilStable = (
       parseOptions,
       dirtyStartNew,
     );
-    nextDirtyZones = buildZones(dirtyTree);
+    nextDirtyZones = buildZonesInternal(dirtyTree, zoneCap);
 
     const reparsedEnd =
       nextDirtyZones.length > 0 ? nextDirtyZones[nextDirtyZones.length - 1].endOffset : dirtyStartNew;
@@ -829,13 +831,16 @@ const assertValidEdit = (doc: IncrementalDocument, edit: IncrementalEdit, newSou
 //
 // 首次解析 / full rebuild 都走这里。
 // 全量解析一次性产出完整快照：tree + zones + signature 缓存 + options snapshot。
-export const parseIncremental = (
+
+// 内部版本：接受 zoneCap 参数，session / updateInternal 通过此参数传递用户配置。
+const parseIncrementalInternal = (
   source: string,
-  options?: IncrementalParseOptions,
+  options: IncrementalParseOptions | undefined,
+  zoneCap: number,
 ): IncrementalDocument => {
   const tracker = buildPositionTracker(source);
   const tree = parseWithPositions(source, tracker, options);
-  const zones = buildZones(tree);
+  const zones = buildZonesInternal(tree, zoneCap);
   for (let i = 0; i < zones.length; i++) {
     zoneSignature(zones[i]);
   }
@@ -850,6 +855,11 @@ export const parseIncremental = (
   setCachedOptionsFingerprint(doc, fingerprint);
   return doc;
 };
+
+export const parseIncremental = (
+  source: string,
+  options?: IncrementalParseOptions,
+): IncrementalDocument => parseIncrementalInternal(source, options, SOFT_ZONE_NODE_CAP);
 
 // ── 增量更新主流程 ──
 //
@@ -884,8 +894,9 @@ const updateIncrementalInternal = (
   doc: IncrementalDocument,
   edit: IncrementalEdit,
   newSource: string,
-  options?: IncrementalParseOptions,
-  __internalObserver?: InternalUpdateObserver,
+  options: IncrementalParseOptions | undefined,
+  __internalObserver: InternalUpdateObserver | undefined,
+  zoneCap: number,
 ): IncrementalDocument => {
   assertValidEdit(doc, edit, newSource);
   let cumulativeReparsedBytes = 0;
@@ -908,7 +919,7 @@ const updateIncrementalInternal = (
   };
 
   const fullRebuild = (): IncrementalDocument => {
-    const rebuilt = parseIncremental(newSource, runtimeParseOptions);
+    const rebuilt = parseIncrementalInternal(newSource, runtimeParseOptions, zoneCap);
     emitDebug(true);
     __internalObserver?.("internal-full-rebuild");
     return rebuilt;
@@ -919,6 +930,11 @@ const updateIncrementalInternal = (
   if (previousOptionsFingerprint !== nextOptionsFingerprint) return fullRebuild();
 
   if (prevZones.length === 0) return fullRebuild();
+
+  // zone 太少（≤1）→ 没有足够的左/脏/右结构可复用，增量路径开销白费。
+  // 典型场景：纯 text 文档（0 个 zone breaker、softCap 也切不出来），
+  // 或极短文档。直接走 full rebuild 更快。
+  if (prevZones.length <= 1) return fullRebuild();
 
   if (hasUnsafeZoneCoverageTailGap(prevZones, edit)) return fullRebuild();
 
@@ -943,6 +959,7 @@ const updateIncrementalInternal = (
     runtimeParseOptions,
     cumulativeBudget,
     cumulativeReparsedBytes,
+    zoneCap,
   );
   cumulativeReparsedBytes = firstReparse.cumulativeReparsedBytes;
   if (firstReparse.budgetExceeded) return fullRebuild();
@@ -961,6 +978,7 @@ const updateIncrementalInternal = (
       delta,
       newTracker,
       runtimeParseOptions,
+      zoneCap,
     );
     probeSliceBytes = rightReuseCheck.probeSliceBytes;
     if (!rightReuseCheck.ok) return fullRebuild();
@@ -988,7 +1006,7 @@ export const updateIncremental = (
   edit: IncrementalEdit,
   newSource: string,
   options?: IncrementalParseOptions,
-): IncrementalDocument => updateIncrementalInternal(doc, edit, newSource, options);
+): IncrementalDocument => updateIncrementalInternal(doc, edit, newSource, options, undefined, SOFT_ZONE_NODE_CAP);
 
 // Result 风格的增量更新：不抛异常，返回 { ok, value } | { ok, error }。
 // session 内部走这条路径，方便统一处理错误 → full rebuild 兜底。
@@ -1002,13 +1020,14 @@ const tryUpdateIncrementalInternal = (
   doc: IncrementalDocument,
   edit: IncrementalEdit,
   newSource: string,
-  options?: IncrementalParseOptions,
-  __internalObserver?: InternalUpdateObserver,
+  options: IncrementalParseOptions | undefined,
+  __internalObserver: InternalUpdateObserver | undefined,
+  zoneCap: number,
 ): IncrementalUpdateResult => {
   try {
     return {
       ok: true,
-      value: updateIncrementalInternal(doc, edit, newSource, options, __internalObserver),
+      value: updateIncrementalInternal(doc, edit, newSource, options, __internalObserver, zoneCap),
     };
   } catch (error) {
     if (isIncrementalUpdateError(error)) {
@@ -1032,7 +1051,7 @@ export const tryUpdateIncremental = (
   edit: IncrementalEdit,
   newSource: string,
   options?: IncrementalParseOptions,
-): IncrementalUpdateResult => tryUpdateIncrementalInternal(doc, edit, newSource, options);
+): IncrementalUpdateResult => tryUpdateIncrementalInternal(doc, edit, newSource, options, undefined, SOFT_ZONE_NODE_CAP);
 
 // ── Session（有状态会话 + 自适应策略）──
 //
@@ -1054,7 +1073,8 @@ export const createIncrementalSession = (
   options?: IncrementalParseOptions,
   sessionOptions?: IncrementalSessionOptions,
 ): IncrementalSession => {
-  let currentDoc = parseIncremental(source, options);
+  const zoneCap = Math.max(2, sessionOptions?.softZoneNodeCap ?? SOFT_ZONE_NODE_CAP);
+  let currentDoc = parseIncrementalInternal(source, options, zoneCap);
   const strategy: IncrementalSessionStrategy = sessionOptions?.strategy ?? "auto";
   const sampleWindowSize = Math.max(4, sessionOptions?.sampleWindowSize ?? 24);
   const minSamplesForAdaptation = Math.max(2, sessionOptions?.minSamplesForAdaptation ?? 6);
@@ -1106,7 +1126,7 @@ export const createIncrementalSession = (
     fallbackReason: IncrementalSessionFallbackReason,
   ): IncrementalSessionApplyResult => {
     const start = now();
-    currentDoc = parseIncremental(nextSource, nextOptions ?? currentDoc.parseOptions);
+    currentDoc = parseIncrementalInternal(nextSource, nextOptions ?? currentDoc.parseOptions, zoneCap);
     const elapsedMs = now() - start;
     recordBounded(fullDurations, elapsedMs);
     return {
@@ -1140,7 +1160,7 @@ export const createIncrementalSession = (
   };
 
   const rebuild = (nextSource: string, nextOptions?: IncrementalParseOptions): IncrementalDocument => {
-    currentDoc = parseIncremental(nextSource, nextOptions ?? currentDoc.parseOptions);
+    currentDoc = parseIncrementalInternal(nextSource, nextOptions ?? currentDoc.parseOptions, zoneCap);
     return currentDoc;
   };
 
@@ -1186,7 +1206,7 @@ export const createIncrementalSession = (
     let mode: InternalUpdateMode | undefined;
     const result = tryUpdateIncrementalInternal(currentDoc, edit, newSource, nextOptions, (nextTelemetry) => {
       mode = nextTelemetry;
-    });
+    }, zoneCap);
     const incrementalElapsedMs = now() - incrementalStart;
     recordBounded(incrementalDurations, incrementalElapsedMs);
 
