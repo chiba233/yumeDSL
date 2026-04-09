@@ -134,6 +134,7 @@ const flattenZones = (zones: readonly Zone[]): StructuralNode[] => {
 const LEFT_LOOKBEHIND_ZONES = 1;
 const RIGHT_REUSE_PROBE_ZONES = 2;
 const RIGHT_REUSE_PROBE_EXTRA_ZONES = 1;
+const RIGHT_REUSE_PROBE_SIGNATURE_NODE_BUDGET = 4096;
 
 const NODE_TAG_TEXT = 1;
 const NODE_TAG_ESCAPE = 2;
@@ -144,6 +145,10 @@ const NODE_TAG_BLOCK = 6;
 const ZONE_TAG = 7;
 
 const zoneSignatureCache = new WeakMap<Zone, number>();
+
+interface SignatureBudget {
+  remaining: number;
+}
 
 interface IncrementalDebugStats {
   cumulativeReparsedBytes: number;
@@ -164,7 +169,14 @@ export const __setIncrementalDebugSink = (sink?: IncrementalDebugSink): void => 
 
 const hashText = (value: string): number => fnv1a(value);
 
-const nodeSignature = (node: StructuralNode): number => {
+const tryConsumeSignatureBudget = (budget: SignatureBudget): boolean => {
+  if (budget.remaining <= 0) return false;
+  budget.remaining -= 1;
+  return true;
+};
+
+const nodeSignature = (node: StructuralNode, budget?: SignatureBudget): number | undefined => {
+  if (budget && !tryConsumeSignatureBudget(budget)) return undefined;
   if (node.type === "text") {
     let hash = fnvInit();
     hash = fnvFeedU32(hash, NODE_TAG_TEXT);
@@ -187,7 +199,9 @@ const nodeSignature = (node: StructuralNode): number => {
     hash = fnvFeedU32(hash, NODE_TAG_INLINE);
     hash = fnvFeedU32(hash, hashText(node.tag));
     for (let i = 0; i < node.children.length; i++) {
-      hash = fnvFeedU32(hash, nodeSignature(node.children[i]));
+      const childHash = nodeSignature(node.children[i], budget);
+      if (childHash === undefined) return undefined;
+      hash = fnvFeedU32(hash, childHash);
     }
     return hash >>> 0;
   }
@@ -198,7 +212,9 @@ const nodeSignature = (node: StructuralNode): number => {
     hash = fnvFeedU32(hash, node.content.length);
     hash = fnvFeedU32(hash, hashText(node.content));
     for (let i = 0; i < node.args.length; i++) {
-      hash = fnvFeedU32(hash, nodeSignature(node.args[i]));
+      const argHash = nodeSignature(node.args[i], budget);
+      if (argHash === undefined) return undefined;
+      hash = fnvFeedU32(hash, argHash);
     }
     return hash >>> 0;
   }
@@ -207,27 +223,37 @@ const nodeSignature = (node: StructuralNode): number => {
     hash = fnvFeedU32(hash, NODE_TAG_BLOCK);
     hash = fnvFeedU32(hash, hashText(node.tag));
     for (let i = 0; i < node.args.length; i++) {
-      hash = fnvFeedU32(hash, nodeSignature(node.args[i]));
+      const argHash = nodeSignature(node.args[i], budget);
+      if (argHash === undefined) return undefined;
+      hash = fnvFeedU32(hash, argHash);
     }
     for (let i = 0; i < node.children.length; i++) {
-      hash = fnvFeedU32(hash, nodeSignature(node.children[i]));
+      const childHash = nodeSignature(node.children[i], budget);
+      if (childHash === undefined) return undefined;
+      hash = fnvFeedU32(hash, childHash);
     }
     return hash >>> 0;
   }
   return assertUnreachable(node);
 };
 
-const zoneSignature = (zone: Zone): number => {
-  const cached = zoneSignatureCache.get(zone);
-  if (cached !== undefined) return cached;
+const zoneSignature = (zone: Zone, budget?: SignatureBudget): number | undefined => {
+  if (!budget) {
+    const cached = zoneSignatureCache.get(zone);
+    if (cached !== undefined) return cached;
+  }
   let hash = fnvInit();
   hash = fnvFeedU32(hash, ZONE_TAG);
   hash = fnvFeedU32(hash, zone.endOffset - zone.startOffset);
   for (let i = 0; i < zone.nodes.length; i++) {
-    hash = fnvFeedU32(hash, nodeSignature(zone.nodes[i]));
+    const signature = nodeSignature(zone.nodes[i], budget);
+    if (signature === undefined) return undefined;
+    hash = fnvFeedU32(hash, signature);
   }
   const finalized = hash >>> 0;
-  zoneSignatureCache.set(zone, finalized);
+  if (!budget) {
+    zoneSignatureCache.set(zone, finalized);
+  }
   return finalized;
 };
 
@@ -259,6 +285,9 @@ const isSafeRightReuse = (
   );
   const probeZones = buildZones(probeTree);
   if (probeZones.length < probeZoneCount) return { ok: false, probeSliceBytes: probeLength };
+  const signatureBudget: SignatureBudget = {
+    remaining: RIGHT_REUSE_PROBE_SIGNATURE_NODE_BUDGET,
+  };
 
   for (let i = 0; i < probeZoneCount; i++) {
     const expected = oldRightZones[i];
@@ -266,7 +295,12 @@ const isSafeRightReuse = (
     if (actual.startOffset !== expected.startOffset + delta) return { ok: false, probeSliceBytes: probeLength };
     if (actual.endOffset !== expected.endOffset + delta) return { ok: false, probeSliceBytes: probeLength };
     if (actual.nodes.length !== expected.nodes.length) return { ok: false, probeSliceBytes: probeLength };
-    if (zoneSignature(actual) !== zoneSignature(expected)) return { ok: false, probeSliceBytes: probeLength };
+    const actualSignature = zoneSignature(actual, signatureBudget);
+    if (actualSignature === undefined) return { ok: false, probeSliceBytes: probeLength };
+    const expectedSignature = zoneSignature(expected);
+    if (expectedSignature === undefined || actualSignature !== expectedSignature) {
+      return { ok: false, probeSliceBytes: probeLength };
+    }
   }
 
   return { ok: true, probeSliceBytes: probeLength };
@@ -405,6 +439,15 @@ const shiftZone = (zone: Zone, delta: number, tracker: PositionTracker): Zone =>
   nodes: zone.nodes.map((node) => shiftNode(node, delta, tracker)),
 });
 
+const shiftZoneWithSignature = (zone: Zone, delta: number, tracker: PositionTracker): Zone => {
+  const shifted = shiftZone(zone, delta, tracker);
+  const signature = zoneSignature(zone);
+  if (signature !== undefined) {
+    zoneSignatureCache.set(shifted, signature);
+  }
+  return shifted;
+};
+
 const findDirtyRange = (zones: readonly Zone[], edit: IncrementalEdit): { from: number; to: number } => {
   let firstOverlap = -1;
   let lastOverlap = -1;
@@ -530,6 +573,9 @@ export const parseIncremental = (
   const tracker = buildPositionTracker(source);
   const tree = parseWithPositions(source, tracker, options);
   const zones = buildZones(tree);
+  for (let i = 0; i < zones.length; i++) {
+    zoneSignature(zones[i]);
+  }
   const parseOptions = cloneParseOptions(options);
   return {
     source,
@@ -655,7 +701,7 @@ const updateIncrementalInternal = (
       return rebuilt;
     }
   }
-  const rightZones = oldRightZones.map((zone) => shiftZone(zone, delta, newTracker));
+  const rightZones = oldRightZones.map((zone) => shiftZoneWithSignature(zone, delta, newTracker));
 
   const zones = [...leftZones, ...dirtyZones, ...rightZones];
 

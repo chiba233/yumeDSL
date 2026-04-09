@@ -15,6 +15,10 @@
 - **Session auto 策略简化**
   - 移除冗余派生指标桶（`internalFullRebuildMarks`、`reparseWorkBytes`）
   - 自适应判断继续基于回退率与 incremental/full 耗时对比
+- **Seam probe 签名复杂度封顶**
+  - 为 seam probe 的递归签名计算增加节点预算上限（`RIGHT_REUSE_PROBE_SIGNATURE_NODE_BUDGET`）
+  - 当签名遍历成本超过预算时，保守拒绝右侧复用并回退全量重建
+  - 在 `parseIncremental(...)` 阶段预热 zone 签名缓存，并在右侧 zone 平移后继承签名，减少 probe 校验中的重复深度哈希
 
 ### 1.2.2
 

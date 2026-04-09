@@ -15,6 +15,10 @@
 - **Session auto policy simplification**
   - Removed redundant/derived buckets (`internalFullRebuildMarks`, `reparseWorkBytes`)
   - Auto adaptation now continues to rely on fallback-rate and incremental-vs-full timing signals
+- **Seam probe signature complexity cap**
+  - Added a node-budget cap for seam probe recursive signatures (`RIGHT_REUSE_PROBE_SIGNATURE_NODE_BUDGET`)
+  - When signature walk cost exceeds budget, right-side reuse is denied conservatively and falls back to full rebuild
+  - Warmed zone-signature cache during `parseIncremental(...)` and carried signatures across shifted right zones to reduce repeated deep hashing during probe checks
 
 ### 1.2.2
 
