@@ -4,6 +4,10 @@
 
 ### 1.2.2
 
+- **会话回退统计修正（auto 策略）**
+  - 修复 `updateIncremental(...)` 在内部走 `parseIncremental(...)` 全量重建时，session 回退率采样失真的问题
+  - `createIncrementalSession(...).applyEdit(...)` 现在会把这类“内部全量重建”计入 fallback marks，确保 `maxFallbackRate` / cooldown 自适应判断更准确
+  - 无破坏性 API 变更；本次仅修复统计语义
 - **增量正确性加固（右侧复用安全门）**
   - `updateIncremental(...)` 不再仅凭拼接边界复用右侧 zones；新增 seam probe 窗口校验
   - 当探测区的 zone 结构 / 签名不一致时，拒绝复用并自动回退全量重建

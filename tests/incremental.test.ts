@@ -578,6 +578,31 @@ const cases: GoldenCase[] = [
     },
   },
   {
+    name: "[Incremental/Session] internal full rebuild should count as fallback mark",
+    run: () => {
+      const source = "abc";
+      const session = createIncrementalSession(source, undefined, {
+        strategy: "auto",
+        sampleWindowSize: 4,
+        minSamplesForAdaptation: 2,
+        maxFallbackRate: 0,
+        fullPreferenceCooldownEdits: 1,
+        maxEditRatioForIncremental: 1,
+      });
+
+      const noOpEdit = { startOffset: 1, oldEndOffset: 2, newText: "b" };
+      const syntaxShiftedOptions = { allowForms: ["inline"] as const };
+      const first = session.applyEdit(noOpEdit, source, syntaxShiftedOptions);
+      const second = session.applyEdit(noOpEdit, source);
+      const cooldown = session.applyEdit(noOpEdit, source);
+
+      assert.equal(first.mode, "incremental");
+      assert.equal(second.mode, "incremental");
+      assert.equal(cooldown.mode, "full-fallback");
+      assert.equal(cooldown.fallbackReason, "AUTO_COOLDOWN");
+    },
+  },
+  {
     name: "[Incremental/Session] full-time faster adaptation should trigger cooldown fallback",
     run: () => {
       const originalNow = performance.now.bind(performance);

@@ -151,6 +151,8 @@ interface IncrementalDebugStats {
 }
 
 type IncrementalDebugSink = (stats: IncrementalDebugStats) => void;
+type InternalUpdateMode = "incremental" | "internal-full-rebuild";
+type InternalUpdateObserver = (mode: InternalUpdateMode) => void;
 
 let incrementalDebugSink: IncrementalDebugSink | undefined;
 
@@ -492,12 +494,15 @@ export const parseIncremental = (
  *
  * If your edit may invalidate parsing state further left than one zone, prefer a full
  * rebuild via `parseIncremental(newSource, options)` for correctness.
+ *
+ * @internal `__internalObserver` is for session-level telemetry only.
  */
 export const updateIncremental = (
   doc: IncrementalDocument,
   edit: IncrementalEdit,
   newSource: string,
   options?: IncrementalParseOptions,
+  __internalObserver?: InternalUpdateObserver,
 ): IncrementalDocument => {
   assertValidEdit(doc, edit, newSource);
   let cumulativeReparsedBytes = 0;
@@ -517,6 +522,7 @@ export const updateIncremental = (
   if (previousOptionsFingerprint !== nextOptionsFingerprint) {
     const rebuilt = parseIncremental(newSource, parseOptions);
     emitDebug(true);
+    __internalObserver?.("internal-full-rebuild");
     return rebuilt;
   }
 
@@ -524,6 +530,7 @@ export const updateIncremental = (
   if (doc.zones.length === 0) {
     const rebuilt = parseIncremental(newSource, parseOptions);
     emitDebug(true);
+    __internalObserver?.("internal-full-rebuild");
     return rebuilt;
   }
 
@@ -532,6 +539,7 @@ export const updateIncremental = (
   if (hasUnsafeZoneCoverageTailGap(doc, edit)) {
     const rebuilt = parseIncremental(newSource, parseOptions);
     emitDebug(true);
+    __internalObserver?.("internal-full-rebuild");
     return rebuilt;
   }
 
@@ -559,6 +567,7 @@ export const updateIncremental = (
     if (cumulativeReparsedBytes > cumulativeBudget) {
       const rebuilt = parseIncremental(newSource, parseOptions);
       emitDebug(true);
+      __internalObserver?.("internal-full-rebuild");
       return rebuilt;
     }
 
@@ -596,6 +605,7 @@ export const updateIncremental = (
     if (!rightReuseCheck.ok) {
       const rebuilt = parseIncremental(newSource, parseOptions);
       emitDebug(true);
+      __internalObserver?.("internal-full-rebuild");
       return rebuilt;
     }
   }
@@ -611,6 +621,7 @@ export const updateIncremental = (
     optionsFingerprint: nextOptionsFingerprint,
   };
   emitDebug(false);
+  __internalObserver?.("incremental");
   return updated;
 };
 
@@ -618,17 +629,20 @@ export const updateIncremental = (
  * @experimental
  * Low-level result-style updater.
  * For production applications, prefer `createIncrementalSession(...).applyEdit(...)`.
+ *
+ * @internal `__internalObserver` is for session-level telemetry only.
  */
 export const tryUpdateIncremental = (
   doc: IncrementalDocument,
   edit: IncrementalEdit,
   newSource: string,
   options?: IncrementalParseOptions,
+  __internalObserver?: InternalUpdateObserver,
 ): IncrementalUpdateResult => {
   try {
     return {
       ok: true,
-      value: updateIncremental(doc, edit, newSource, options),
+      value: updateIncremental(doc, edit, newSource, options, __internalObserver),
     };
   } catch (error) {
     if (isIncrementalUpdateError(error)) {
@@ -767,13 +781,16 @@ export const createIncrementalSession = (
     }
 
     const incrementalStart = now();
-    const result = tryUpdateIncremental(currentDoc, edit, newSource, nextOptions);
+    let lastInternalUpdateMode: InternalUpdateMode | undefined;
+    const result = tryUpdateIncremental(currentDoc, edit, newSource, nextOptions, (mode) => {
+      lastInternalUpdateMode = mode;
+    });
     const incrementalElapsedMs = now() - incrementalStart;
     recordBounded(incrementalDurations, incrementalElapsedMs);
 
     if (result.ok) {
       currentDoc = result.value;
-      recordBounded(fallbackMarks, 0);
+      recordBounded(fallbackMarks, lastInternalUpdateMode === "internal-full-rebuild" ? 1 : 0);
       maybeAdaptPolicy();
       return { doc: currentDoc, mode: "incremental" };
     }

@@ -4,6 +4,10 @@
 
 ### 1.2.2
 
+- **Session fallback accounting fix (auto strategy)**
+  - Fixed fallback-rate sampling skew when `updateIncremental(...)` internally rebuilt via `parseIncremental(...)`
+  - `createIncrementalSession(...).applyEdit(...)` now records those internal rebuilds as fallback marks for adaptation (`maxFallbackRate` / cooldown decisions)
+  - No breaking API changes; this is a telemetry/statistics correctness fix only
 - **Incremental correctness hardening (right-side reuse gate)**
   - `updateIncremental(...)` now validates right-side reuse with a seam probe window instead of trusting stitched-zone boundaries alone
   - Reuse is denied (and full rebuild is used) when probe-zone structure/signature mismatches are detected
