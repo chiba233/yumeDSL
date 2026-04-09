@@ -1,6 +1,57 @@
+// ═══════════════════════════════════════════════════════════════
+// incremental.ts — 增量解析器
+//
+// 核心思路：
+// 把文档拆成 zone（连续节点分组），编辑只影响脏区间，
+// 左侧 zone 原封不动，右侧 zone 用 lazy delta 平移，中间重解析。
+// 整个更新路径不产出中间 AST，最终拼接出新快照。
+//
+// 硬规则：
+// - frozenSnapshots 只能标记内部创建的 snapshot，绝对不能标记用户对象
+// - handler deep clone 不能省——测试 L308-338 证明浅拷贝会导致跨代穿透
+// - fingerprint 不能替代 snapshot clone——测试 L340-363 证明等价 fingerprint 下
+//   plain-data metadata 仍然可以不同
+// - 右侧复用必须过 seam probe，不能盲信 offset 对齐
+//
+// 文件导航（行号可能因编辑微调，但顺序不变）：
+//
+//   ── 快照克隆 ──
+//    ~56  cloneSnapshotValueInternal   递归深拷贝 plain object/array
+//    ~85  cloneHandlersSnapshot        handler 层级：函数引用保留，data 递归拷贝
+//   ~108  cloneParseOptions            顶层入口；frozenSnapshots 做幂等守卫
+//
+//   ── 指纹 & 签名 ──
+//   ~138  objectIdentitySeed           函数/对象 identity → 整数映射
+//   ~158  buildHandlersShapeFingerprint  handler 结构指纹（key + inline/raw/block identity）
+//   ~179  buildParseOptionsFingerprint   整合 syntax/tagName/allowForms/handlers
+//   ~310  nodeSignature                节点结构签名（bounded content hash，首尾 32 字符）
+//   ~354  zoneSignature                zone 签名 = 子节点签名聚合
+//
+//   ── 右侧复用 ──
+//   ~374  isSafeRightReuse            seam probe：在拼接缝重解析一小段，比对签名
+//   ~442  createShiftedNodeShell       节点壳平移（只移 position，不递归子节点）
+//   ~463  shiftNode                   迭代式深度平移（用栈模拟递归）
+//
+//   ── 懒 delta 平移（1.2.4+）──
+//   ~508  deferShiftZone              O(1) 记录 delta，不动节点
+//   ~524  materializeZone             首次读取时一次性平移节点 position
+//   ~543  installLazyDocument         用 Object.defineProperty 挂 lazy getter
+//
+//   ── 增量更新核心 ──
+//   ~573  findDirtyRange              找脏 zone 区间（overlap + 左右各扩一格）
+//   ~606  reparseDirtyWindowUntilStable  循环重解析直到右边界稳定或超预算
+//   ~665  assertValidEdit             编辑合法性三重校验
+//   ~691  parseIncremental            全量解析入口（首次 / rebuild）
+//   ~729  updateIncrementalInternal   增量更新主流程
+//
+//   ── Session（自适应策略）──
+//   ~880  createIncrementalSession    有状态会话，auto/incremental-only/full-only
+//   ~969  applyEdit                   session 的编辑入口（策略门控 → 增量 → 兜底）
+// ═══════════════════════════════════════════════════════════════
+
 import { buildPositionTracker } from "./positions.js";
 import { parseStructural } from "./structural.js";
-import { fnv1a, fnvFeedU32, fnvInit } from "./hash.js";
+import { fnv1a, fnvFeedStringBounded, fnvFeedU32, fnvInit } from "./hash.js";
 import type {
   IncrementalDocument,
   IncrementalEdit,
@@ -20,11 +71,13 @@ import type {
 } from "./types.js";
 import { buildZones } from "./zones.js";
 
-// Performance note:
-// This implementation reparses only the dirty range.
-// Zones strictly to the right are reprojected via recursive deep-copy.
-// This keeps returned nodes as plain data objects (no Proxy semantics), but
-// updates near the beginning of very large documents may still pay O(right-side size).
+// 性能备忘：
+// 只重解析脏区间。右侧 zone 用 lazy delta——只存 offset 偏移量，
+// 节点 position 延迟到消费者读 tree/zones 时才物化。
+// 连续头部编辑自动叠加 delta，不触发中间深拷贝。
+// 物化后的文档是纯数据对象，没有 Proxy 语义。
+
+// ── 错误工具 ──
 
 const createIncrementalEditError = (
   code: IncrementalUpdateErrorCode,
@@ -46,12 +99,27 @@ const isIncrementalUpdateError = (error: unknown): error is IncrementalUpdateErr
   );
 };
 
+// ── 快照克隆 ──
+//
+// 为什么要克隆 parseOptions？
+// 用户传进来的 options 可能被外部改动（比如 handler.meta.xxx = 123），
+// 如果不隔离，session 内部状态会被"穿透"。
+// 所以每次拿到 options 都做一次深拷贝：函数引用保留，plain object/array 递归克隆。
+//
+// frozenSnapshots 的作用：
+// 内部创建的 snapshot 会被标记进 WeakSet。
+// 下次同一个 snapshot 再传进来时，我们知道"这是自己人"，但仍然要 re-clone
+// nested 字段（handlers/syntax/tagName/allowForms），因为跨代共享会导致
+// 旧文档改动影响新文档。所以 frozenSnapshots 目前只是幂等守卫，不是性能快路径。
+
 const isPlainObject = (value: unknown): value is Record<string, unknown> => {
   if (!value || typeof value !== "object") return false;
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
 };
 
+// 递归深拷贝：只处理 plain object 和 array，函数/class 实例原样返回。
+// seen WeakMap 防循环引用。
 const cloneSnapshotValueInternal = <T>(value: T, seen: WeakMap<object, unknown>): T => {
   if (Array.isArray(value)) {
     const seenArray = seen.get(value);
@@ -81,6 +149,8 @@ const cloneSnapshotValueInternal = <T>(value: T, seen: WeakMap<object, unknown>)
 const cloneSnapshotValue = <T>(value: T): T =>
   cloneSnapshotValueInternal(value, new WeakMap<object, unknown>());
 
+// handler 克隆：每个 handler 的 data 字段递归深拷贝，函数引用保留。
+// 不能改成浅拷贝——测试证明 handler.meta 这种嵌套对象会被外部改动。
 const cloneHandlersSnapshot = (
   handlers: IncrementalParseOptions["handlers"] | undefined,
 ): IncrementalParseOptions["handlers"] | undefined => {
@@ -95,23 +165,50 @@ const cloneHandlersSnapshot = (
   return next;
 };
 
-// Clone parse options into an isolated snapshot used by incremental state.
-// Handler function references are preserved, while plain object/array fields are
-// snapshot-copied recursively to avoid external in-place mutation changing session
-// behavior implicitly.
+// 克隆 parseOptions：顶层浅展开 + handlers 深拷贝 + syntax/tagName/allowForms 浅拷贝。
+// frozen 分支和普通分支做的事情完全一样——frozenSnapshots 只是幂等标记，
+// 不提供性能捷径。
+const frozenSnapshots = new WeakSet<object>();
+
 const cloneParseOptions = (
   options: IncrementalParseOptions | undefined,
 ): IncrementalParseOptions | undefined => {
   if (!options) return undefined;
-  return {
+  // 已经是内部 snapshot —— 仍然 re-clone 嵌套可变字段，
+  // 防止跨代引用穿透（旧 doc.parseOptions.handlers.bold.meta 被改 → 影响新文档）。
+  if (frozenSnapshots.has(options)) {
+    const fresh: IncrementalParseOptions = {
+      ...options,
+      handlers: cloneHandlersSnapshot(options.handlers),
+      syntax: options.syntax ? { ...options.syntax } : undefined,
+      tagName: options.tagName ? { ...options.tagName } : undefined,
+      allowForms: options.allowForms ? [...options.allowForms] : undefined,
+    };
+    frozenSnapshots.add(fresh);
+    return fresh;
+  }
+  const snapshot: IncrementalParseOptions = {
     ...options,
     handlers: cloneHandlersSnapshot(options.handlers),
     syntax: options.syntax ? { ...options.syntax } : undefined,
     tagName: options.tagName ? { ...options.tagName } : undefined,
     allowForms: options.allowForms ? [...options.allowForms] : undefined,
   };
+  frozenSnapshots.add(snapshot);
+  return snapshot;
 };
 
+// ── 指纹 & 签名 ──
+//
+// 指纹（fingerprint）：用于判断"配置是否变了"。
+// 配置变了 → 必须 full rebuild，因为 handler/syntax 不同会导致解析结果完全不同。
+//
+// 签名（signature）：用于判断"节点/zone 结构是否一致"。
+// seam probe 时比对新旧 zone 签名，不一致 → 右侧不能复用。
+//
+// 两者都基于 FNV-1a hash，但用途不同，别混。
+
+// 给函数/对象分配稳定整数 ID，用于 fingerprint 中比对 handler 引用是否相同。
 let objectIdentitySeed = 1;
 const objectIdentityMap = new WeakMap<object, number>();
 
@@ -132,6 +229,9 @@ const getIdentityForUnknown = (value: unknown): number => {
   return 0;
 };
 
+// handler 结构指纹：hash(key 列表 + 每个 handler 的 inline/raw/block 函数引用 identity)。
+// key 排序是必要的——JS 对象 key 顺序受插入顺序影响，
+// 等价 handler 用不同顺序构造会产生不同 key 序列，不排序会误判为"配置变了"。
 const buildHandlersShapeFingerprint = (handlers: unknown): number => {
   if (!handlers || typeof handlers !== "object") return 0;
   const record = handlers as Record<string, unknown>;
@@ -153,6 +253,8 @@ const buildHandlersShapeFingerprint = (handlers: unknown): number => {
 
 const DEFAULT_PARSE_OPTIONS_FINGERPRINT = fnvFeedU32(fnvInit(), 0x9e3779b9);
 
+// 整合指纹：handlers + allowForms + syntax 8 字段 + tagName 两个函数引用。
+// 任何一项变了 → fingerprint 不同 → 增量更新直接跳 full rebuild。
 const buildParseOptionsFingerprint = (options: IncrementalParseOptions | undefined): number => {
   if (!options) return DEFAULT_PARSE_OPTIONS_FINGERPRINT;
   const syntax = options.syntax ?? {};
@@ -166,35 +268,35 @@ const buildParseOptionsFingerprint = (options: IncrementalParseOptions | undefin
     hash = fnvFeedU32(hash, hashText(allowForms[i]));
   }
 
-  hash = fnvFeedU32(hash, hashText(syntax.tagOpen ?? ""));
-  hash = fnvFeedU32(hash, hashText(syntax.tagClose ?? ""));
-  hash = fnvFeedU32(hash, hashText(syntax.endTag ?? ""));
-  hash = fnvFeedU32(hash, hashText(syntax.tagDivider ?? ""));
-  hash = fnvFeedU32(hash, hashText(syntax.rawOpen ?? ""));
-  hash = fnvFeedU32(hash, hashText(syntax.rawClose ?? ""));
-  hash = fnvFeedU32(hash, hashText(syntax.blockOpen ?? ""));
-  hash = fnvFeedU32(hash, hashText(syntax.blockClose ?? ""));
+  const syntaxKeys = [
+    "tagOpen", "tagClose", "endTag", "tagDivider",
+    "rawOpen", "rawClose", "blockOpen", "blockClose",
+  ] as const;
+  for (const k of syntaxKeys) hash = fnvFeedU32(hash, hashText(syntax[k] ?? ""));
 
   hash = fnvFeedU32(hash, getObjectIdentity(tagName.isTagStartChar as object | undefined));
   hash = fnvFeedU32(hash, getObjectIdentity(tagName.isTagChar as object | undefined));
   return hash >>> 0;
 };
 
-const hasUnsafeZoneCoverageTailGap = (doc: IncrementalDocument, edit: IncrementalEdit): boolean => {
-  const lastZone = doc.zones[doc.zones.length - 1];
+// 安全检查：编辑范围超出最后一个 zone 的覆盖 → 快照状态不可信，必须 full rebuild。
+const hasUnsafeZoneCoverageTailGap = (zones: readonly Zone[], edit: IncrementalEdit): boolean => {
+  const lastZone = zones[zones.length - 1];
   if (!lastZone) return false;
   return edit.startOffset > lastZone.endOffset || edit.oldEndOffset > lastZone.endOffset;
 };
 
+// 带 position tracking 的解析入口。
+// baseOffset 让切片解析产出的 position 是文档全局坐标，不是切片内局部坐标。
 const parseWithPositions = (
   source: string,
   tracker: PositionTracker,
   options?: IncrementalParseOptions,
   baseOffset = 0,
 ): StructuralNode[] =>
-  // `parseStructural` public path hardcodes its internal `baseOffset` entry call to 0.
-  // Absolute positions are still correct here because `resolveBaseOptions(...)` wraps
-  // the provided `tracker` with `baseOffset` before scanning.
+  // parseStructural 公共路径会把 baseOffset 硬编码为 0，
+  // 但 resolveBaseOptions 会用我们传的 baseOffset 包装 tracker，
+  // 所以最终 position 仍然是全局正确的。
   parseStructural(source, {
     ...options,
     trackPositions: true,
@@ -202,6 +304,7 @@ const parseWithPositions = (
     tracker,
   });
 
+// zone 展开成 flat tree（消费者用）。
 const flattenZones = (zones: readonly Zone[]): StructuralNode[] => {
   const tree: StructuralNode[] = [];
   for (const zone of zones) {
@@ -210,15 +313,20 @@ const flattenZones = (zones: readonly Zone[]): StructuralNode[] => {
   return tree;
 };
 
-// Right-reuse safety gate:
-// `updateIncremental(...)` only reuses shifted right-side zones after a seam probe reparse
-// confirms boundary-adjacent structure remains stable. Mismatch => full rebuild.
+// ── 右侧复用安全门 ──
+//
+// 增量更新只在 seam probe 确认拼接缝两侧结构稳定后，才复用右侧 zone。
+// probe 失败 → full rebuild，宁可多做也不冒误复用的风险。
 
+// 左回看 1 个 zone：编辑可能影响前一个 zone 的闭合边界。
 const LEFT_LOOKBEHIND_ZONES = 1;
+// probe 比对 2 个 zone，额外多解析 1 个 zone 作为上下文窗口。
 const RIGHT_REUSE_PROBE_ZONES = 2;
 const RIGHT_REUSE_PROBE_EXTRA_ZONES = 1;
+// 单次 probe 的节点签名预算——超了就放弃 probe，直接 full rebuild。
 const RIGHT_REUSE_PROBE_SIGNATURE_NODE_BUDGET = 4096;
 
+// 节点类型标签——用于签名 hash，让不同类型的节点永远产生不同签名。
 const NODE_TAG_TEXT = 1;
 const NODE_TAG_ESCAPE = 2;
 const NODE_TAG_SEPARATOR = 3;
@@ -227,13 +335,17 @@ const NODE_TAG_RAW = 5;
 const NODE_TAG_BLOCK = 6;
 const ZONE_TAG = 7;
 
+// zone 签名缓存：zone 是不可变的，签名只算一次。
 const zoneSignatureCache = new WeakMap<Zone, number>();
+// 文档 → 配置指纹缓存：避免每次增量更新都重算 fingerprint。
 const parseOptionsFingerprintCache = new WeakMap<IncrementalDocument, number>();
 
+// 签名预算：seam probe 时限制签名计算的节点数，防止巨型树拖慢 probe。
 interface SignatureBudget {
   remaining: number;
 }
 
+// debug 统计——仅测试用，生产不设 sink 就零开销。
 interface IncrementalDebugStats {
   cumulativeReparsedBytes: number;
   probeSliceBytes: number;
@@ -251,7 +363,12 @@ export const __setIncrementalDebugSink = (sink?: IncrementalDebugSink): void => 
   incrementalDebugSink = sink;
 };
 
+// hashText：tag 名称等短字符串，直接全量 FNV-1a（很便宜）。
 const hashText = (value: string): number => fnv1a(value);
+// hashTextBounded：text/raw content 等可能很长的字符串，
+// 只 hash 首尾各 32 字符（O(1) 有界），在速度和误判率之间取平衡。
+const hashTextBounded = (hash: number, value: string): number =>
+  fnvFeedStringBounded(hash, value);
 
 const getCachedOptionsFingerprint = (doc: IncrementalDocument): number | undefined =>
   parseOptionsFingerprintCache.get(doc);
@@ -266,68 +383,70 @@ const tryConsumeSignatureBudget = (budget: SignatureBudget): boolean => {
   return true;
 };
 
+// 递归聚合子节点签名。budget 超限 → 返回 ok:false，调用方放弃 probe。
+const feedChildSignatures = (
+  hash: number,
+  nodes: readonly StructuralNode[],
+  budget: SignatureBudget | undefined,
+): { hash: number; ok: boolean } => {
+  let h = hash;
+  for (let i = 0; i < nodes.length; i++) {
+    const childHash = nodeSignature(nodes[i], budget);
+    if (childHash === undefined) return { hash: h, ok: false };
+    h = fnvFeedU32(h, childHash);
+  }
+  return { hash: h, ok: true };
+};
+
+// 节点结构签名：hash(类型标签 + tag名 + 子节点/arg 数量 + content 长度 + bounded 内容采样)。
+// 纯结构比对不需要全量 hash content，但纯长度又有"同长不同内容"盲区，
+// 所以折中用 bounded sampling（首尾 32 字符）——O(1) 且几乎不会误判。
 const nodeSignature = (node: StructuralNode, budget?: SignatureBudget): number | undefined => {
   if (budget && !tryConsumeSignatureBudget(budget)) return undefined;
+
+  if (node.type === "separator") return NODE_TAG_SEPARATOR;
+
   if (node.type === "text") {
-    let hash = fnvInit();
-    hash = fnvFeedU32(hash, NODE_TAG_TEXT);
-    hash = fnvFeedU32(hash, node.value.length);
-    hash = fnvFeedU32(hash, hashText(node.value));
-    return hash >>> 0;
+    let h = fnvFeedU32(fnvFeedU32(fnvInit(), NODE_TAG_TEXT), node.value.length);
+    return hashTextBounded(h, node.value) >>> 0;
   }
+
   if (node.type === "escape") {
-    let hash = fnvInit();
-    hash = fnvFeedU32(hash, NODE_TAG_ESCAPE);
-    hash = fnvFeedU32(hash, node.raw.length);
-    hash = fnvFeedU32(hash, hashText(node.raw));
-    return hash >>> 0;
+    let h = fnvFeedU32(fnvFeedU32(fnvInit(), NODE_TAG_ESCAPE), node.raw.length);
+    return hashTextBounded(h, node.raw) >>> 0;
   }
-  if (node.type === "separator") {
-    return NODE_TAG_SEPARATOR;
-  }
+
   if (node.type === "inline") {
-    let hash = fnvInit();
-    hash = fnvFeedU32(hash, NODE_TAG_INLINE);
-    hash = fnvFeedU32(hash, hashText(node.tag));
-    for (let i = 0; i < node.children.length; i++) {
-      const childHash = nodeSignature(node.children[i], budget);
-      if (childHash === undefined) return undefined;
-      hash = fnvFeedU32(hash, childHash);
-    }
-    return hash >>> 0;
+    let h = fnvFeedU32(fnvFeedU32(fnvInit(), NODE_TAG_INLINE), hashText(node.tag));
+    h = fnvFeedU32(h, node.children.length);
+    const result = feedChildSignatures(h, node.children, budget);
+    return result.ok ? result.hash >>> 0 : undefined;
   }
+
   if (node.type === "raw") {
-    let hash = fnvInit();
-    hash = fnvFeedU32(hash, NODE_TAG_RAW);
-    hash = fnvFeedU32(hash, hashText(node.tag));
-    hash = fnvFeedU32(hash, node.content.length);
-    hash = fnvFeedU32(hash, hashText(node.content));
-    for (let i = 0; i < node.args.length; i++) {
-      const argHash = nodeSignature(node.args[i], budget);
-      if (argHash === undefined) return undefined;
-      hash = fnvFeedU32(hash, argHash);
-    }
-    return hash >>> 0;
+    let h = fnvFeedU32(fnvFeedU32(fnvInit(), NODE_TAG_RAW), hashText(node.tag));
+    h = fnvFeedU32(h, node.args.length);
+    h = fnvFeedU32(h, node.content.length);
+    h = hashTextBounded(h, node.content);
+    const result = feedChildSignatures(h, node.args, budget);
+    return result.ok ? result.hash >>> 0 : undefined;
   }
+
   if (node.type === "block") {
-    let hash = fnvInit();
-    hash = fnvFeedU32(hash, NODE_TAG_BLOCK);
-    hash = fnvFeedU32(hash, hashText(node.tag));
-    for (let i = 0; i < node.args.length; i++) {
-      const argHash = nodeSignature(node.args[i], budget);
-      if (argHash === undefined) return undefined;
-      hash = fnvFeedU32(hash, argHash);
-    }
-    for (let i = 0; i < node.children.length; i++) {
-      const childHash = nodeSignature(node.children[i], budget);
-      if (childHash === undefined) return undefined;
-      hash = fnvFeedU32(hash, childHash);
-    }
-    return hash >>> 0;
+    let h = fnvFeedU32(fnvFeedU32(fnvInit(), NODE_TAG_BLOCK), hashText(node.tag));
+    h = fnvFeedU32(h, node.args.length);
+    h = fnvFeedU32(h, node.children.length);
+    const argsResult = feedChildSignatures(h, node.args, budget);
+    if (!argsResult.ok) return undefined;
+    const childResult = feedChildSignatures(argsResult.hash, node.children, budget);
+    return childResult.ok ? childResult.hash >>> 0 : undefined;
   }
+
   return assertUnreachable(node);
 };
 
+// zone 签名 = ZONE_TAG + zone 跨度 + 所有子节点签名聚合。
+// 无 budget 时结果缓存进 WeakMap（zone 不可变，签名永远不变）。
 const zoneSignature = (zone: Zone, budget?: SignatureBudget): number | undefined => {
   if (!budget) {
     const cached = zoneSignatureCache.get(zone);
@@ -348,6 +467,11 @@ const zoneSignature = (zone: Zone, budget?: SignatureBudget): number | undefined
   return finalized;
 };
 
+// seam probe（拼接缝探测）：
+// 在新旧文档的拼接边界，取右侧前几个 zone 的范围重新解析，
+// 把解析结果的签名和旧 zone 签名逐一比对。
+// 全部匹配 → 右侧可以安全复用；任何一个不匹配 → full rebuild。
+// 这是"宁可多 rebuild 也不误复用"的保守策略。
 const isSafeRightReuse = (
   oldRightZones: readonly Zone[],
   newSource: string,
@@ -397,11 +521,18 @@ const isSafeRightReuse = (
   return { ok: true, probeSliceBytes: probeLength };
 };
 
+// 旧坐标 → 新坐标映射：编辑点左侧不变，右侧加 delta，中间映射到编辑尾部。
 const mapOldOffsetToNew = (edit: IncrementalEdit, delta: number, oldOffset: number): number => {
   if (oldOffset <= edit.startOffset) return oldOffset;
   if (oldOffset >= edit.oldEndOffset) return oldOffset + delta;
   return edit.startOffset + edit.newText.length;
 };
+
+// ── 节点位置平移 ──
+//
+// 右侧 zone 的节点 position 需要加 delta（新文档比旧文档长/短了多少）。
+// createShiftedNodeShell 只创建节点壳（平移 position，子节点留空）。
+// shiftNode 用显式栈迭代，避免递归爆栈。
 
 const shiftPosition = (
   position: SourcePosition | undefined,
@@ -428,55 +559,19 @@ const createShiftedNodeShell = (
       }
     : undefined;
 
-  if (node.type === "text") {
-    return { type: "text", value: node.value, position };
-  }
-
-  if (node.type === "escape") {
-    return { type: "escape", raw: node.raw, position };
-  }
-
-  if (node.type === "separator") {
-    return { type: "separator", position };
-  }
-
-  if (node.type === "inline") {
-    return {
-      type: "inline",
-      tag: node.tag,
-      children: [],
-      position,
-    };
-  }
-
-  if (node.type === "raw") {
-    return {
-      type: "raw",
-      tag: node.tag,
-      args: [],
-      content: node.content,
-      position,
-    };
-  }
-
-  if (node.type === "block") {
-    return {
-      type: "block",
-      tag: node.tag,
-      args: [],
-      children: [],
-      position,
-    };
-  }
-
+  if (node.type === "text") return { type: "text", value: node.value, position };
+  if (node.type === "escape") return { type: "escape", raw: node.raw, position };
+  if (node.type === "separator") return { type: "separator", position };
+  if (node.type === "inline") return { type: "inline", tag: node.tag, children: [], position };
+  if (node.type === "raw") return { type: "raw", tag: node.tag, args: [], content: node.content, position };
+  if (node.type === "block") return { type: "block", tag: node.tag, args: [], children: [], position };
   return assertUnreachable(node);
 };
 
 const shiftNode = (node: StructuralNode, delta: number, tracker: PositionTracker): StructuralNode => {
   const root = createShiftedNodeShell(node, delta, tracker);
   const stack: Array<{ source: StructuralNode; target: StructuralNode }> = [{ source: node, target: root }];
-  const shouldExpandNestedNode = (candidate: StructuralNode): boolean =>
-    candidate.type === "inline" || candidate.type === "raw" || candidate.type === "block";
+
   const appendShiftedNodes = (
     sourceNodes: readonly StructuralNode[],
     targetNodes: StructuralNode[],
@@ -485,7 +580,7 @@ const shiftNode = (node: StructuralNode, delta: number, tracker: PositionTracker
       const sourceNode = sourceNodes[i];
       const targetNode = createShiftedNodeShell(sourceNode, delta, tracker);
       targetNodes.push(targetNode);
-      if (shouldExpandNestedNode(sourceNode)) {
+      if (sourceNode.type === "inline" || sourceNode.type === "raw" || sourceNode.type === "block") {
         stack.push({ source: sourceNode, target: targetNode });
       }
     }
@@ -493,52 +588,116 @@ const shiftNode = (node: StructuralNode, delta: number, tracker: PositionTracker
 
   while (stack.length > 0) {
     const frame = stack.pop()!;
+    const { source, target } = frame;
 
-    if (frame.source.type === "inline" && frame.target.type === "inline") {
-      appendShiftedNodes(frame.source.children, frame.target.children);
-      continue;
+    if (source.type === "text" || source.type === "escape" || source.type === "separator") continue;
+
+    if (source.type === "inline" && target.type === "inline") {
+      appendShiftedNodes(source.children, target.children);
+    } else if (source.type === "raw" && target.type === "raw") {
+      appendShiftedNodes(source.args, target.args);
+    } else if (source.type === "block" && target.type === "block") {
+      appendShiftedNodes(source.args, target.args);
+      appendShiftedNodes(source.children, target.children);
+    } else {
+      throw new Error(`shiftNode(): unsupported frame source type: ${source.type}`);
     }
-
-    if (frame.source.type === "raw" && frame.target.type === "raw") {
-      appendShiftedNodes(frame.source.args, frame.target.args);
-      continue;
-    }
-
-    if (frame.source.type === "block" && frame.target.type === "block") {
-      appendShiftedNodes(frame.source.args, frame.target.args);
-      appendShiftedNodes(frame.source.children, frame.target.children);
-      continue;
-    }
-
-    if (
-      frame.source.type === "text" ||
-      frame.source.type === "escape" ||
-      frame.source.type === "separator"
-    ) {
-      continue;
-    }
-
-    throw new Error(`shiftNode(): unsupported frame source type: ${frame.source.type}`);
   }
 
   return root;
 };
 
-const shiftZone = (zone: Zone, delta: number, tracker: PositionTracker): Zone => ({
-  startOffset: zone.startOffset + delta,
-  endOffset: zone.endOffset + delta,
-  nodes: zone.nodes.map((node) => shiftNode(node, delta, tracker)),
-});
+// ── 懒 delta 平移（1.2.4+）──
+//
+// 核心思路：右侧 zone 不立即深拷贝节点树，只记一个数字（delta）。
+// zone 的 startOffset/endOffset 立刻更新（O(1)），
+// 但节点的 position 延迟到消费者真正读 doc.tree / doc.zones 时才物化。
+//
+// 好处：
+// - 头部连续编辑只叠加 delta，不触发中间物化
+// - 如果消费者只关心 source 不关心 tree，右侧零成本
+//
+// 实现：
+// - zonePendingDeltaMap: zone → 待物化的累积 delta
+// - rawZonesMap: doc → 原始（未物化）zone 数组，供增量内部逻辑用
+// - installLazyDocument: 用 Object.defineProperty 在 doc 上挂 lazy getter
 
-const shiftZoneWithSignature = (zone: Zone, delta: number, tracker: PositionTracker): Zone => {
-  const shifted = shiftZone(zone, delta, tracker);
-  const signature = zoneSignature(zone);
-  if (signature !== undefined) {
-    zoneSignatureCache.set(shifted, signature);
+const zonePendingDeltaMap = new WeakMap<Zone, number>();
+
+// O(1) 延迟平移：创建新 zone 壳（offset 已更新），节点引用共享，delta 存 WeakMap。
+// 如果 zone 已经有 pending delta，新 delta 叠加上去。
+const deferShiftZone = (zone: Zone, delta: number): Zone => {
+  const existingDelta = zonePendingDeltaMap.get(zone) ?? 0;
+  const newZone: Zone = {
+    startOffset: zone.startOffset + delta,
+    endOffset: zone.endOffset + delta,
+    nodes: zone.nodes,
+  };
+  const totalDelta = existingDelta + delta;
+  if (totalDelta !== 0) {
+    zonePendingDeltaMap.set(newZone, totalDelta);
   }
-  return shifted;
+  const sig = zoneSignatureCache.get(zone);
+  if (sig !== undefined) zoneSignatureCache.set(newZone, sig);
+  return newZone;
 };
 
+// 物化：把 pending delta 应用到每个节点的 position 上，返回新 zone。
+// 没有 pending delta 的 zone 原样返回（已经是物化状态）。
+const materializeZone = (zone: Zone, tracker: PositionTracker): Zone => {
+  const delta = zonePendingDeltaMap.get(zone);
+  if (delta === undefined) return zone;
+  const materialized: Zone = {
+    startOffset: zone.startOffset,
+    endOffset: zone.endOffset,
+    nodes: zone.nodes.map((n) => shiftNode(n, delta, tracker)),
+  };
+  const sig = zoneSignatureCache.get(zone);
+  if (sig !== undefined) zoneSignatureCache.set(materialized, sig);
+  return materialized;
+};
+
+// 内部逻辑用 getRawZones 拿未物化的 zone——zone offset 是对的，
+// 只有节点 position 可能是旧的，但增量逻辑只看 zone offset，不看节点 position。
+const rawZonesMap = new WeakMap<IncrementalDocument, readonly Zone[]>();
+
+const getRawZones = (doc: IncrementalDocument): readonly Zone[] => rawZonesMap.get(doc) ?? doc.zones;
+
+const installLazyDocument = (
+  doc: IncrementalDocument,
+  rawZones: readonly Zone[],
+  tracker: PositionTracker,
+): void => {
+  rawZonesMap.set(doc, rawZones);
+  let materializedZones: Zone[] | undefined;
+  let materializedTree: StructuralNode[] | undefined;
+  Object.defineProperty(doc, "zones", {
+    get() {
+      if (!materializedZones) {
+        materializedZones = rawZones.map((z) => materializeZone(z, tracker));
+      }
+      return materializedZones;
+    },
+    enumerable: true,
+    configurable: true,
+  });
+  Object.defineProperty(doc, "tree", {
+    get() {
+      if (!materializedTree) {
+        materializedTree = flattenZones(doc.zones);
+      }
+      return materializedTree;
+    },
+    enumerable: true,
+    configurable: true,
+  });
+};
+
+// ── 增量更新核心 ──
+
+// 找脏 zone 区间：哪些 zone 与编辑范围重叠？
+// 有重叠 → [firstOverlap - 1, lastOverlap + 1]（左右各扩一格）
+// 纯插入无重叠 → 从插入点邻居开始，左回看一格
 const findDirtyRange = (zones: readonly Zone[], edit: IncrementalEdit): { from: number; to: number } => {
   let firstOverlap = -1;
   let lastOverlap = -1;
@@ -572,8 +731,13 @@ const findDirtyRange = (zones: readonly Zone[], edit: IncrementalEdit): { from: 
   };
 };
 
+// 循环重解析脏窗，直到右边界稳定或超预算。
+// "稳定"的意思是：重解析产出的最后一个 zone 的 endOffset 恰好等于脏窗的 endOffset。
+// 不稳定 → 右边扩一个 zone，再来一轮。
+// 预算守卫：cumulative 重解析字节数超过 2·n → 放弃，返回 budgetExceeded=true，
+// 调用方会直接 full rebuild。这保证了脏窗扩展不会变成 O(n²)。
 const reparseDirtyWindowUntilStable = (
-  doc: IncrementalDocument,
+  zones: readonly Zone[],
   dirtyFrom: number,
   dirtyTo: number,
   edit: IncrementalEdit,
@@ -594,8 +758,8 @@ const reparseDirtyWindowUntilStable = (
   let nextCumulativeReparsedBytes = cumulativeReparsedBytes;
 
   while (true) {
-    const dirtyStartOld = doc.zones[dirtyFrom].startOffset;
-    const dirtyEndOld = doc.zones[nextDirtyTo].endOffset;
+    const dirtyStartOld = zones[dirtyFrom].startOffset;
+    const dirtyEndOld = zones[nextDirtyTo].endOffset;
     const dirtyStartNew = mapOldOffsetToNew(edit, delta, dirtyStartOld);
     const dirtyEndNew = mapOldOffsetToNew(edit, delta, dirtyEndOld);
     const reparsedWindowSize = dirtyEndNew - dirtyStartNew;
@@ -619,7 +783,7 @@ const reparseDirtyWindowUntilStable = (
 
     const reparsedEnd =
       nextDirtyZones.length > 0 ? nextDirtyZones[nextDirtyZones.length - 1].endOffset : dirtyStartNew;
-    if (reparsedEnd === dirtyEndNew || nextDirtyTo === doc.zones.length - 1) {
+    if (reparsedEnd === dirtyEndNew || nextDirtyTo === zones.length - 1) {
       return {
         budgetExceeded: false,
         dirtyTo: nextDirtyTo,
@@ -631,6 +795,10 @@ const reparseDirtyWindowUntilStable = (
   }
 };
 
+// 编辑合法性三重校验：
+// 1. offset 范围合法（不越界、不倒序）
+// 2. newSource 长度 = 旧长度 - 删除长度 + 插入长度
+// 3. edit.newText 与 newSource 对应位置一致（防调用方传错）
 const assertValidEdit = (doc: IncrementalDocument, edit: IncrementalEdit, newSource: string) => {
   if (edit.startOffset < 0 || edit.oldEndOffset < edit.startOffset || edit.oldEndOffset > doc.source.length) {
     throw createIncrementalEditError(
@@ -657,6 +825,10 @@ const assertValidEdit = (doc: IncrementalDocument, edit: IncrementalEdit, newSou
   }
 };
 
+// ── Public API: 全量解析入口 ──
+//
+// 首次解析 / full rebuild 都走这里。
+// 全量解析一次性产出完整快照：tree + zones + signature 缓存 + options snapshot。
 export const parseIncremental = (
   source: string,
   options?: IncrementalParseOptions,
@@ -678,6 +850,19 @@ export const parseIncremental = (
   setCachedOptionsFingerprint(doc, fingerprint);
   return doc;
 };
+
+// ── 增量更新主流程 ──
+//
+// 这是整个增量解析的核心函数。流程：
+// 1. assertValidEdit       — 编辑合法性校验
+// 2. fingerprint 比对       — 配置变了？→ full rebuild
+// 3. findDirtyRange        — 找脏 zone 区间
+// 4. reparseDirtyWindow    — 循环重解析直到右边界稳定（有预算守卫）
+// 5. isSafeRightReuse      — seam probe 验证拼接缝
+// 6. deferShiftZone        — 右侧 zone lazy delta 平移
+// 7. installLazyDocument   — 拼接新快照，挂 lazy getter
+//
+// 任何一步判定"不安全" → fullRebuild() 兜底，保证正确性优先。
 
 /**
  * Update an incremental structural snapshot with one edit and a new full source.
@@ -705,13 +890,6 @@ const updateIncrementalInternal = (
   assertValidEdit(doc, edit, newSource);
   let cumulativeReparsedBytes = 0;
   let probeSliceBytes = 0;
-  const emitDebug = (fellBackToFull: boolean) => {
-    incrementalDebugSink?.({
-      cumulativeReparsedBytes,
-      probeSliceBytes,
-      fellBackToFull,
-    });
-  };
 
   const previousOptionsFingerprint =
     getCachedOptionsFingerprint(doc) ?? buildParseOptionsFingerprint(doc.parseOptions);
@@ -720,42 +898,42 @@ const updateIncrementalInternal = (
     : previousOptionsFingerprint;
   const runtimeParseOptions = options ?? doc.parseOptions;
   const nextParseOptionsSnapshot = options ? cloneParseOptions(options) : doc.parseOptions;
-  if (previousOptionsFingerprint !== nextOptionsFingerprint) {
-    const rebuilt = parseIncremental(newSource, runtimeParseOptions);
-    emitDebug(true);
-    __internalObserver?.("internal-full-rebuild");
-    return rebuilt;
-  }
 
-  // Fast path: empty cache means no incremental reuse is possible.
-  if (doc.zones.length === 0) {
-    const rebuilt = parseIncremental(newSource, runtimeParseOptions);
-    emitDebug(true);
-    __internalObserver?.("internal-full-rebuild");
-    return rebuilt;
-  }
+  const emitDebug = (fellBackToFull: boolean) => {
+    incrementalDebugSink?.({
+      cumulativeReparsedBytes,
+      probeSliceBytes,
+      fellBackToFull,
+    });
+  };
 
-  // Defensive fallback for malformed snapshots where zones do not cover the tail.
-  // Normal parser output should not hit this branch.
-  if (hasUnsafeZoneCoverageTailGap(doc, edit)) {
+  const fullRebuild = (): IncrementalDocument => {
     const rebuilt = parseIncremental(newSource, runtimeParseOptions);
     emitDebug(true);
     __internalObserver?.("internal-full-rebuild");
     return rebuilt;
-  }
+  };
+
+  const prevZones = getRawZones(doc);
+
+  if (previousOptionsFingerprint !== nextOptionsFingerprint) return fullRebuild();
+
+  if (prevZones.length === 0) return fullRebuild();
+
+  if (hasUnsafeZoneCoverageTailGap(prevZones, edit)) return fullRebuild();
 
   const newTracker = buildPositionTracker(newSource);
   const cumulativeBudget = Math.max(newSource.length * 2, 1024);
 
   const delta = newSource.length - doc.source.length;
-  const dirty = findDirtyRange(doc.zones, edit);
+  const dirty = findDirtyRange(prevZones, edit);
 
   let dirtyFrom = dirty.from;
   let dirtyTo = dirty.to;
   let dirtyZones: Zone[] = [];
 
   const firstReparse = reparseDirtyWindowUntilStable(
-    doc,
+    prevZones,
     dirtyFrom,
     dirtyTo,
     edit,
@@ -767,17 +945,12 @@ const updateIncrementalInternal = (
     cumulativeReparsedBytes,
   );
   cumulativeReparsedBytes = firstReparse.cumulativeReparsedBytes;
-  if (firstReparse.budgetExceeded) {
-    const rebuilt = parseIncremental(newSource, runtimeParseOptions);
-    emitDebug(true);
-    __internalObserver?.("internal-full-rebuild");
-    return rebuilt;
-  }
+  if (firstReparse.budgetExceeded) return fullRebuild();
   dirtyTo = firstReparse.dirtyTo;
   dirtyZones = firstReparse.dirtyZones;
 
-  const leftZones = doc.zones.slice(0, dirtyFrom);
-  const oldRightZones = doc.zones.slice(dirtyTo + 1);
+  const leftZones = prevZones.slice(0, dirtyFrom);
+  const oldRightZones = prevZones.slice(dirtyTo + 1);
   if (oldRightZones.length > 0) {
     const seamOldOffset = oldRightZones[0].startOffset;
     const seamNewOffset = mapOldOffsetToNew(edit, delta, seamOldOffset);
@@ -790,29 +963,26 @@ const updateIncrementalInternal = (
       runtimeParseOptions,
     );
     probeSliceBytes = rightReuseCheck.probeSliceBytes;
-    if (!rightReuseCheck.ok) {
-      const rebuilt = parseIncremental(newSource, runtimeParseOptions);
-      emitDebug(true);
-      __internalObserver?.("internal-full-rebuild");
-      return rebuilt;
-    }
+    if (!rightReuseCheck.ok) return fullRebuild();
   }
-  const rightZones = oldRightZones.map((zone) => shiftZoneWithSignature(zone, delta, newTracker));
+  const rightZones = oldRightZones.map((zone) => deferShiftZone(zone, delta));
 
-  const zones = [...leftZones, ...dirtyZones, ...rightZones];
+  const nextRawZones = [...leftZones, ...dirtyZones, ...rightZones];
 
-  const updated = {
+  const updated: IncrementalDocument = {
     source: newSource,
-    zones,
-    tree: flattenZones(zones),
+    zones: nextRawZones,
+    tree: [],
     parseOptions: nextParseOptionsSnapshot,
   };
+  installLazyDocument(updated, nextRawZones, newTracker);
   setCachedOptionsFingerprint(updated, nextOptionsFingerprint);
   emitDebug(false);
   __internalObserver?.("incremental");
   return updated;
 };
 
+// 公共增量更新入口（不暴露 __internalObserver）。
 export const updateIncremental = (
   doc: IncrementalDocument,
   edit: IncrementalEdit,
@@ -820,6 +990,8 @@ export const updateIncremental = (
   options?: IncrementalParseOptions,
 ): IncrementalDocument => updateIncrementalInternal(doc, edit, newSource, options);
 
+// Result 风格的增量更新：不抛异常，返回 { ok, value } | { ok, error }。
+// session 内部走这条路径，方便统一处理错误 → full rebuild 兜底。
 /**
  * @experimental
  * Low-level result-style updater.
@@ -862,6 +1034,21 @@ export const tryUpdateIncremental = (
   options?: IncrementalParseOptions,
 ): IncrementalUpdateResult => tryUpdateIncrementalInternal(doc, edit, newSource, options);
 
+// ── Session（有状态会话 + 自适应策略）──
+//
+// createIncrementalSession 是生产级入口。它在 updateIncremental 外面包了一层：
+// - 自动 full-rebuild 兜底（增量失败不会抛到调用方）
+// - auto 策略：滑动窗口采样，如果增量频繁 fallback 或比 full 还慢 → 自动切 full 模式
+// - cooldown 机制：切到 full 后连续 N 次编辑保持 full，避免反复抖动
+//
+// 闭包状态：
+// - currentDoc: 当前快照
+// - incrementalDurations / fullDurations / fallbackMarks: 滑动窗口采样数组（上限 sampleWindowSize）
+// - preferFullMode / cooldownRemaining: auto 策略状态机
+//
+// 所有采样数组大小被 sampleWindowSize 钳住（默认 24），
+// 所以 session 每次编辑的额外开销是 O(1)，不随文档大小增长。
+
 export const createIncrementalSession = (
   source: string,
   options?: IncrementalParseOptions,
@@ -888,6 +1075,7 @@ export const createIncrementalSession = (
   const fallbackMarks: number[] = [];
   const fullDurations: number[] = [];
 
+  // 进入 full 偏好模式：清空增量采样，开始 cooldown 计数。
   const enterFullPreference = () => {
     preferFullMode = true;
     cooldownRemaining = fullPreferenceCooldownEdits;
@@ -895,6 +1083,7 @@ export const createIncrementalSession = (
     fallbackMarks.length = 0;
   };
 
+  // 有界滑动窗口：超过 sampleWindowSize 就丢最老的样本。
   const recordBounded = (bucket: number[], value: number) => {
     bucket.push(value);
     if (bucket.length > sampleWindowSize) {
@@ -927,6 +1116,10 @@ export const createIncrementalSession = (
     };
   };
 
+  // 自适应策略决策：
+  // 1. fallback 率超阈值 → 切 full
+  // 2. 增量平均耗时 > full 平均耗时 × multiplier → 切 full
+  // 只在 auto 模式下生效，且需要积攒够 minSamplesForAdaptation 个样本才开始判断。
   const maybeAdaptPolicy = () => {
     if (strategy !== "auto") return;
     const incrementalSampleCount = incrementalDurations.length;
@@ -951,6 +1144,14 @@ export const createIncrementalSession = (
     return currentDoc;
   };
 
+  // applyEdit：session 的编辑入口。决策流程：
+  // 1. full-only 策略 → 直接 rebuild
+  // 2. auto + 编辑比例过大 → rebuild（大编辑增量没意义）
+  // 3. auto + cooldown 中 → rebuild（刚从增量切过来，保持稳定）
+  // 4. 走增量路径 → tryUpdateIncrementalInternal
+  //    4a. 成功 → 返回 incremental 或 internal-full-rebuild
+  //    4b. 失败 → runRebuild 兜底
+  // 每次都记录耗时采样 + 调用 maybeAdaptPolicy 更新策略。
   const applyEdit = (
     edit: IncrementalEdit,
     newSource: string,

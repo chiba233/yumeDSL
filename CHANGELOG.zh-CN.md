@@ -2,6 +2,25 @@
 
 # 更新日志
 
+### 1.2.4
+
+- **增量性能优化：惰性右侧平移**
+  - 右侧 zone 复用从即时深拷贝 + 递归平移改为 O(1) 惰性 delta 累积（`deferShiftZone`）。
+  - 首次消费时才物化节点位置（`materializeZone`），通过 `Object.defineProperty` 惰性 getter 延迟 `tree` / `zones` 展开。
+  - 连续头部编辑场景下 delta 自动叠加，不触发中间物化，大幅降低右侧子树开销。
+- **快照克隆开销优化**
+  - `cloneParseOptions` 引入 `frozenSnapshots` WeakSet：已生成的快照重入时跳过 handlers 深拷贝（full-rebuild → parseIncremental 路径受益）。
+  - 快路径修正：frozen 快照重入时返回 shallow spread 新对象而非同一引用，防止跨代 alias 导致旧文档 mutation 穿透到新文档。
+- **签名哈希瘦身**
+  - `nodeSignature` 内容哈希从全量 `hashText` 改为 O(1) 有界采样（头尾各 32 字符 `fnvFeedStringBounded`）：保留同长度异内容检测能力，避免长文本节点线性扫描开销。
+- **内部重构**
+  - 提取 `fullRebuild()` 局部函数，5 处重复的三行重建模式合一。
+  - 新增 `feedChildSignatures` 工具函数，消除 nodeSignature 中 init→feed→shift 的重复流程。
+  - `createShiftedNodeShell` 分支压缩为单行 return。
+  - `shiftNode` 移除 `shouldExpandNestedNode` 间接层，帧分发合并。
+  - syntax fingerprint 8 字段重复调用改为 `syntaxKeys` 数组循环。
+- 无公共 API 变化
+
 ### 1.2.3
 
 - **增量 API 导出面清理**

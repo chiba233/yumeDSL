@@ -2,6 +2,25 @@
 
 # Changelog
 
+### 1.2.4
+
+- **Incremental performance: lazy right-side shifting**
+  - Right-side zone reuse changed from eager deep-copy + recursive shift to O(1) lazy delta accumulation (`deferShiftZone`).
+  - Node positions are materialized on first consumer access (`materializeZone`) via `Object.defineProperty` lazy getters on `tree` / `zones`.
+  - Consecutive head-of-file edits automatically stack deltas without intermediate materialization, drastically reducing right-side subtree cost.
+- **Snapshot clone optimization**
+  - `cloneParseOptions` now uses a `frozenSnapshots` WeakSet: already-created snapshots skip handler deep-copy on re-entry (benefits the full-rebuild → parseIncremental path).
+  - Fast-path fix: frozen snapshot re-entry now returns a shallow-spread new object instead of the same reference, preventing cross-generation alias where old-doc mutation could leak into new documents.
+- **Signature hashing reduction**
+  - `nodeSignature` content hashing changed from full `hashText` to O(1) bounded sampling (first/last 32 chars via `fnvFeedStringBounded`): retains same-length-different-content detection while avoiding linear scan of long text nodes.
+- **Internal refactoring**
+  - Extracted `fullRebuild()` local function, consolidating 5 repeated three-line rebuild patterns.
+  - Added `feedChildSignatures` helper, eliminating repeated init→feed→shift boilerplate in nodeSignature.
+  - Compressed `createShiftedNodeShell` branches to single-line returns.
+  - Removed `shouldExpandNestedNode` indirection in `shiftNode`, consolidating frame dispatch.
+  - Replaced 8 repetitive `hashText(syntax.xxx)` calls with `syntaxKeys` array loop.
+- No public API changes
+
 ### 1.2.3
 
 - **Incremental API surface cleanup**
