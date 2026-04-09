@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   type TagHandler,
   createSimpleBlockHandlers,
+  createIncrementalSession,
   createSimpleInlineHandlers,
   createSimpleRawHandlers,
   buildZones,
@@ -414,6 +415,202 @@ const cases: GoldenCase[] = [
       if (!result.ok) {
         assert.equal(result.error.code, "UNKNOWN");
       }
+    },
+  },
+  {
+    name: "[Incremental/TryUpdate] shifted text and nested nodes should stay on incremental path",
+    run: () => {
+      const source = "L\n$$code(ts)%\nA\n%end$$\n$$code(js)%\nB\n%end$$";
+      const doc = parseIncremental(source);
+      assert.ok(doc.zones.length >= 3);
+
+      const zones = [...doc.zones];
+      const rightIndex = zones.length - 1;
+      const rightNodes = [
+        { type: "text", value: "tail" },
+        {
+          type: "block",
+          tag: "note",
+          args: [{ type: "text", value: "a" }, { type: "separator" }, { type: "text", value: "b" }],
+          children: [{ type: "inline", tag: "bold", children: [{ type: "text", value: "x" }] }],
+        },
+      ] as (typeof zones)[number]["nodes"];
+      zones[rightIndex] = { ...zones[rightIndex], nodes: rightNodes };
+      const malformedDoc = { ...doc, zones };
+
+      const insertAt = 1;
+      const newText = "X";
+      const newSource = applyEdit(source, insertAt, insertAt, newText);
+      const result = tryUpdateIncremental(
+        malformedDoc,
+        { startOffset: insertAt, oldEndOffset: insertAt, newText },
+        newSource,
+      );
+
+      assert.equal(result.ok, true);
+      if (result.ok) {
+        assert.equal(result.value.source, newSource);
+      }
+    },
+  },
+  {
+    name: "[Incremental/TryUpdate] unstable node type read should hit unsupported frame source error",
+    run: () => {
+      const source = "L\n$$code(ts)%\nA\n%end$$\n$$code(js)%\nB\n%end$$";
+      const doc = parseIncremental(source);
+      assert.ok(doc.zones.length >= 3);
+
+      let firstTypeRead = true;
+      const flippingNode = {
+        tag: "bold",
+        children: [],
+      } as Record<string, unknown>;
+      Object.defineProperty(flippingNode, "type", {
+        configurable: true,
+        enumerable: true,
+        get: () => {
+          if (firstTypeRead) {
+            firstTypeRead = false;
+            return "inline";
+          }
+          return "inline-corrupted";
+        },
+      });
+
+      const zones = [...doc.zones];
+      const rightIndex = zones.length - 1;
+      zones[rightIndex] = {
+        ...zones[rightIndex],
+        nodes: [flippingNode as unknown as (typeof zones)[number]["nodes"][number]],
+      };
+      const malformedDoc = { ...doc, zones };
+
+      const insertAt = 1;
+      const newText = "X";
+      const newSource = applyEdit(source, insertAt, insertAt, newText);
+      const result = tryUpdateIncremental(
+        malformedDoc,
+        { startOffset: insertAt, oldEndOffset: insertAt, newText },
+        newSource,
+      );
+
+      assert.equal(result.ok, false);
+      if (!result.ok) {
+        assert.equal(result.error.code, "UNKNOWN");
+      }
+    },
+  },
+  {
+    name: "[Incremental/Session] full-only strategy should always rebuild",
+    run: () => {
+      const source = "abc";
+      const session = createIncrementalSession(source, undefined, { strategy: "full-only" });
+      const newSource = "abXc";
+      const result = session.applyEdit({ startOffset: 2, oldEndOffset: 2, newText: "X" }, newSource);
+
+      assert.equal(result.mode, "full-fallback");
+      assert.equal(result.fallbackReason, "FULL_ONLY_STRATEGY");
+      assert.equal(result.doc.source, newSource);
+    },
+  },
+  {
+    name: "[Incremental/Session] large edit in auto mode should fallback",
+    run: () => {
+      const source = "abcdef";
+      const session = createIncrementalSession(source, undefined, { maxEditRatioForIncremental: 0.1 });
+      const newSource = "XY";
+      const result = session.applyEdit({ startOffset: 0, oldEndOffset: source.length, newText: "XY" }, newSource);
+
+      assert.equal(result.mode, "full-fallback");
+      assert.equal(result.fallbackReason, "AUTO_LARGE_EDIT");
+      assert.equal(result.doc.source, newSource);
+    },
+  },
+  {
+    name: "[Incremental/Session] adaptive policy should enter and exit cooldown",
+    run: () => {
+      const source = "abc";
+      const session = createIncrementalSession(source, undefined, {
+        strategy: "auto",
+        sampleWindowSize: 4,
+        minSamplesForAdaptation: 2,
+        maxFallbackRate: 0,
+        fullPreferenceCooldownEdits: 1,
+        maxEditRatioForIncremental: 1,
+      });
+
+      const mismatchEdit = { startOffset: 1, oldEndOffset: 2, newText: "ZZ" };
+      const mismatchResult1 = session.applyEdit(mismatchEdit, source);
+      const mismatchResult2 = session.applyEdit(mismatchEdit, source);
+      assert.equal(mismatchResult1.mode, "full-fallback");
+      assert.equal(mismatchResult2.mode, "full-fallback");
+
+      const cooldownResult = session.applyEdit(
+        { startOffset: 1, oldEndOffset: 2, newText: "b" },
+        source,
+      );
+      assert.equal(cooldownResult.mode, "full-fallback");
+      assert.equal(cooldownResult.fallbackReason, "AUTO_COOLDOWN");
+
+      const incrementalSource = source;
+      const incrementalResult = session.applyEdit(
+        { startOffset: 1, oldEndOffset: 2, newText: "b" },
+        incrementalSource,
+      );
+      assert.equal(incrementalResult.mode, "incremental");
+      assert.equal(incrementalResult.doc.source, incrementalSource);
+    },
+  },
+  {
+    name: "[Incremental/Session] full-time faster adaptation should trigger cooldown fallback",
+    run: () => {
+      const originalNow = performance.now.bind(performance);
+      const values = [0, 10, 20, 30, 40, 50, 60, 61, 70, 80, 90, 91, 100, 101];
+      let index = 0;
+      performance.now = () => {
+        const next = values[index] ?? values[values.length - 1];
+        index += 1;
+        return next;
+      };
+
+      try {
+        const source = "abc";
+        const session = createIncrementalSession(source, undefined, {
+          strategy: "auto",
+          minSamplesForAdaptation: 2,
+          sampleWindowSize: 8,
+          maxFallbackRate: 1,
+          switchToFullMultiplier: 2,
+          fullPreferenceCooldownEdits: 1,
+          maxEditRatioForIncremental: 1,
+        });
+
+        const noOpEdit = { startOffset: 1, oldEndOffset: 2, newText: "b" };
+        const mismatchEdit = { startOffset: 1, oldEndOffset: 2, newText: "ZZ" };
+        session.applyEdit(noOpEdit, source);
+        session.applyEdit(noOpEdit, source);
+        session.applyEdit(mismatchEdit, source);
+        session.applyEdit(mismatchEdit, source);
+
+        const cooldownResult = session.applyEdit(noOpEdit, source);
+        assert.equal(cooldownResult.mode, "full-fallback");
+        assert.equal(cooldownResult.fallbackReason, "AUTO_COOLDOWN");
+      } finally {
+        performance.now = originalNow;
+      }
+    },
+  },
+  {
+    name: "[Incremental/Session] rebuild and getDocument should keep session snapshot in sync",
+    run: () => {
+      const source = "$$bold(x)$$";
+      const session = createIncrementalSession(source);
+
+      assert.equal(session.getDocument().source, source);
+
+      const rebuilt = session.rebuild("$$bold(y)$$");
+      assert.equal(rebuilt.source, "$$bold(y)$$");
+      assert.equal(session.getDocument().source, "$$bold(y)$$");
     },
   },
 ];
