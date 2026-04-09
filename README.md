@@ -58,6 +58,7 @@ Text in, token tree out — tag semantics, rendering, framework: all yours to de
 >
 > Pair with [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker)'s `parseSlice` — only the touched region gets re-parsed.
 > For incremental **structural** caching across edits, see [Incremental Parsing](https://github.com/chiba233/yumeDSL/wiki/en-Incremental-Parsing) (`createIncrementalSession(...)` is the default entry).
+> Incremental APIs are experimental and may introduce breaking changes in minor releases; pin your version and follow the version-specific wiki usage.
 > [Full benchmark data](https://github.com/chiba233/yumeDSL/wiki/en-Performance)
 
 **Use cases:**
@@ -793,6 +794,9 @@ const tokens = dsl.parse(input);
 ---
 
 ## Exports
+
+> ⚠️ Incremental parsing exports are experimental and can break in minor releases.
+> Always verify signatures and version notes in the wiki before upgrading.
 
 | Category              | Exports                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 |-----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
