@@ -385,6 +385,7 @@ export type IncrementalSessionStrategy = "auto" | "incremental-only" | "full-onl
 
 export type IncrementalSessionFallbackReason =
   | IncrementalUpdateErrorCode
+  | "INTERNAL_FULL_REBUILD"
   | "FULL_ONLY_STRATEGY"
   | "AUTO_COOLDOWN"
   | "AUTO_LARGE_EDIT";

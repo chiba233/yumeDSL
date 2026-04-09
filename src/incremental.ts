@@ -46,14 +46,66 @@ const isIncrementalUpdateError = (error: unknown): error is IncrementalUpdateErr
   );
 };
 
-// Shallow clone only: nested fields are intentionally shared.
-// Callers should treat parse options as immutable after passing them in.
+const isPlainObject = (value: unknown): value is Record<string, unknown> => {
+  if (!value || typeof value !== "object") return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+};
+
+const cloneSnapshotValueInternal = <T>(value: T, seen: WeakMap<object, unknown>): T => {
+  if (Array.isArray(value)) {
+    const seenArray = seen.get(value);
+    if (seenArray) return seenArray as T;
+    const next = new Array(value.length);
+    seen.set(value, next);
+    for (let i = 0; i < value.length; i++) {
+      next[i] = cloneSnapshotValueInternal(value[i], seen);
+    }
+    return next as T;
+  }
+  if (isPlainObject(value)) {
+    const seenObject = seen.get(value);
+    if (seenObject) return seenObject as T;
+    const next: Record<string, unknown> = {};
+    seen.set(value, next);
+    const keys = Object.keys(value);
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+      next[key] = cloneSnapshotValueInternal(value[key], seen);
+    }
+    return next as T;
+  }
+  return value;
+};
+
+const cloneSnapshotValue = <T>(value: T): T =>
+  cloneSnapshotValueInternal(value, new WeakMap<object, unknown>());
+
+const cloneHandlersSnapshot = (
+  handlers: IncrementalParseOptions["handlers"] | undefined,
+): IncrementalParseOptions["handlers"] | undefined => {
+  if (!handlers) return undefined;
+  const next: Record<string, (typeof handlers)[string]> = {};
+  const keys = Object.keys(handlers);
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    const handler = handlers[key];
+    next[key] = handler ? cloneSnapshotValue(handler) : handler;
+  }
+  return next;
+};
+
+// Clone parse options into an isolated snapshot used by incremental state.
+// Handler function references are preserved, while plain object/array fields are
+// snapshot-copied recursively to avoid external in-place mutation changing session
+// behavior implicitly.
 const cloneParseOptions = (
   options: IncrementalParseOptions | undefined,
 ): IncrementalParseOptions | undefined => {
   if (!options) return undefined;
   return {
     ...options,
+    handlers: cloneHandlersSnapshot(options.handlers),
     syntax: options.syntax ? { ...options.syntax } : undefined,
     tagName: options.tagName ? { ...options.tagName } : undefined,
     allowForms: options.allowForms ? [...options.allowForms] : undefined,
@@ -90,7 +142,6 @@ const buildHandlersShapeFingerprint = (handlers: unknown): number => {
     const key = keys[i];
     const handler = record[key];
     hash = fnvFeedU32(hash, hashText(key));
-    hash = fnvFeedU32(hash, getIdentityForUnknown(handler));
     if (!handler || typeof handler !== "object") continue;
     const handlerRecord = handler as Record<string, unknown>;
     hash = fnvFeedU32(hash, getIdentityForUnknown(handlerRecord.inline));
@@ -100,29 +151,33 @@ const buildHandlersShapeFingerprint = (handlers: unknown): number => {
   return hash >>> 0;
 };
 
-const buildParseOptionsFingerprint = (options: IncrementalParseOptions | undefined): string => {
-  if (!options) return "default";
+const DEFAULT_PARSE_OPTIONS_FINGERPRINT = fnvFeedU32(fnvInit(), 0x9e3779b9);
+
+const buildParseOptionsFingerprint = (options: IncrementalParseOptions | undefined): number => {
+  if (!options) return DEFAULT_PARSE_OPTIONS_FINGERPRINT;
   const syntax = options.syntax ?? {};
   const tagName = options.tagName ?? {};
-  return JSON.stringify({
-    handlersIdentity: getObjectIdentity(options.handlers as object | undefined),
-    handlersShape: buildHandlersShapeFingerprint(options.handlers),
-    allowForms: options.allowForms ?? [],
-    syntax: {
-      tagOpen: syntax.tagOpen ?? "",
-      tagClose: syntax.tagClose ?? "",
-      endTag: syntax.endTag ?? "",
-      tagDivider: syntax.tagDivider ?? "",
-      rawOpen: syntax.rawOpen ?? "",
-      rawClose: syntax.rawClose ?? "",
-      blockOpen: syntax.blockOpen ?? "",
-      blockClose: syntax.blockClose ?? "",
-    },
-    tagName: {
-      startIdentity: getObjectIdentity(tagName.isTagStartChar as object | undefined),
-      charIdentity: getObjectIdentity(tagName.isTagChar as object | undefined),
-    },
-  });
+  const allowForms = options.allowForms ?? [];
+
+  let hash = fnvInit();
+  hash = fnvFeedU32(hash, buildHandlersShapeFingerprint(options.handlers));
+  hash = fnvFeedU32(hash, allowForms.length);
+  for (let i = 0; i < allowForms.length; i++) {
+    hash = fnvFeedU32(hash, hashText(allowForms[i]));
+  }
+
+  hash = fnvFeedU32(hash, hashText(syntax.tagOpen ?? ""));
+  hash = fnvFeedU32(hash, hashText(syntax.tagClose ?? ""));
+  hash = fnvFeedU32(hash, hashText(syntax.endTag ?? ""));
+  hash = fnvFeedU32(hash, hashText(syntax.tagDivider ?? ""));
+  hash = fnvFeedU32(hash, hashText(syntax.rawOpen ?? ""));
+  hash = fnvFeedU32(hash, hashText(syntax.rawClose ?? ""));
+  hash = fnvFeedU32(hash, hashText(syntax.blockOpen ?? ""));
+  hash = fnvFeedU32(hash, hashText(syntax.blockClose ?? ""));
+
+  hash = fnvFeedU32(hash, getObjectIdentity(tagName.isTagStartChar as object | undefined));
+  hash = fnvFeedU32(hash, getObjectIdentity(tagName.isTagChar as object | undefined));
+  return hash >>> 0;
 };
 
 const hasUnsafeZoneCoverageTailGap = (doc: IncrementalDocument, edit: IncrementalEdit): boolean => {
@@ -173,7 +228,7 @@ const NODE_TAG_BLOCK = 6;
 const ZONE_TAG = 7;
 
 const zoneSignatureCache = new WeakMap<Zone, number>();
-const parseOptionsFingerprintCache = new WeakMap<IncrementalDocument, string>();
+const parseOptionsFingerprintCache = new WeakMap<IncrementalDocument, number>();
 
 interface SignatureBudget {
   remaining: number;
@@ -198,10 +253,10 @@ export const __setIncrementalDebugSink = (sink?: IncrementalDebugSink): void => 
 
 const hashText = (value: string): number => fnv1a(value);
 
-const getCachedOptionsFingerprint = (doc: IncrementalDocument): string | undefined =>
+const getCachedOptionsFingerprint = (doc: IncrementalDocument): number | undefined =>
   parseOptionsFingerprintCache.get(doc);
 
-const setCachedOptionsFingerprint = (doc: IncrementalDocument, fingerprint: string): void => {
+const setCachedOptionsFingerprint = (doc: IncrementalDocument, fingerprint: number): void => {
   parseOptionsFingerprintCache.set(doc, fingerprint);
 };
 
@@ -658,12 +713,15 @@ const updateIncrementalInternal = (
     });
   };
 
-  const parseOptions = options ? cloneParseOptions(options) : doc.parseOptions;
   const previousOptionsFingerprint =
     getCachedOptionsFingerprint(doc) ?? buildParseOptionsFingerprint(doc.parseOptions);
-  const nextOptionsFingerprint = buildParseOptionsFingerprint(parseOptions);
+  const nextOptionsFingerprint = options
+    ? buildParseOptionsFingerprint(options)
+    : previousOptionsFingerprint;
+  const runtimeParseOptions = options ?? doc.parseOptions;
+  const nextParseOptionsSnapshot = options ? cloneParseOptions(options) : doc.parseOptions;
   if (previousOptionsFingerprint !== nextOptionsFingerprint) {
-    const rebuilt = parseIncremental(newSource, parseOptions);
+    const rebuilt = parseIncremental(newSource, runtimeParseOptions);
     emitDebug(true);
     __internalObserver?.("internal-full-rebuild");
     return rebuilt;
@@ -671,7 +729,7 @@ const updateIncrementalInternal = (
 
   // Fast path: empty cache means no incremental reuse is possible.
   if (doc.zones.length === 0) {
-    const rebuilt = parseIncremental(newSource, parseOptions);
+    const rebuilt = parseIncremental(newSource, runtimeParseOptions);
     emitDebug(true);
     __internalObserver?.("internal-full-rebuild");
     return rebuilt;
@@ -680,7 +738,7 @@ const updateIncrementalInternal = (
   // Defensive fallback for malformed snapshots where zones do not cover the tail.
   // Normal parser output should not hit this branch.
   if (hasUnsafeZoneCoverageTailGap(doc, edit)) {
-    const rebuilt = parseIncremental(newSource, parseOptions);
+    const rebuilt = parseIncremental(newSource, runtimeParseOptions);
     emitDebug(true);
     __internalObserver?.("internal-full-rebuild");
     return rebuilt;
@@ -704,13 +762,13 @@ const updateIncrementalInternal = (
     delta,
     newSource,
     newTracker,
-    parseOptions,
+    runtimeParseOptions,
     cumulativeBudget,
     cumulativeReparsedBytes,
   );
   cumulativeReparsedBytes = firstReparse.cumulativeReparsedBytes;
   if (firstReparse.budgetExceeded) {
-    const rebuilt = parseIncremental(newSource, parseOptions);
+    const rebuilt = parseIncremental(newSource, runtimeParseOptions);
     emitDebug(true);
     __internalObserver?.("internal-full-rebuild");
     return rebuilt;
@@ -729,11 +787,11 @@ const updateIncrementalInternal = (
       seamNewOffset,
       delta,
       newTracker,
-      parseOptions,
+      runtimeParseOptions,
     );
     probeSliceBytes = rightReuseCheck.probeSliceBytes;
     if (!rightReuseCheck.ok) {
-      const rebuilt = parseIncremental(newSource, parseOptions);
+      const rebuilt = parseIncremental(newSource, runtimeParseOptions);
       emitDebug(true);
       __internalObserver?.("internal-full-rebuild");
       return rebuilt;
@@ -747,7 +805,7 @@ const updateIncrementalInternal = (
     source: newSource,
     zones,
     tree: flattenZones(zones),
-    parseOptions,
+    parseOptions: nextParseOptionsSnapshot,
   };
   setCachedOptionsFingerprint(updated, nextOptionsFingerprint);
   emitDebug(false);
@@ -936,6 +994,13 @@ export const createIncrementalSession = (
       const internalFullRebuild = mode === "internal-full-rebuild";
       recordBounded(fallbackMarks, internalFullRebuild ? 1 : 0);
       maybeAdaptPolicy();
+      if (internalFullRebuild) {
+        return {
+          doc: currentDoc,
+          mode: "full-fallback",
+          fallbackReason: "INTERNAL_FULL_REBUILD",
+        };
+      }
       return {
         doc: currentDoc,
         mode: "incremental",

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   type TagHandler,
+  type TextToken,
   createSimpleBlockHandlers,
   createIncrementalSession,
   createSimpleInlineHandlers,
@@ -304,6 +305,87 @@ const cases: GoldenCase[] = [
     },
   },
   {
+    name: "[Incremental/Options] external handler mutation should not affect captured snapshot",
+    run: () => {
+      const source = "$$bold(x)$$";
+      const baseHandlers = createSimpleInlineHandlers(["bold"]);
+      const handlers: Record<string, TagHandler & { meta: { unstable: boolean } }> = {
+        bold: {
+          ...baseHandlers.bold,
+          meta: { unstable: true },
+        },
+      };
+      const doc = parseIncremental(source, { handlers });
+      const snapshotHandlers = doc.parseOptions?.handlers as
+        | Record<string, TagHandler & { meta?: { unstable: boolean } }>
+        | undefined;
+      assert.equal(snapshotHandlers?.bold.meta?.unstable, true);
+
+      handlers.bold.meta.unstable = false;
+      assert.equal(snapshotHandlers?.bold.meta?.unstable, true);
+
+      const nextSource = "$$bold(y)$$";
+      const stats = captureIncrementalDebug(() => {
+        updateIncremental(
+          doc,
+          { startOffset: source.indexOf("x"), oldEndOffset: source.indexOf("x") + 1, newText: "y" },
+          nextSource,
+        );
+      });
+
+      assert.ok(stats);
+      assert.equal(stats.fellBackToFull, false);
+    },
+  },
+  {
+    name: "[Incremental/Options] equivalent fingerprint options should still replace snapshot",
+    run: () => {
+      const source = "$$bold(x)$$";
+      const inline = (tokens: TextToken[]) => ({ type: "bold", value: tokens });
+      const handlers1: Record<string, TagHandler & { meta: { mode: string } }> = {
+        bold: { inline, meta: { mode: "a" } },
+      };
+      const handlers2: Record<string, TagHandler & { meta: { mode: string } }> = {
+        bold: { inline, meta: { mode: "b" } },
+      };
+      const doc = parseIncremental(source, { handlers: handlers1 });
+      const next = updateIncremental(
+        doc,
+        { startOffset: source.indexOf("x"), oldEndOffset: source.indexOf("x") + 1, newText: "y" },
+        "$$bold(y)$$",
+        { handlers: handlers2 },
+      );
+      const snapshotHandlers = next.parseOptions?.handlers as
+        | Record<string, TagHandler & { meta?: { mode: string } }>
+        | undefined;
+
+      assert.equal(snapshotHandlers?.bold.meta?.mode, "b");
+    },
+  },
+  {
+    name: "[Incremental/Options] cyclic metadata should be snapshot-safe",
+    run: () => {
+      const source = "$$bold(x)$$";
+      const inline = (tokens: TextToken[]) => ({ type: "bold", value: tokens });
+      const meta: { mode: string; self?: unknown } = { mode: "a" };
+      meta.self = meta;
+      const handlers: Record<string, TagHandler & { meta: { mode: string; self?: unknown } }> = {
+        bold: { inline, meta },
+      };
+
+      const doc = parseIncremental(source, { handlers });
+      const snapshotHandlers = doc.parseOptions?.handlers as
+        | Record<string, TagHandler & { meta?: { mode: string; self?: unknown } }>
+        | undefined;
+      const snapshotMeta = snapshotHandlers?.bold.meta;
+
+      assert.ok(snapshotMeta);
+      assert.notEqual(snapshotMeta, meta);
+      assert.equal(snapshotMeta?.mode, "a");
+      assert.equal(snapshotMeta?.self, snapshotMeta);
+    },
+  },
+  {
     name: "[Incremental/TryUpdate] should return ok:true on valid update",
     run: () => {
       const source = "hello $$bold(world)$$";
@@ -598,7 +680,8 @@ const cases: GoldenCase[] = [
       const second = session.applyEdit(noOpEdit, source);
       const cooldown = session.applyEdit(noOpEdit, source);
 
-      assert.equal(first.mode, "incremental");
+      assert.equal(first.mode, "full-fallback");
+      assert.equal(first.fallbackReason, "INTERNAL_FULL_REBUILD");
       assert.equal(second.mode, "incremental");
       assert.equal(cooldown.mode, "full-fallback");
       assert.equal(cooldown.fallbackReason, "AUTO_COOLDOWN");
@@ -747,7 +830,7 @@ const cases: GoldenCase[] = [
     },
   },
   {
-    name: "[Incremental/Fingerprint] handlers reference stability controls reuse eligibility",
+    name: "[Incremental/Fingerprint] handlers shape controls reuse eligibility",
     run: () => {
       const handlers = createSimpleInlineHandlers(["bold"]);
       const source = "$$bold(x)$$\n$$bold(y)$$";
@@ -771,11 +854,32 @@ const cases: GoldenCase[] = [
           { handlers: { ...handlers } },
         );
       });
+      const changedHandlerStats = captureIncrementalDebug(() => {
+        updateIncremental(
+          doc,
+          { startOffset: editAt, oldEndOffset: editAt + 1, newText: "z" },
+          newSource,
+          {
+            handlers: {
+              ...handlers,
+              bold: {
+                ...handlers.bold,
+                inline: (tokens) => ({
+                  type: "bold",
+                  value: tokens,
+                }),
+              },
+            },
+          },
+        );
+      });
 
       assert.ok(stableStats);
       assert.equal(stableStats.fellBackToFull, false);
       assert.ok(recreatedStats);
-      assert.equal(recreatedStats.fellBackToFull, true);
+      assert.equal(recreatedStats.fellBackToFull, false);
+      assert.ok(changedHandlerStats);
+      assert.equal(changedHandlerStats.fellBackToFull, true);
     },
   },
   {

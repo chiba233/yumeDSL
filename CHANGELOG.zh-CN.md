@@ -5,22 +5,20 @@
 ### 1.2.3
 
 - **增量 API 导出面清理**
-  - 从包的公开导出面移除 low-level updater（`updateIncremental(...)` / `tryUpdateIncremental(...)`）
-  - 公共增量接入入口收敛为 session-first：`createIncrementalSession(...)`（`parseIncremental(...)` 用于初始化快照）
-  - 精简 session-only 的类型导出（`IncrementalSession`、`IncrementalSessionApplyMode`、`IncrementalSessionApplyResult`、`IncrementalSessionFallbackReason`、`IncrementalSessionStrategy`）
-  - options 兼容性指纹（`optionsFingerprint`）改为内部状态维护，不再暴露在 `IncrementalDocument` 公共字段中
-  - 内部仅保留 mode 级观测（`"incremental"` / `"internal-full-rebuild"`）供 session 统计使用
-- **保护逻辑回退（YAGNI + 性能方向纠偏）**
-  - 回退左侧 seam probe / 扩展重试逻辑，左回看恢复为 1 个 zone
-  - 回退基于右侧字节量的早退全量策略，避免在 cheap-shift 场景误触发全量重建
-  - 移除对应的白盒测试（仅验证分支执行，不验证正确性收益）
-- **Session auto 策略简化**
-  - 移除冗余派生指标桶（`internalFullRebuildMarks`、`reparseWorkBytes`）
-  - 自适应判断继续基于回退率与 incremental/full 耗时对比
-- **Seam probe 签名复杂度封顶**
-  - 为 seam probe 的递归签名计算增加节点预算上限（`RIGHT_REUSE_PROBE_SIGNATURE_NODE_BUDGET`）
-  - 当签名遍历成本超过预算时，保守拒绝右侧复用并回退全量重建
-  - 在 `parseIncremental(...)` 阶段预热 zone 签名缓存，并在右侧 zone 平移后继承签名，减少 probe 校验中的重复深度哈希
+  - 从公共导出中移除 low-level updater：`updateIncremental(...)` / `tryUpdateIncremental(...)`。
+  - 公共接入收敛为 session-first：`createIncrementalSession(...)`（`parseIncremental(...)` 负责初始化快照）。
+  - 精简 session-only 类型导出。
+  - `optionsFingerprint` 改为内部状态，不再暴露在 `IncrementalDocument`。
+- **Session mode 语义修正**
+  - 修复 mode 失真：当增量保护路径内部升级为全量重建时，`applyEdit(...)` 现在返回：
+    - `mode: "full-fallback"`
+    - `fallbackReason: "INTERNAL_FULL_REBUILD"`
+  - 外部监控 / benchmark 与真实执行一致。
+- **Options 快照正确性加固**
+  - `handlers` 快照升级为对 plain object/array 字段递归克隆。
+  - 为快照克隆增加循环引用保护（自引用 metadata 可安全处理）。
+  - 即使 options fingerprint 等价，只要显式传入 `applyEdit(..., options)`，该次 options 仍会被捕获并继承到会话快照。
+  - options fingerprint 计算移除 `JSON.stringify`，改为数值哈希，降低高频编辑常数开销。
 
 ### 1.2.2
 

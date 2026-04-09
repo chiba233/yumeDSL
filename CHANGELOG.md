@@ -5,22 +5,20 @@
 ### 1.2.3
 
 - **Incremental API surface cleanup**
-  - Removed low-level updater exports from package public surface (`updateIncremental(...)` / `tryUpdateIncremental(...)`)
-  - Public incremental entry is now session-first: `createIncrementalSession(...)` (+ `parseIncremental(...)` for initial snapshot)
-  - Trimmed session-only type exports from the public surface (`IncrementalSession`, `IncrementalSessionApplyMode`, `IncrementalSessionApplyResult`, `IncrementalSessionFallbackReason`, `IncrementalSessionStrategy`)
-  - Option-compatibility fingerprint (`optionsFingerprint`) is now kept as internal state and no longer exposed on `IncrementalDocument`
-  - Kept mode reporting as an internal implementation detail for session statistics (`"incremental"` / `"internal-full-rebuild"`)
-- **Guardrail rollback (YAGNI + perf direction)**
-  - Reverted left-side probe/expansion additions and restored one-zone left lookbehind
-  - Reverted shifted-right-byte early-fallback heuristics that could force full rebuild on cheap-shift cases
-  - Removed matching white-box tests that only asserted guard execution rather than correctness outcomes
-- **Session auto policy simplification**
-  - Removed redundant/derived buckets (`internalFullRebuildMarks`, `reparseWorkBytes`)
-  - Auto adaptation now continues to rely on fallback-rate and incremental-vs-full timing signals
-- **Seam probe signature complexity cap**
-  - Added a node-budget cap for seam probe recursive signatures (`RIGHT_REUSE_PROBE_SIGNATURE_NODE_BUDGET`)
-  - When signature walk cost exceeds budget, right-side reuse is denied conservatively and falls back to full rebuild
-  - Warmed zone-signature cache during `parseIncremental(...)` and carried signatures across shifted right zones to reduce repeated deep hashing during probe checks
+  - Removed low-level updater exports from public surface: `updateIncremental(...)` / `tryUpdateIncremental(...)`.
+  - Public integration is session-first: `createIncrementalSession(...)` (+ `parseIncremental(...)` for initial snapshot).
+  - Trimmed session-only type exports from public surface.
+  - `optionsFingerprint` is now internal-only and no longer exposed on `IncrementalDocument`.
+- **Session mode correctness**
+  - Fixed mode distortion: when guarded incremental path escalates to full rebuild, `applyEdit(...)` now returns:
+    - `mode: "full-fallback"`
+    - `fallbackReason: "INTERNAL_FULL_REBUILD"`
+  - External telemetry/benchmarking now matches actual execution.
+- **Options snapshot correctness hardening**
+  - `handlers` snapshot now recursively clones plain object/array fields.
+  - Added cycle protection for snapshot cloning (self-referential metadata is safe).
+  - Even when options fingerprint is equivalent, explicitly passed `applyEdit(..., options)` is still captured and carried forward in session snapshot.
+  - Fingerprint calculation no longer uses `JSON.stringify`; switched to numeric hash to reduce per-edit constant overhead.
 
 ### 1.2.2
 
