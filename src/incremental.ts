@@ -313,6 +313,11 @@ const flattenZones = (zones: readonly Zone[]): StructuralNode[] => {
   return tree;
 };
 
+const normalizeSoftZoneNodeCap = (value: number | undefined): number => {
+  if (typeof value !== "number" || !Number.isFinite(value)) return SOFT_ZONE_NODE_CAP;
+  return Math.max(2, Math.floor(value));
+};
+
 // ── 右侧复用安全门 ──
 //
 // 增量更新只在 seam probe 确认拼接缝两侧结构稳定后，才复用右侧 zone。
@@ -1073,7 +1078,7 @@ export const createIncrementalSession = (
   options?: IncrementalParseOptions,
   sessionOptions?: IncrementalSessionOptions,
 ): IncrementalSession => {
-  const zoneCap = Math.max(2, sessionOptions?.softZoneNodeCap ?? SOFT_ZONE_NODE_CAP);
+  const zoneCap = normalizeSoftZoneNodeCap(sessionOptions?.softZoneNodeCap);
   let currentDoc = parseIncrementalInternal(source, options, zoneCap);
   const strategy: IncrementalSessionStrategy = sessionOptions?.strategy ?? "auto";
   const sampleWindowSize = Math.max(4, sessionOptions?.sampleWindowSize ?? 24);

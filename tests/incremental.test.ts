@@ -54,6 +54,18 @@ const cases: GoldenCase[] = [
     },
   },
   {
+    name: "[Incremental/Init] parseIncremental may split pure-inline zones for incremental granularity",
+    run: () => {
+      const handlers = createSimpleInlineHandlers(["bold"]);
+      const source = "$$bold(x)$$ ".repeat(120);
+      const doc = parseIncremental(source, { handlers });
+      const full = parseFull(source, { handlers });
+
+      assert.deepEqual(doc.tree, full.tree);
+      assert.ok(doc.zones.length > full.zones.length);
+    },
+  },
+  {
     name: "[Incremental/Replace] updateIncremental should match full reparse",
     run: () => {
       const source = "hello $$bold(world)$$";
@@ -614,6 +626,20 @@ const cases: GoldenCase[] = [
       assert.equal(result.mode, "full-fallback");
       assert.equal(result.fallbackReason, "FULL_ONLY_STRATEGY");
       assert.equal(result.doc.source, newSource);
+    },
+  },
+  {
+    name: "[Incremental/Session] invalid softZoneNodeCap should fallback to default cap",
+    run: () => {
+      const handlers = createSimpleInlineHandlers(["bold"]);
+      const source = "$$bold(x)$$ ".repeat(120);
+      const defaultSession = createIncrementalSession(source, { handlers });
+      const invalidCapSession = createIncrementalSession(source, { handlers }, { softZoneNodeCap: Number.NaN });
+
+      assert.equal(
+        invalidCapSession.getDocument().zones.length,
+        defaultSession.getDocument().zones.length,
+      );
     },
   },
   {
