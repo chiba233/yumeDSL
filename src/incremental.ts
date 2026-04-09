@@ -73,12 +73,40 @@ const getObjectIdentity = (value: object | undefined): number => {
   return next;
 };
 
+const getIdentityForUnknown = (value: unknown): number => {
+  if ((typeof value === "object" && value !== null) || typeof value === "function") {
+    return getObjectIdentity(value);
+  }
+  return 0;
+};
+
+const buildHandlersShapeFingerprint = (handlers: unknown): number => {
+  if (!handlers || typeof handlers !== "object") return 0;
+  const record = handlers as Record<string, unknown>;
+  const keys = Object.keys(record).sort();
+  let hash = fnvInit();
+  hash = fnvFeedU32(hash, keys.length);
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    const handler = record[key];
+    hash = fnvFeedU32(hash, hashText(key));
+    hash = fnvFeedU32(hash, getIdentityForUnknown(handler));
+    if (!handler || typeof handler !== "object") continue;
+    const handlerRecord = handler as Record<string, unknown>;
+    hash = fnvFeedU32(hash, getIdentityForUnknown(handlerRecord.inline));
+    hash = fnvFeedU32(hash, getIdentityForUnknown(handlerRecord.raw));
+    hash = fnvFeedU32(hash, getIdentityForUnknown(handlerRecord.block));
+  }
+  return hash >>> 0;
+};
+
 const buildParseOptionsFingerprint = (options: IncrementalParseOptions | undefined): string => {
   if (!options) return "default";
   const syntax = options.syntax ?? {};
   const tagName = options.tagName ?? {};
   return JSON.stringify({
     handlersIdentity: getObjectIdentity(options.handlers as object | undefined),
+    handlersShape: buildHandlersShapeFingerprint(options.handlers),
     allowForms: options.allowForms ?? [],
     syntax: {
       tagOpen: syntax.tagOpen ?? "",
@@ -145,6 +173,7 @@ const NODE_TAG_BLOCK = 6;
 const ZONE_TAG = 7;
 
 const zoneSignatureCache = new WeakMap<Zone, number>();
+const parseOptionsFingerprintCache = new WeakMap<IncrementalDocument, string>();
 
 interface SignatureBudget {
   remaining: number;
@@ -168,6 +197,13 @@ export const __setIncrementalDebugSink = (sink?: IncrementalDebugSink): void => 
 };
 
 const hashText = (value: string): number => fnv1a(value);
+
+const getCachedOptionsFingerprint = (doc: IncrementalDocument): string | undefined =>
+  parseOptionsFingerprintCache.get(doc);
+
+const setCachedOptionsFingerprint = (doc: IncrementalDocument, fingerprint: string): void => {
+  parseOptionsFingerprintCache.set(doc, fingerprint);
+};
 
 const tryConsumeSignatureBudget = (budget: SignatureBudget): boolean => {
   if (budget.remaining <= 0) return false;
@@ -577,13 +613,15 @@ export const parseIncremental = (
     zoneSignature(zones[i]);
   }
   const parseOptions = cloneParseOptions(options);
-  return {
+  const fingerprint = buildParseOptionsFingerprint(parseOptions);
+  const doc = {
     source,
     tree,
     zones,
     parseOptions,
-    optionsFingerprint: buildParseOptionsFingerprint(parseOptions),
   };
+  setCachedOptionsFingerprint(doc, fingerprint);
+  return doc;
 };
 
 /**
@@ -622,7 +660,7 @@ const updateIncrementalInternal = (
 
   const parseOptions = options ? cloneParseOptions(options) : doc.parseOptions;
   const previousOptionsFingerprint =
-    doc.optionsFingerprint ?? buildParseOptionsFingerprint(doc.parseOptions);
+    getCachedOptionsFingerprint(doc) ?? buildParseOptionsFingerprint(doc.parseOptions);
   const nextOptionsFingerprint = buildParseOptionsFingerprint(parseOptions);
   if (previousOptionsFingerprint !== nextOptionsFingerprint) {
     const rebuilt = parseIncremental(newSource, parseOptions);
@@ -710,8 +748,8 @@ const updateIncrementalInternal = (
     zones,
     tree: flattenZones(zones),
     parseOptions,
-    optionsFingerprint: nextOptionsFingerprint,
   };
+  setCachedOptionsFingerprint(updated, nextOptionsFingerprint);
   emitDebug(false);
   __internalObserver?.("incremental");
   return updated;
@@ -898,7 +936,10 @@ export const createIncrementalSession = (
       const internalFullRebuild = mode === "internal-full-rebuild";
       recordBounded(fallbackMarks, internalFullRebuild ? 1 : 0);
       maybeAdaptPolicy();
-      return { doc: currentDoc, mode: "incremental" };
+      return {
+        doc: currentDoc,
+        mode: "incremental",
+      };
     }
 
     recordBounded(fallbackMarks, 1);

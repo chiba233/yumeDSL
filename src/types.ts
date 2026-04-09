@@ -360,8 +360,6 @@ export interface IncrementalDocument {
   tree: StructuralNode[];
   /** Optional parser config carried forward across updates. */
   parseOptions?: IncrementalParseOptions;
-  /** Internal compatibility fingerprint for parse options. */
-  optionsFingerprint?: string;
 }
 
 export type IncrementalUpdateErrorCode =

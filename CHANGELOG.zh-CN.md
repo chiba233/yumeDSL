@@ -7,7 +7,8 @@
 - **增量 API 导出面清理**
   - 从包的公开导出面移除 low-level updater（`updateIncremental(...)` / `tryUpdateIncremental(...)`）
   - 公共增量接入入口收敛为 session-first：`createIncrementalSession(...)`（`parseIncremental(...)` 用于初始化快照）
-  - 精简 session-only 的类型导出；推荐从 `ReturnType<typeof createIncrementalSession>` 推导 session 级类型
+  - 精简 session-only 的类型导出（`IncrementalSession`、`IncrementalSessionApplyMode`、`IncrementalSessionApplyResult`、`IncrementalSessionFallbackReason`、`IncrementalSessionStrategy`）
+  - options 兼容性指纹（`optionsFingerprint`）改为内部状态维护，不再暴露在 `IncrementalDocument` 公共字段中
   - 内部仅保留 mode 级观测（`"incremental"` / `"internal-full-rebuild"`）供 session 统计使用
 - **保护逻辑回退（YAGNI + 性能方向纠偏）**
   - 回退左侧 seam probe / 扩展重试逻辑，左回看恢复为 1 个 zone
