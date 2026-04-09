@@ -11,6 +11,7 @@ import {
   tryUpdateIncremental,
   updateIncremental,
 } from "../src/index.ts";
+import { __setIncrementalDebugSink } from "../src/incremental.ts";
 import { runGoldenCases, type GoldenCase } from "./testHarness.ts";
 
 const parseFull = (source: string, options?: Parameters<typeof parseStructural>[1]) => {
@@ -21,6 +22,21 @@ const parseFull = (source: string, options?: Parameters<typeof parseStructural>[
 
 const applyEdit = (source: string, start: number, end: number, newText: string): string =>
   source.slice(0, start) + newText + source.slice(end);
+
+const captureIncrementalDebug = (run: () => void) => {
+  let captured:
+    | { cumulativeReparsedBytes: number; probeSliceBytes: number; fellBackToFull: boolean }
+    | undefined;
+  __setIncrementalDebugSink((stats) => {
+    captured = stats;
+  });
+  try {
+    run();
+  } finally {
+    __setIncrementalDebugSink(undefined);
+  }
+  return captured;
+};
 
 const cases: GoldenCase[] = [
   {
@@ -611,6 +627,168 @@ const cases: GoldenCase[] = [
       const rebuilt = session.rebuild("$$bold(y)$$");
       assert.equal(rebuilt.source, "$$bold(y)$$");
       assert.equal(session.getDocument().source, "$$bold(y)$$");
+    },
+  },
+  {
+    name: "[Incremental/Probe] stable seam should keep incremental path",
+    run: () => {
+      const source = "L\n$$code(ts)%\nA\n%end$$\nM\n$$note()*\nB\n*end$$\nR";
+      const doc = parseIncremental(source);
+      const editAt = source.indexOf("L");
+      const newSource = applyEdit(source, editAt, editAt + 1, "X");
+
+      let next = doc;
+      const stats = captureIncrementalDebug(() => {
+        next = updateIncremental(doc, { startOffset: editAt, oldEndOffset: editAt + 1, newText: "X" }, newSource);
+      });
+      const full = parseFull(newSource);
+
+      assert.ok(stats);
+      assert.equal(stats.fellBackToFull, false);
+      assert.ok(stats.probeSliceBytes > 0);
+      assert.deepEqual(next.tree, full.tree);
+      assert.deepEqual(next.zones, full.zones);
+    },
+  },
+  {
+    name: "[Incremental/Probe] unstable seam should fallback to full rebuild",
+    run: () => {
+      const source = "L\n$$code(ts)%\nA\n%end$$\nM\n$$note()*\nB\n*end$$\nR";
+      const doc = parseIncremental(source);
+      assert.ok(doc.zones.length >= 5);
+      const editAt = source.indexOf("L");
+      const newSource = applyEdit(source, editAt, editAt + 1, "X");
+
+      const zones = [...doc.zones];
+      const mismatchedRight = zones[2];
+      assert.ok(mismatchedRight.nodes.length > 0);
+      const firstNode = mismatchedRight.nodes[0];
+      if (firstNode.type !== "text") {
+        throw new Error("expected first right-zone node to be text");
+      }
+      const mutatedNodes = [...mismatchedRight.nodes];
+      mutatedNodes[0] = { ...firstNode, value: `${firstNode.value}!` };
+      zones[2] = { ...mismatchedRight, nodes: mutatedNodes };
+      const malformedDoc = { ...doc, zones };
+
+      let next = doc;
+      const stats = captureIncrementalDebug(() => {
+        next = updateIncremental(
+          malformedDoc,
+          { startOffset: editAt, oldEndOffset: editAt + 1, newText: "X" },
+          newSource,
+        );
+      });
+      const full = parseFull(newSource);
+
+      assert.ok(stats);
+      assert.equal(stats.fellBackToFull, true);
+      assert.deepEqual(next.tree, full.tree);
+      assert.deepEqual(next.zones, full.zones);
+    },
+  },
+  {
+    name: "[Incremental/Fingerprint] syntax and allowForms changes should force fallback",
+    run: () => {
+      const handlers = createSimpleInlineHandlers(["bold"]);
+      const source = "$$bold(x)$$";
+      const doc = parseIncremental(source, { handlers });
+
+      const newSource = "$$bold(y)$$";
+      const syntaxStats = captureIncrementalDebug(() => {
+        updateIncremental(
+          doc,
+          { startOffset: source.indexOf("x"), oldEndOffset: source.indexOf("x") + 1, newText: "y" },
+          newSource,
+          { handlers, syntax: { tagOpen: "@@" } },
+        );
+      });
+
+      const formsStats = captureIncrementalDebug(() => {
+        updateIncremental(
+          doc,
+          { startOffset: source.indexOf("x"), oldEndOffset: source.indexOf("x") + 1, newText: "y" },
+          newSource,
+          { handlers, allowForms: ["raw"] },
+        );
+      });
+
+      assert.ok(syntaxStats);
+      assert.equal(syntaxStats.fellBackToFull, true);
+      assert.ok(formsStats);
+      assert.equal(formsStats.fellBackToFull, true);
+    },
+  },
+  {
+    name: "[Incremental/Fingerprint] handlers reference stability controls reuse eligibility",
+    run: () => {
+      const handlers = createSimpleInlineHandlers(["bold"]);
+      const source = "$$bold(x)$$\n$$bold(y)$$";
+      const doc = parseIncremental(source, { handlers });
+      const editAt = source.indexOf("x");
+      const newSource = applyEdit(source, editAt, editAt + 1, "z");
+
+      const stableStats = captureIncrementalDebug(() => {
+        updateIncremental(
+          doc,
+          { startOffset: editAt, oldEndOffset: editAt + 1, newText: "z" },
+          newSource,
+          { handlers },
+        );
+      });
+      const recreatedStats = captureIncrementalDebug(() => {
+        updateIncremental(
+          doc,
+          { startOffset: editAt, oldEndOffset: editAt + 1, newText: "z" },
+          newSource,
+          { handlers: { ...handlers } },
+        );
+      });
+
+      assert.ok(stableStats);
+      assert.equal(stableStats.fellBackToFull, false);
+      assert.ok(recreatedStats);
+      assert.equal(recreatedStats.fellBackToFull, true);
+    },
+  },
+  {
+    name: "[Incremental/Probe] extra margin should expand probe slice beyond compared zones",
+    run: () => {
+      const source = "L\n$$code(ts)%\nA\n%end$$\nM\n$$note()*\nB\n*end$$\nR";
+      const doc = parseIncremental(source);
+      assert.ok(doc.zones.length >= 5);
+
+      const editAt = source.indexOf("L");
+      const newSource = applyEdit(source, editAt, editAt + 1, "X");
+      const stats = captureIncrementalDebug(() => {
+        updateIncremental(doc, { startOffset: editAt, oldEndOffset: editAt + 1, newText: "X" }, newSource);
+      });
+
+      const expectedProbeBytes = doc.zones[4].endOffset - doc.zones[2].startOffset;
+      assert.ok(stats);
+      assert.equal(stats.probeSliceBytes, expectedProbeBytes);
+    },
+  },
+  {
+    name: "[Incremental/PerfGuard] long-doc head edit should keep reparse bytes bounded",
+    run: () => {
+      const parts: string[] = ["HEAD"];
+      for (let i = 0; i < 220; i++) {
+        parts.push(`$$code(ts)%\n${i}\n%end$$`);
+        parts.push(`plain-${i}`);
+      }
+      const source = parts.join("\n");
+      assert.ok(source.length > 4000);
+
+      const doc = parseIncremental(source);
+      const newSource = applyEdit(source, 0, 1, "h");
+      const stats = captureIncrementalDebug(() => {
+        updateIncremental(doc, { startOffset: 0, oldEndOffset: 1, newText: "h" }, newSource);
+      });
+
+      assert.ok(stats);
+      const touchedBytes = stats.cumulativeReparsedBytes + stats.probeSliceBytes;
+      assert.ok(touchedBytes < source.length / 4, `touched=${touchedBytes}, source=${source.length}`);
     },
   },
 ];

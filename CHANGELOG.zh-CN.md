@@ -2,6 +2,25 @@
 
 # 更新日志
 
+### 1.2.2
+
+- **增量正确性加固（右侧复用安全门）**
+  - `updateIncremental(...)` 不再仅凭拼接边界复用右侧 zones；新增 seam probe 窗口校验
+  - 当探测区的 zone 结构 / 签名不一致时，拒绝复用并自动回退全量重建
+  - 增加 probe 窗口常量与额外 margin zone，降低 seam 邻近闭合场景下的误判回退
+- **增量选项兼容指纹**
+  - 在增量文档快照中新增内部 `optionsFingerprint`
+  - 复用前统一比较规范化 parse-options 指纹（syntax / allowForms / handlers 引用身份 / tagName 引用身份）
+  - 在类型说明中明确：保持 `handlers` 引用稳定可提升增量复用命中率
+- **哈希内部实现收敛**
+  - 新增共享 `src/hash.ts`（FNV 工具）
+  - 增量 seam 签名与 stable-id 内部实现统一复用共享哈希能力
+  - 移除重复的本地哈希实现
+- **增量可观测性与回归测试**
+  - 新增内部 debug sink（用于测试采集重解析 / probe 统计）
+  - 扩充 incremental 用例：seam 命中 / 拒绝、fingerprint 触发回退、handlers 引用稳定性、extra-margin、生长文档性能 guard
+- 现有 `parseRichText` / `parseStructural` 等公共 API 无破坏性变更
+
 ### 1.2.1
 
 - **新增 API：`createIncrementalSession(...)`**

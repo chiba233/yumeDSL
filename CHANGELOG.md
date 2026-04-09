@@ -2,6 +2,25 @@
 
 # Changelog
 
+### 1.2.2
+
+- **Incremental correctness hardening (right-side reuse gate)**
+  - `updateIncremental(...)` now validates right-side reuse with a seam probe window instead of trusting stitched-zone boundaries alone
+  - Reuse is denied (and full rebuild is used) when probe-zone structure/signature mismatches are detected
+  - Added probe-window constants and extra-zone margin to reduce false negatives around seam-adjacent closures
+- **Incremental option-compatibility fingerprint**
+  - Added internal `optionsFingerprint` snapshot on incremental documents
+  - Reuse is now guarded by normalized parse-option fingerprint comparison (syntax / allowForms / handlers identity / tagName identity)
+  - Added explicit note that keeping `handlers` reference stable improves incremental reuse
+- **Hashing internals consolidated**
+  - Added shared `src/hash.ts` (FNV helpers)
+  - Refactored both incremental seam signatures and stable-id internals to reuse shared hash utilities
+  - Removed duplicated local hash routines
+- **Incremental observability + regression tests**
+  - Added internal debug sink hook for incremental reparse/probe counters (test instrumentation path)
+  - Expanded incremental test coverage with seam-accept / seam-reject / fingerprint fallback / handlers identity / extra-margin / long-doc perf-guard cases
+- No breaking changes to public `parseRichText` / `parseStructural` APIs
+
 ### 1.2.1
 
 - **New API: `createIncrementalSession(...)`**

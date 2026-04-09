@@ -1,4 +1,5 @@
 import type { CreateId, TextToken, TokenDraft } from "./types.js";
+import { fnv1a, fnvFeedString, fnvFeedU32, fnvInit } from "./hash.js";
 
 export interface EasyStableIdOptions {
   /** Prefix prepended to every generated ID. Default: `"s"`. */
@@ -30,43 +31,6 @@ export interface EasyStableIdOptions {
   fingerprint?: (token: TokenDraft) => string;
 }
 
-// ── FNV-1a 32-bit ──
-
-const FNV_OFFSET = 0x811c9dc5;
-const FNV_PRIME = 0x01000193;
-
-/** FNV-1a 32-bit hash from a complete string. */
-const fnv1a = (input: string): number => {
-  let h = FNV_OFFSET;
-  for (let i = 0; i < input.length; i++) {
-    h ^= input.charCodeAt(i);
-    h = Math.imul(h, FNV_PRIME);
-  }
-  return h >>> 0;
-};
-
-/** Feed a string segment into a running FNV-1a state, return updated state. */
-const feed = (h: number, s: string): number => {
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, FNV_PRIME);
-  }
-  return h;
-};
-
-/** Feed a uint32 (4 bytes, little-endian) into a running FNV-1a state. */
-const feedU32 = (h: number, v: number): number => {
-  h ^= v & 0xff;
-  h = Math.imul(h, FNV_PRIME);
-  h ^= (v >>> 8) & 0xff;
-  h = Math.imul(h, FNV_PRIME);
-  h ^= (v >>> 16) & 0xff;
-  h = Math.imul(h, FNV_PRIME);
-  h ^= (v >>> 24) & 0xff;
-  h = Math.imul(h, FNV_PRIME);
-  return h;
-};
-
 /**
  * Compute a standalone FNV-1a hash for a TokenDraft.
  *
@@ -80,18 +44,18 @@ const feedU32 = (h: number, v: number): number => {
  * bottom-up — no recursion, fully stack-safe.
  */
 const hashDraft = (root: TokenDraft, arrayCache: WeakMap<TextToken[], number>): number => {
-  let h = FNV_OFFSET;
-  h = feed(h, root.type);
+  let h = fnvInit();
+  h = fnvFeedString(h, root.type);
 
   if (typeof root.value === "string") {
-    h = feed(h, ":");
-    return feed(h, root.value) >>> 0;
+    h = fnvFeedString(h, ":");
+    return fnvFeedString(h, root.value) >>> 0;
   }
 
   const rootArr = root.value;
   const cachedRoot = arrayCache.get(rootArr);
   if (cachedRoot !== undefined) {
-    return feedU32(feed(h, ":"), cachedRoot) >>> 0;
+    return fnvFeedU32(fnvFeedString(h, ":"), cachedRoot) >>> 0;
   }
 
   // ── 迭代收集 + 自底向上哈希 ──
@@ -118,22 +82,22 @@ const hashDraft = (root: TokenDraft, arrayCache: WeakMap<TextToken[], number>): 
   // 逆序处理：叶子数组先算，父数组后算，保证子数组哈希在需要时已就绪
   for (let i = uncached.length - 1; i >= 0; i--) {
     const arr = uncached[i];
-    let ah = FNV_OFFSET;
+    let ah = fnvInit();
     for (let j = 0; j < arr.length; j++) {
-      if (j > 0) ah = feed(ah, ",");
+      if (j > 0) ah = fnvFeedString(ah, ",");
       const child = arr[j];
-      ah = feed(ah, child.type);
-      ah = feed(ah, ":");
+      ah = fnvFeedString(ah, child.type);
+      ah = fnvFeedString(ah, ":");
       if (typeof child.value === "string") {
-        ah = feed(ah, child.value);
+        ah = fnvFeedString(ah, child.value);
       } else {
-        ah = feedU32(ah, arrayCache.get(child.value)!);
+        ah = fnvFeedU32(ah, arrayCache.get(child.value)!);
       }
     }
     arrayCache.set(arr, ah >>> 0);
   }
 
-  return feedU32(feed(h, ":"), arrayCache.get(rootArr)!) >>> 0;
+  return fnvFeedU32(fnvFeedString(h, ":"), arrayCache.get(rootArr)!) >>> 0;
 };
 
 /**

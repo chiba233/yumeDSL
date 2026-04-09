@@ -333,6 +333,7 @@ export interface Zone {
  *
  * Position fields are always tracked internally and cannot be overridden.
  * `baseOffset` / `tracker` are also internal for incremental updates.
+ * For better incremental reuse, keep `handlers` reference stable across edits.
  */
 export type IncrementalParseOptions = Omit<
   StructuralParseOptions,
@@ -359,6 +360,8 @@ export interface IncrementalDocument {
   tree: StructuralNode[];
   /** Optional parser config carried forward across updates. */
   parseOptions?: IncrementalParseOptions;
+  /** Internal compatibility fingerprint for parse options. */
+  optionsFingerprint?: string;
 }
 
 export type IncrementalUpdateErrorCode =

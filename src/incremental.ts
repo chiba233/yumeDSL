@@ -1,5 +1,6 @@
 import { buildPositionTracker } from "./positions.js";
 import { parseStructural } from "./structural.js";
+import { fnv1a, fnvFeedU32, fnvInit } from "./hash.js";
 import type {
   IncrementalDocument,
   IncrementalEdit,
@@ -59,6 +60,43 @@ const cloneParseOptions = (
   };
 };
 
+let objectIdentitySeed = 1;
+const objectIdentityMap = new WeakMap<object, number>();
+
+const getObjectIdentity = (value: object | undefined): number => {
+  if (!value) return 0;
+  const cached = objectIdentityMap.get(value);
+  if (cached) return cached;
+  const next = objectIdentitySeed;
+  objectIdentitySeed += 1;
+  objectIdentityMap.set(value, next);
+  return next;
+};
+
+const buildParseOptionsFingerprint = (options: IncrementalParseOptions | undefined): string => {
+  if (!options) return "default";
+  const syntax = options.syntax ?? {};
+  const tagName = options.tagName ?? {};
+  return JSON.stringify({
+    handlersIdentity: getObjectIdentity(options.handlers as object | undefined),
+    allowForms: options.allowForms ?? [],
+    syntax: {
+      tagOpen: syntax.tagOpen ?? "",
+      tagClose: syntax.tagClose ?? "",
+      endTag: syntax.endTag ?? "",
+      tagDivider: syntax.tagDivider ?? "",
+      rawOpen: syntax.rawOpen ?? "",
+      rawClose: syntax.rawClose ?? "",
+      blockOpen: syntax.blockOpen ?? "",
+      blockClose: syntax.blockClose ?? "",
+    },
+    tagName: {
+      startIdentity: getObjectIdentity(tagName.isTagStartChar as object | undefined),
+      charIdentity: getObjectIdentity(tagName.isTagChar as object | undefined),
+    },
+  });
+};
+
 const hasUnsafeZoneCoverageTailGap = (doc: IncrementalDocument, edit: IncrementalEdit): boolean => {
   const lastZone = doc.zones[doc.zones.length - 1];
   if (!lastZone) return false;
@@ -87,6 +125,148 @@ const flattenZones = (zones: readonly Zone[]): StructuralNode[] => {
     tree.push(...zone.nodes);
   }
   return tree;
+};
+
+// Right-reuse safety gate:
+// `updateIncremental(...)` only reuses shifted right-side zones after a seam probe reparse
+// confirms boundary-adjacent structure remains stable. Mismatch => full rebuild.
+
+const RIGHT_REUSE_PROBE_ZONES = 2;
+const RIGHT_REUSE_PROBE_EXTRA_ZONES = 1;
+
+const NODE_TAG_TEXT = 1;
+const NODE_TAG_ESCAPE = 2;
+const NODE_TAG_SEPARATOR = 3;
+const NODE_TAG_INLINE = 4;
+const NODE_TAG_RAW = 5;
+const NODE_TAG_BLOCK = 6;
+const ZONE_TAG = 7;
+
+const zoneSignatureCache = new WeakMap<Zone, number>();
+
+interface IncrementalDebugStats {
+  cumulativeReparsedBytes: number;
+  probeSliceBytes: number;
+  fellBackToFull: boolean;
+}
+
+type IncrementalDebugSink = (stats: IncrementalDebugStats) => void;
+
+let incrementalDebugSink: IncrementalDebugSink | undefined;
+
+/** @internal test-only hook */
+export const __setIncrementalDebugSink = (sink?: IncrementalDebugSink): void => {
+  incrementalDebugSink = sink;
+};
+
+const hashText = (value: string): number => fnv1a(value);
+
+const nodeSignature = (node: StructuralNode): number => {
+  if (node.type === "text") {
+    let hash = fnvInit();
+    hash = fnvFeedU32(hash, NODE_TAG_TEXT);
+    hash = fnvFeedU32(hash, node.value.length);
+    hash = fnvFeedU32(hash, hashText(node.value));
+    return hash >>> 0;
+  }
+  if (node.type === "escape") {
+    let hash = fnvInit();
+    hash = fnvFeedU32(hash, NODE_TAG_ESCAPE);
+    hash = fnvFeedU32(hash, node.raw.length);
+    hash = fnvFeedU32(hash, hashText(node.raw));
+    return hash >>> 0;
+  }
+  if (node.type === "separator") {
+    return NODE_TAG_SEPARATOR;
+  }
+  if (node.type === "inline") {
+    let hash = fnvInit();
+    hash = fnvFeedU32(hash, NODE_TAG_INLINE);
+    hash = fnvFeedU32(hash, hashText(node.tag));
+    for (let i = 0; i < node.children.length; i++) {
+      hash = fnvFeedU32(hash, nodeSignature(node.children[i]));
+    }
+    return hash >>> 0;
+  }
+  if (node.type === "raw") {
+    let hash = fnvInit();
+    hash = fnvFeedU32(hash, NODE_TAG_RAW);
+    hash = fnvFeedU32(hash, hashText(node.tag));
+    hash = fnvFeedU32(hash, node.content.length);
+    hash = fnvFeedU32(hash, hashText(node.content));
+    for (let i = 0; i < node.args.length; i++) {
+      hash = fnvFeedU32(hash, nodeSignature(node.args[i]));
+    }
+    return hash >>> 0;
+  }
+  if (node.type === "block") {
+    let hash = fnvInit();
+    hash = fnvFeedU32(hash, NODE_TAG_BLOCK);
+    hash = fnvFeedU32(hash, hashText(node.tag));
+    for (let i = 0; i < node.args.length; i++) {
+      hash = fnvFeedU32(hash, nodeSignature(node.args[i]));
+    }
+    for (let i = 0; i < node.children.length; i++) {
+      hash = fnvFeedU32(hash, nodeSignature(node.children[i]));
+    }
+    return hash >>> 0;
+  }
+  return assertUnreachable(node);
+};
+
+const zoneSignature = (zone: Zone): number => {
+  const cached = zoneSignatureCache.get(zone);
+  if (cached !== undefined) return cached;
+  let hash = fnvInit();
+  hash = fnvFeedU32(hash, ZONE_TAG);
+  hash = fnvFeedU32(hash, zone.endOffset - zone.startOffset);
+  for (let i = 0; i < zone.nodes.length; i++) {
+    hash = fnvFeedU32(hash, nodeSignature(zone.nodes[i]));
+  }
+  const finalized = hash >>> 0;
+  zoneSignatureCache.set(zone, finalized);
+  return finalized;
+};
+
+const isSafeRightReuse = (
+  oldRightZones: readonly Zone[],
+  newSource: string,
+  seamNewOffset: number,
+  delta: number,
+  tracker: PositionTracker,
+  parseOptions: IncrementalParseOptions | undefined,
+): { ok: boolean; probeSliceBytes: number } => {
+  if (oldRightZones.length === 0) return { ok: true, probeSliceBytes: 0 };
+
+  const probeZoneCount = Math.min(RIGHT_REUSE_PROBE_ZONES, oldRightZones.length);
+  const probeWindowZoneCount = Math.min(
+    oldRightZones.length,
+    probeZoneCount + RIGHT_REUSE_PROBE_EXTRA_ZONES,
+  );
+  const probeStartOld = oldRightZones[0].startOffset;
+  const probeEndOld = oldRightZones[probeWindowZoneCount - 1].endOffset;
+  const probeLength = probeEndOld - probeStartOld;
+  const probeEndNew = seamNewOffset + probeLength;
+
+  const probeTree = parseWithPositions(
+    newSource.slice(seamNewOffset, probeEndNew),
+    tracker,
+    parseOptions,
+    seamNewOffset,
+  );
+  const probeZones = buildZones(probeTree);
+  if (probeZones.length < probeZoneCount) return { ok: false, probeSliceBytes: probeLength };
+
+  for (let i = 0; i < probeZoneCount; i++) {
+    const expected = oldRightZones[i];
+    const actual = probeZones[i];
+    if (actual.startOffset !== expected.startOffset + delta) return { ok: false, probeSliceBytes: probeLength };
+    if (actual.endOffset !== expected.endOffset + delta) return { ok: false, probeSliceBytes: probeLength };
+    if (actual.nodes.length !== expected.nodes.length) return { ok: false, probeSliceBytes: probeLength };
+    if (zoneSignature(actual) !== zoneSignature(expected)) return { ok: false, probeSliceBytes: probeLength };
+  }
+
+  return { ok: true, probeSliceBytes: probeLength };
 };
 
 const mapOldOffsetToNew = (edit: IncrementalEdit, delta: number, oldOffset: number): number => {
@@ -288,11 +468,13 @@ export const parseIncremental = (
   const tracker = buildPositionTracker(source);
   const tree = parseWithPositions(source, tracker, options);
   const zones = buildZones(tree);
+  const parseOptions = cloneParseOptions(options);
   return {
     source,
     tree,
     zones,
-    parseOptions: cloneParseOptions(options),
+    parseOptions,
+    optionsFingerprint: buildParseOptionsFingerprint(parseOptions),
   };
 };
 
@@ -318,22 +500,43 @@ export const updateIncremental = (
   options?: IncrementalParseOptions,
 ): IncrementalDocument => {
   assertValidEdit(doc, edit, newSource);
+  let cumulativeReparsedBytes = 0;
+  let probeSliceBytes = 0;
+  const emitDebug = (fellBackToFull: boolean) => {
+    incrementalDebugSink?.({
+      cumulativeReparsedBytes,
+      probeSliceBytes,
+      fellBackToFull,
+    });
+  };
+
+  const parseOptions = options ? cloneParseOptions(options) : doc.parseOptions;
+  const previousOptionsFingerprint =
+    doc.optionsFingerprint ?? buildParseOptionsFingerprint(doc.parseOptions);
+  const nextOptionsFingerprint = buildParseOptionsFingerprint(parseOptions);
+  if (previousOptionsFingerprint !== nextOptionsFingerprint) {
+    const rebuilt = parseIncremental(newSource, parseOptions);
+    emitDebug(true);
+    return rebuilt;
+  }
 
   // Fast path: empty cache means no incremental reuse is possible.
   if (doc.zones.length === 0) {
-    return parseIncremental(newSource, options ?? doc.parseOptions);
+    const rebuilt = parseIncremental(newSource, parseOptions);
+    emitDebug(true);
+    return rebuilt;
   }
 
   // Defensive fallback for malformed snapshots where zones do not cover the tail.
   // Normal parser output should not hit this branch.
   if (hasUnsafeZoneCoverageTailGap(doc, edit)) {
-    return parseIncremental(newSource, options ?? doc.parseOptions);
+    const rebuilt = parseIncremental(newSource, parseOptions);
+    emitDebug(true);
+    return rebuilt;
   }
 
-  const parseOptions = options ? cloneParseOptions(options) : doc.parseOptions;
   const newTracker = buildPositionTracker(newSource);
   const cumulativeBudget = Math.max(newSource.length * 2, 1024);
-  let cumulativeReparsedBytes = 0;
 
   const delta = newSource.length - doc.source.length;
   const dirty = findDirtyRange(doc.zones, edit);
@@ -354,7 +557,9 @@ export const updateIncremental = (
     cumulativeReparsedBytes += reparsedWindowSize;
 
     if (cumulativeReparsedBytes > cumulativeBudget) {
-      return parseIncremental(newSource, parseOptions);
+      const rebuilt = parseIncremental(newSource, parseOptions);
+      emitDebug(true);
+      return rebuilt;
     }
 
     const dirtyTree = parseWithPositions(
@@ -375,18 +580,38 @@ export const updateIncremental = (
   }
 
   const leftZones = doc.zones.slice(0, dirtyFrom);
-  const rightZones = doc.zones
-    .slice(dirtyTo + 1)
-    .map((zone) => shiftZone(zone, delta, newTracker));
+  const oldRightZones = doc.zones.slice(dirtyTo + 1);
+  if (oldRightZones.length > 0) {
+    const seamOldOffset = oldRightZones[0].startOffset;
+    const seamNewOffset = mapOldOffsetToNew(edit, delta, seamOldOffset);
+    const rightReuseCheck = isSafeRightReuse(
+      oldRightZones,
+      newSource,
+      seamNewOffset,
+      delta,
+      newTracker,
+      parseOptions,
+    );
+    probeSliceBytes = rightReuseCheck.probeSliceBytes;
+    if (!rightReuseCheck.ok) {
+      const rebuilt = parseIncremental(newSource, parseOptions);
+      emitDebug(true);
+      return rebuilt;
+    }
+  }
+  const rightZones = oldRightZones.map((zone) => shiftZone(zone, delta, newTracker));
 
   const zones = [...leftZones, ...dirtyZones, ...rightZones];
 
-  return {
+  const updated = {
     source: newSource,
     zones,
     tree: flattenZones(zones),
     parseOptions,
+    optionsFingerprint: nextOptionsFingerprint,
   };
+  emitDebug(false);
+  return updated;
 };
 
 /**
