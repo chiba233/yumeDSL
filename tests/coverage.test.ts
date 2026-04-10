@@ -26,6 +26,10 @@ import type { StructuralNode, TagHandler, TextToken } from "../src/types.ts";
 import { renderNodes, type RenderContext } from "../src/render.ts";
 import { parseStructuralWithResolved } from "../src/structural.ts";
 import { resolveBaseOptions } from "../src/resolveOptions.ts";
+import { DEFAULT_SYNTAX, createSyntax } from "../src/syntax.ts";
+import { DEFAULT_TAG_NAME, createTagNameConfig } from "../src/chars.ts";
+import { findInlineClose, getTagCloserType, readTagStartInfo, skipTagBoundary } from "../src/scanner.ts";
+import { fnvFeedString, fnvFeedStringBounded, fnvInit } from "../src/hash.ts";
 
 // ── Helpers ──
 
@@ -424,6 +428,73 @@ const cases: GoldenCase[] = [
       const normalized = normalizeTokens(tokens);
       assert.equal(normalized.length, 1);
       assert.equal((normalized[0] as { type: string }).type, "code");
+    },
+  },
+  {
+    name: "[Coverage/Scanner] findInlineClose should skip escaped endTag candidate",
+    run() {
+      const syntax = createSyntax();
+      const tagName = createTagNameConfig();
+      const input = "$$bold(aa\\)$$bb)$$";
+      const info = readTagStartInfo(input, 0, syntax, tagName);
+      assert.ok(info);
+      const closeStart = findInlineClose(input, info.argStart, syntax, tagName);
+      assert.equal(closeStart, input.lastIndexOf(syntax.endTag));
+    },
+  },
+  {
+    name: "[Coverage/Scanner] skipTagBoundary raw path should return contentStart on missing close",
+    run() {
+      const syntax = createSyntax();
+      const tagName = createTagNameConfig();
+      const input = "$$code(js)%\nraw without close";
+      const info = readTagStartInfo(input, 0, syntax, tagName);
+      assert.ok(info);
+
+      const closerInfo = getTagCloserType(input, info.tagNameEnd + syntax.tagOpen.length, syntax);
+      assert.ok(closerInfo);
+      assert.equal(closerInfo.closer, syntax.rawClose);
+
+      const contentStart = closerInfo.argClose + syntax.rawOpen.length;
+      const boundary = skipTagBoundary(input, info, syntax, tagName);
+      assert.equal(boundary, contentStart);
+    },
+  },
+  {
+    name: "[Coverage/Scanner] skipTagBoundary raw path should jump past rawClose when close exists",
+    run() {
+      const syntax = createSyntax();
+      const tagName = createTagNameConfig();
+      const input = "$$code(js)%\nx\n%end$$\ntail";
+      const info = readTagStartInfo(input, 0, syntax, tagName);
+      assert.ok(info);
+      const boundary = skipTagBoundary(input, info, syntax, tagName);
+      assert.equal(boundary, input.indexOf("%end$$") + syntax.rawClose.length);
+    },
+  },
+  {
+    name: "[Coverage/Hash] fnvFeedStringBounded should hash head+tail for long inputs",
+    run() {
+      const long = "H".repeat(32) + "MIDDLE-IGNORED" + "T".repeat(32);
+      assert.ok(long.length > 64);
+
+      const bounded = fnvFeedStringBounded(fnvInit(), long);
+      const expected = fnvFeedString(
+        fnvFeedString(fnvInit(), long.slice(0, 32)),
+        long.slice(long.length - 32),
+      );
+      assert.equal(bounded, expected >>> 0);
+    },
+  },
+  {
+    name: "[Coverage/Hash] fnvFeedStringBounded middle-diff long inputs should collide by design",
+    run() {
+      const head = "A".repeat(32);
+      const tail = "Z".repeat(32);
+      const a = `${head}middle-one${tail}`;
+      const b = `${head}middle-two${tail}`;
+      assert.ok(a.length > 64 && b.length > 64);
+      assert.equal(fnvFeedStringBounded(fnvInit(), a), fnvFeedStringBounded(fnvInit(), b));
     },
   },
 ];

@@ -616,6 +616,130 @@ const cases: GoldenCase[] = [
     },
   },
   {
+    name: "[Incremental/LazyShift] materializing reused right zones should shift nested nodes without positions",
+    run: () => {
+      const source = [
+        "HEAD",
+        "$$code(ts)%",
+        "A",
+        "%end$$",
+        "MID",
+        "$$note(title)*",
+        "$$bold(x)$$",
+        "*end$$",
+        "TAIL",
+      ].join("\n");
+      const doc = parseIncremental(source);
+      assert.ok(doc.zones.length >= 5, `expected >=5 zones, got ${doc.zones.length}`);
+
+      const stripNodePosition = (
+        node: (typeof doc.zones)[number]["nodes"][number],
+      ): (typeof doc.zones)[number]["nodes"][number] => {
+        if (node.type === "text") return { type: "text", value: node.value } as const;
+        if (node.type === "escape") return { type: "escape", raw: node.raw } as const;
+        if (node.type === "separator") return { type: "separator" } as const;
+        if (node.type === "inline") {
+          return {
+            type: "inline",
+            tag: node.tag,
+            children: node.children.map(stripNodePosition),
+          } as const;
+        }
+        if (node.type === "raw") {
+          return {
+            type: "raw",
+            tag: node.tag,
+            args: node.args.map(stripNodePosition),
+            content: node.content,
+          } as const;
+        }
+        return {
+          type: "block",
+          tag: node.tag,
+          args: node.args.map(stripNodePosition),
+          children: node.children.map(stripNodePosition),
+        } as const;
+      };
+
+      const zones = [...doc.zones];
+      const rightIndex = zones.length - 1;
+      zones[rightIndex] = {
+        ...zones[rightIndex],
+        nodes: zones[rightIndex].nodes.map(stripNodePosition),
+      };
+      const malformedDoc = { ...doc, zones };
+
+      const insertAt = 1;
+      const newText = "X";
+      const newSource = applyEdit(source, insertAt, insertAt, newText);
+      const next = updateIncremental(
+        malformedDoc,
+        { startOffset: insertAt, oldEndOffset: insertAt, newText },
+        newSource,
+      );
+
+      // Force lazy materialization path (materializeZone -> shiftNode).
+      assert.ok(next.zones.length > 0);
+      assert.ok(next.tree.length > 0);
+    },
+  },
+  {
+    name: "[Incremental/LazyShift] materialization should surface unsupported frame source type",
+    run: () => {
+      const source = [
+        "HEAD",
+        "$$code(ts)%",
+        "A",
+        "%end$$",
+        "MID",
+        "$$code(js)%",
+        "B",
+        "%end$$",
+        "TAIL",
+      ].join("\n");
+      const doc = parseIncremental(source);
+      assert.ok(doc.zones.length >= 5, `expected >=5 zones, got ${doc.zones.length}`);
+
+      let shiftNodeTypeReads = 0;
+      const flippingNode = {
+        tag: "bold",
+        children: [],
+      } as Record<string, unknown>;
+      Object.defineProperty(flippingNode, "type", {
+        configurable: true,
+        enumerable: true,
+        get: () => {
+          const stack = String(new Error().stack ?? "");
+          if (!stack.includes("shiftNode")) return "inline";
+          shiftNodeTypeReads += 1;
+          if (shiftNodeTypeReads === 1) return "inline";
+          return "inline-corrupted";
+        },
+      });
+
+      const zones = [...doc.zones];
+      const rightIndex = zones.length - 1;
+      zones[rightIndex] = {
+        ...zones[rightIndex],
+        nodes: [flippingNode as unknown as (typeof zones)[number]["nodes"][number]],
+      };
+      const malformedDoc = { ...doc, zones };
+
+      const insertAt = 1;
+      const newText = "X";
+      const newSource = applyEdit(source, insertAt, insertAt, newText);
+      const next = updateIncremental(
+        malformedDoc,
+        { startOffset: insertAt, oldEndOffset: insertAt, newText },
+        newSource,
+      );
+
+      assert.throws(() => {
+        void next.tree;
+      }, /unexpected node type|unsupported frame source type/);
+    },
+  },
+  {
     name: "[Incremental/Session] full-only strategy should always rebuild",
     run: () => {
       const source = "abc";
@@ -626,6 +750,31 @@ const cases: GoldenCase[] = [
       assert.equal(result.mode, "full-fallback");
       assert.equal(result.fallbackReason, "FULL_ONLY_STRATEGY");
       assert.equal(result.doc.source, newSource);
+    },
+  },
+  {
+    name: "[Incremental/Session] bounded sample window should evict oldest samples",
+    run: () => {
+      const source = "$$bold(x)$$";
+      const session = createIncrementalSession(source, undefined, {
+        strategy: "full-only",
+        sampleWindowSize: 4,
+      });
+
+      let docSource = source;
+      for (let i = 0; i < 8; i++) {
+        const at = docSource.indexOf("x");
+        const nextChar = i % 2 === 0 ? "y" : "x";
+        const nextSource = applyEdit(docSource, at, at + 1, nextChar);
+        const result = session.applyEdit(
+          { startOffset: at, oldEndOffset: at + 1, newText: nextChar },
+          nextSource,
+        );
+        assert.equal(result.mode, "full-fallback");
+        assert.equal(result.fallbackReason, "FULL_ONLY_STRATEGY");
+        docSource = nextSource;
+      }
+      assert.equal(session.getDocument().source, docSource);
     },
   },
   {
