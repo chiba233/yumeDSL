@@ -224,6 +224,9 @@ const plain = dsl.strip("Hello $$bold(world)$$!");
 
 支持三种形式：
 
+> **降级规则：** 输入不合法或 handler 不支持用户写的形式时，解析器会优雅降级为纯文本而非抛出异常。完整规则——包括 raw/block 嵌套在 inline 内的常见陷阱——详见
+> [DSL 语法 — 优雅降级规则](https://github.com/chiba233/yumeDSL/wiki/zh-CN-DSL-%E8%AF%AD%E6%B3%95#%E4%BC%98%E9%9B%85%E9%99%8D%E7%BA%A7%E8%A7%84%E5%88%99) wiki 页面。
+
 ### Inline 标签
 
 ```text
@@ -874,10 +877,16 @@ parseRichText("$$bold(unclosed", {
 // errors[0].code === "INLINE_NOT_CLOSED"
 ```
 
-错误码：`DEPTH_LIMIT`、`UNEXPECTED_CLOSE`、`INLINE_NOT_CLOSED`、`BLOCK_NOT_CLOSED`、
+错误码：`DEPTH_LIMIT`、`UNEXPECTED_CLOSE`、`INLINE_NOT_CLOSED`、`SHORTHAND_NOT_CLOSED`、`BLOCK_NOT_CLOSED`、
 `BLOCK_CLOSE_MALFORMED`、`RAW_NOT_CLOSED`、`RAW_CLOSE_MALFORMED`。
 
-**优雅降级：** 未注册标签 → 纯文本，不支持的形式 → 回退文本，`allowForms` 限制 → 形式被剥离，未闭合标签 → 部分文本恢复。
+**优雅降级：** 解析器永远不会抛出异常。未注册标签 → 纯文本，不支持的形式 → 回退文本，`allowForms` 限制 → 形式被剥离，
+未闭合标签 → 部分文本恢复，括号不配平 → 强制 inline fallback（仅最内层受影响）。
+
+> **⚠️ 常见陷阱：** raw / block 标签嵌套在 inline 参数区内时，handler 必须同时声明 `inline`。
+> 否则解析器无法进入子帧，整个嵌套标签会降级为纯文本。
+> 完整的降级决策表和示例见
+> [DSL 语法 — 优雅降级规则](https://github.com/chiba233/yumeDSL/wiki/zh-CN-DSL-%E8%AF%AD%E6%B3%95#%E4%BC%98%E9%9B%85%E9%99%8D%E7%BA%A7%E8%A7%84%E5%88%99) wiki 页面。
 
 详见 [错误处理 wiki 页面](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E9%94%99%E8%AF%AF%E5%A4%84%E7%90%86)
 ：所有错误码及触发场景、详细降级示例。

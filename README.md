@@ -230,6 +230,11 @@ See [Custom Tag Name Characters](#custom-tag-name-characters) to override these 
 
 Three forms are supported:
 
+> **Degradation rules:** when input is malformed or a handler doesn't support the written form, the parser degrades
+> gracefully to plain text instead of throwing. The full rules — including the common gotcha of nesting raw/block inside
+> inline — are documented in the
+> [DSL Syntax — Graceful degradation rules](https://github.com/chiba233/yumeDSL/wiki/en-DSL-Syntax#graceful-degradation-rules) wiki page.
+
 ### Inline
 
 ```text
@@ -903,13 +908,19 @@ parseRichText("$$bold(unclosed", {
 // errors[0].code === "INLINE_NOT_CLOSED"
 ```
 
-Error codes: `DEPTH_LIMIT`, `UNEXPECTED_CLOSE`, `INLINE_NOT_CLOSED`, `BLOCK_NOT_CLOSED`,
+Error codes: `DEPTH_LIMIT`, `UNEXPECTED_CLOSE`, `INLINE_NOT_CLOSED`, `SHORTHAND_NOT_CLOSED`, `BLOCK_NOT_CLOSED`,
 `BLOCK_CLOSE_MALFORMED`, `RAW_NOT_CLOSED`, `RAW_CLOSE_MALFORMED`.
 
-**Graceful degradation:** unregistered tags → plain text, unsupported forms → fallback text,
-`allowForms` restriction → form stripped, unclosed tags → partial text recovery.
+**Graceful degradation:** the parser never throws. Unregistered tags → plain text, unsupported forms → fallback text,
+`allowForms` restriction → form stripped, unclosed tags → partial text recovery, unbalanced brackets → forced inline
+fallback (only innermost tag affected).
 
-See the [Error Handling wiki page](https://github.com/chiba233/yumeDSL/wiki/en-Error-Handling) for
+> **⚠️ Common gotcha:** raw / block tags nested inside inline arguments require the handler to also declare `inline`.
+> Without it, the parser can't enter a child frame and the entire nested tag degrades to plain text.
+> See the full degradation rules and decision table in the
+> [DSL Syntax — Graceful degradation rules](https://github.com/chiba233/yumeDSL/wiki/en-DSL-Syntax#graceful-degradation-rules) wiki page.
+
+See also the [Error Handling wiki page](https://github.com/chiba233/yumeDSL/wiki/en-Error-Handling) for
 all error codes with triggers, and detailed degradation scenarios with examples.
 
 ## Deprecated API
