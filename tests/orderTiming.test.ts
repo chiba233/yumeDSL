@@ -91,10 +91,9 @@ const cases: GoldenCase[] = [
         onError: (error) => codes.push(error.code),
       });
 
-      // 1.3.2: bold 的 findTagArgClose 因括号不配对 fallback 到 inline 子帧。
-      // 子帧内 $$code(js)% 先报 RAW_NOT_CLOSED，code 子帧到 EOF 报 INLINE_NOT_CLOSED，
-      // bold 恢复后重新扫描再次命中 )% → 第二个 RAW_NOT_CLOSED。
-      assert.deepEqual(codes, ["RAW_NOT_CLOSED", "INLINE_NOT_CLOSED", "RAW_NOT_CLOSED"]);
+      // fallback 子帧会先报 RAW_NOT_CLOSED，再到 EOF 报 INLINE_NOT_CLOSED。
+      // 恢复后父帧重扫命中的同位置同错误会被去重，不再重复上报。
+      assert.deepEqual(codes, ["RAW_NOT_CLOSED", "INLINE_NOT_CLOSED"]);
     },
   },
   {
@@ -116,9 +115,46 @@ const cases: GoldenCase[] = [
         onError: (error) => codes.push(error.code),
       });
 
-      // 1.3.2: bold fallback 到 inline 子帧后，子帧内先遇到 $$info(T)* block 未闭合，
-      // 然后 bold 子帧到 EOF 报 INLINE_NOT_CLOSED，恢复后重新扫描再报 BLOCK_NOT_CLOSED。
-      assert.deepEqual(codes, ["BLOCK_NOT_CLOSED", "INLINE_NOT_CLOSED", "BLOCK_NOT_CLOSED"]);
+      // fallback 子帧会先报 BLOCK_NOT_CLOSED，再到 EOF 报 INLINE_NOT_CLOSED。
+      // 恢复后父帧重扫命中的同位置同错误会被去重，不再重复上报。
+      assert.deepEqual(codes, ["BLOCK_NOT_CLOSED", "INLINE_NOT_CLOSED"]);
+    },
+  },
+  {
+    name: "[Order/Dedup] 不同位置的同类错误不应被去重误杀",
+    run() {
+      const codes: string[] = [];
+      // 两个独立的未闭合 inline：位置不同，应各报一次
+      parseRichText("$$a(x $$b(y", {
+        onError: (error) => codes.push(error.code),
+      });
+
+      assert.deepEqual(codes, ["INLINE_NOT_CLOSED", "INLINE_NOT_CLOSED"]);
+    },
+  },
+  {
+    name: "[Order/Dedup] 不同位置的同类 raw 未闭合不应被去重误杀",
+    run() {
+      const codes: string[] = [];
+      // 两个独立的未闭合 raw，各自都没有关闭
+      parseRichText("$$a(js)%\nfoo $$b(ts)%\nbar", {
+        onError: (error) => codes.push(error.code),
+      });
+
+      assert.deepEqual(codes, ["RAW_NOT_CLOSED", "RAW_NOT_CLOSED"]);
+    },
+  },
+  {
+    name: "[Order/Dedup] 括号不配平 fallback 内嵌套多个未闭合形态 -> 每种错误仅报一次",
+    run() {
+      const codes: string[] = [];
+      // bold 括号不配平 → fallback 子帧；子帧内遇到 raw 未闭合
+      // 子帧 EOF → INLINE_NOT_CLOSED；父帧重扫 → 同位置 RAW_NOT_CLOSED 被去重
+      parseRichText("$$bold(( $$code(js)%\nconst x = 1", {
+        onError: (error) => codes.push(error.code),
+      });
+
+      assert.deepEqual(codes, ["RAW_NOT_CLOSED", "INLINE_NOT_CLOSED"]);
     },
   },
   {

@@ -205,6 +205,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
   // 两条路径共用这一个扫描主循环，避免维护两套 form 判定规则。
   const { depthLimit, gating, tracker, syntax, tagName, onError } = ctx;
   const { tagClose, tagDivider, tagOpen, endTag, rawClose } = syntax;
+  const emittedErrorKeys = new Set<string>();
 
   if (!endTag.startsWith(tagClose)) {
     throw new Error(
@@ -549,7 +550,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
   ): boolean => {
     if (frame.depth >= depthLimit) {
       const span = info.argStart - info.tagOpenPos;
-      emitError(tracker, onError, "DEPTH_LIMIT", frame.text, tagStartI, span);
+      emitError(tracker, onError, "DEPTH_LIMIT", frame.text, tagStartI, span, emittedErrorKeys);
       const degradedEnd = info.argStart;
       appendBuf(frame, tagStartI, degradedEnd);
       frame.i = degradedEnd;
@@ -586,6 +587,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
           frame.text,
           frame.tagStartI,
           frame.argStartI - frame.tagOpenPos,
+          emittedErrorKeys,
         );
         stack.pop();
         const parent = stack[frame.parentIndex];
@@ -664,6 +666,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
               frameText,
               malformed?.index ?? tagStartI,
               malformed?.length ?? contentStart - tagStartI,
+              emittedErrorKeys,
             );
             // 降级：回退到父帧，整段当文本
             stack.pop();
@@ -725,6 +728,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
               frameText,
               malformed?.index ?? tagStartI,
               malformed?.length ?? contentStart - tagStartI,
+              emittedErrorKeys,
             );
             stack.pop();
             appendBuf(parent, tagStartI, contentStart);
@@ -786,7 +790,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
 
     // ── 非 inline 帧的意外 endTag ──
     if (frameText.startsWith(endTag, i)) {
-      emitError(tracker, onError, "UNEXPECTED_CLOSE", frameText, i, endTag.length);
+      emitError(tracker, onError, "UNEXPECTED_CLOSE", frameText, i, endTag.length, emittedErrorKeys);
       appendBuf(frame, i, i + endTag.length);
       frame.i += endTag.length;
       continue;
@@ -820,7 +824,15 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
 
     // ── 深度限制 → 整个标签退化 ──
     if (frame.depth >= depthLimit) {
-      emitError(tracker, onError, "DEPTH_LIMIT", frameText, i, info.argStart - info.tagOpenPos);
+      emitError(
+        tracker,
+        onError,
+        "DEPTH_LIMIT",
+        frameText,
+        i,
+        info.argStart - info.tagOpenPos,
+        emittedErrorKeys,
+      );
       const degradedEnd = skipTagBoundary(frameText, info, syntax, tagName);
       appendBuf(frame, i, degradedEnd);
       frame.i = degradedEnd;
@@ -899,6 +911,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
           frameText,
           malformed?.index ?? i,
           malformed?.length ?? contentStart - i,
+          emittedErrorKeys,
         );
         appendBuf(frame, i, contentStart);
         frame.i = contentStart;
@@ -956,6 +969,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         frameText,
         malformed?.index ?? i,
         malformed?.length ?? contentStart - i,
+        emittedErrorKeys,
       );
       appendBuf(frame, i, contentStart);
       frame.i = contentStart;

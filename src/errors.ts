@@ -11,11 +11,11 @@ const ERROR_MESSAGES: Record<ErrorCode, string> = {
   SHORTHAND_NOT_CLOSED: "Inline shorthand not closed",
 };
 
-export const getErrorContext = (
+const getErrorContext = (
   tracker: PositionTracker | null,
   text: string,
   index: number,
-  length = 1,
+  length: number,
   range = 15,
 ) => {
   let line: number;
@@ -62,9 +62,15 @@ export const emitError = (
   code: ErrorCode,
   text: string,
   index: number,
-  length?: number,
+  length: number,
+  dedupeKeys?: Set<string>,
 ) => {
   if (!onError) return;
+  if (dedupeKeys) {
+    const dedupeKey = `${code}:${index}:${length}`;
+    if (dedupeKeys.has(dedupeKey)) return;
+    dedupeKeys.add(dedupeKey);
+  }
 
   const { line, column, snippet } = getErrorContext(tracker, text, index, length);
   const base = ERROR_MESSAGES[code] ?? code;
