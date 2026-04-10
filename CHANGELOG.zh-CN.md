@@ -2,6 +2,13 @@
 
 # 更新日志
 
+### 1.2.6
+
+- **增量签名路径栈安全修复**
+  - 将 `nodeSignature` 的递归遍历改为显式栈后序迭代（`frameStack` + `valueStack`）。
+  - 增量 seam 签名路径（`zoneSignature` / 右侧复用探测）不再依赖 JS 调用栈深度，修复超深嵌套树在增量更新时的栈溢出问题。
+- 无公共 API 变化
+
 ### 1.2.5
 
 - **增量路径延迟 `cloneParseOptions`**

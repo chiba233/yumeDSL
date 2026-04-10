@@ -389,66 +389,92 @@ const tryConsumeSignatureBudget = (budget: SignatureBudget): boolean => {
   return true;
 };
 
-// 递归聚合子节点签名。budget 超限 → 返回 ok:false，调用方放弃 probe。
-const feedChildSignatures = (
-  hash: number,
-  nodes: readonly StructuralNode[],
-  budget: SignatureBudget | undefined,
-): { hash: number; ok: boolean } => {
-  let h = hash;
-  for (let i = 0; i < nodes.length; i++) {
-    const childHash = nodeSignature(nodes[i], budget);
-    if (childHash === undefined) return { hash: h, ok: false };
-    h = fnvFeedU32(h, childHash);
-  }
-  return { hash: h, ok: true };
-};
-
 // 节点结构签名：hash(类型标签 + tag名 + 子节点/arg 数量 + content 长度 + bounded 内容采样)。
 // 纯结构比对不需要全量 hash content，但纯长度又有"同长不同内容"盲区，
 // 所以折中用 bounded sampling（首尾 32 字符）——O(1) 且几乎不会误判。
 const nodeSignature = (node: StructuralNode, budget?: SignatureBudget): number | undefined => {
-  if (budget && !tryConsumeSignatureBudget(budget)) return undefined;
+  type SignatureEnterFrame = {
+    kind: "enter";
+    node: StructuralNode;
+  };
+  type SignatureExitFrame = {
+    kind: "exit";
+    hash: number;
+    valueBase: number;
+  };
+  type SignatureFrame = SignatureEnterFrame | SignatureExitFrame;
 
-  if (node.type === "separator") return NODE_TAG_SEPARATOR;
+  const frameStack: SignatureFrame[] = [{ kind: "enter", node }];
+  const valueStack: number[] = [];
 
-  if (node.type === "text") {
-    let h = fnvFeedU32(fnvFeedU32(fnvInit(), NODE_TAG_TEXT), node.value.length);
-    return hashTextBounded(h, node.value) >>> 0;
+  while (frameStack.length > 0) {
+    const frame = frameStack.pop();
+    if (!frame) break;
+
+    if (frame.kind === "enter") {
+      if (budget && !tryConsumeSignatureBudget(budget)) return undefined;
+
+      const current = frame.node;
+      if (current.type === "separator") {
+        valueStack.push(NODE_TAG_SEPARATOR);
+        continue;
+      }
+      if (current.type === "text") {
+        let h = fnvFeedU32(fnvFeedU32(fnvInit(), NODE_TAG_TEXT), current.value.length);
+        valueStack.push(hashTextBounded(h, current.value) >>> 0);
+        continue;
+      }
+      if (current.type === "escape") {
+        let h = fnvFeedU32(fnvFeedU32(fnvInit(), NODE_TAG_ESCAPE), current.raw.length);
+        valueStack.push(hashTextBounded(h, current.raw) >>> 0);
+        continue;
+      }
+      if (current.type === "inline") {
+        let h = fnvFeedU32(fnvFeedU32(fnvInit(), NODE_TAG_INLINE), hashText(current.tag));
+        h = fnvFeedU32(h, current.children.length);
+        frameStack.push({ kind: "exit", hash: h, valueBase: valueStack.length });
+        for (let i = current.children.length - 1; i >= 0; i--) {
+          frameStack.push({ kind: "enter", node: current.children[i] });
+        }
+        continue;
+      }
+      if (current.type === "raw") {
+        let h = fnvFeedU32(fnvFeedU32(fnvInit(), NODE_TAG_RAW), hashText(current.tag));
+        h = fnvFeedU32(h, current.args.length);
+        h = fnvFeedU32(h, current.content.length);
+        h = hashTextBounded(h, current.content);
+        frameStack.push({ kind: "exit", hash: h, valueBase: valueStack.length });
+        for (let i = current.args.length - 1; i >= 0; i--) {
+          frameStack.push({ kind: "enter", node: current.args[i] });
+        }
+        continue;
+      }
+      if (current.type === "block") {
+        let h = fnvFeedU32(fnvFeedU32(fnvInit(), NODE_TAG_BLOCK), hashText(current.tag));
+        h = fnvFeedU32(h, current.args.length);
+        h = fnvFeedU32(h, current.children.length);
+        frameStack.push({ kind: "exit", hash: h, valueBase: valueStack.length });
+        for (let i = current.children.length - 1; i >= 0; i--) {
+          frameStack.push({ kind: "enter", node: current.children[i] });
+        }
+        for (let i = current.args.length - 1; i >= 0; i--) {
+          frameStack.push({ kind: "enter", node: current.args[i] });
+        }
+        continue;
+      }
+      return assertUnreachable(current);
+    }
+
+    let h = frame.hash;
+    for (let i = frame.valueBase; i < valueStack.length; i++) {
+      h = fnvFeedU32(h, valueStack[i]);
+    }
+    valueStack.length = frame.valueBase;
+    valueStack.push(h >>> 0);
   }
 
-  if (node.type === "escape") {
-    let h = fnvFeedU32(fnvFeedU32(fnvInit(), NODE_TAG_ESCAPE), node.raw.length);
-    return hashTextBounded(h, node.raw) >>> 0;
-  }
-
-  if (node.type === "inline") {
-    let h = fnvFeedU32(fnvFeedU32(fnvInit(), NODE_TAG_INLINE), hashText(node.tag));
-    h = fnvFeedU32(h, node.children.length);
-    const result = feedChildSignatures(h, node.children, budget);
-    return result.ok ? result.hash >>> 0 : undefined;
-  }
-
-  if (node.type === "raw") {
-    let h = fnvFeedU32(fnvFeedU32(fnvInit(), NODE_TAG_RAW), hashText(node.tag));
-    h = fnvFeedU32(h, node.args.length);
-    h = fnvFeedU32(h, node.content.length);
-    h = hashTextBounded(h, node.content);
-    const result = feedChildSignatures(h, node.args, budget);
-    return result.ok ? result.hash >>> 0 : undefined;
-  }
-
-  if (node.type === "block") {
-    let h = fnvFeedU32(fnvFeedU32(fnvInit(), NODE_TAG_BLOCK), hashText(node.tag));
-    h = fnvFeedU32(h, node.args.length);
-    h = fnvFeedU32(h, node.children.length);
-    const argsResult = feedChildSignatures(h, node.args, budget);
-    if (!argsResult.ok) return undefined;
-    const childResult = feedChildSignatures(argsResult.hash, node.children, budget);
-    return childResult.ok ? childResult.hash >>> 0 : undefined;
-  }
-
-  return assertUnreachable(node);
+  if (valueStack.length !== 1) return undefined;
+  return valueStack[0] >>> 0;
 };
 
 // zone 签名 = ZONE_TAG + zone 跨度 + 所有子节点签名聚合。

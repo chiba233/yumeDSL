@@ -2,6 +2,13 @@
 
 # Changelog
 
+### 1.2.6
+
+- **Incremental signature path stack safety**
+  - Replaced recursive `nodeSignature` traversal with explicit-stack post-order iteration (`frameStack` + `valueStack`).
+  - This removes JS call-stack depth dependency from the incremental seam-signature path (`zoneSignature` / right-reuse probe), fixing stack-overflow failures on extremely deep nested trees.
+- No public API changes
+
 ### 1.2.5
 
 - **Deferred `cloneParseOptions` on the incremental path**
