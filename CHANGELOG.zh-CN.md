@@ -2,6 +2,16 @@
 
 # 更新日志
 
+### 1.3.1
+
+- **修复：shorthand 现在正确受 `depthLimit` 约束**
+  - shorthand 标签（`name(...)`）此前绕过了深度限制检查，因为它不走完整标签头识别路径。深层 shorthand 嵌套可以超过 `depthLimit` 而不触发降级。
+  - `tryPushInlineShorthandChild` 现在检查 `frame.depth >= depthLimit` 并报告 `DEPTH_LIMIT` 错误，将 shorthand 标签头降级为纯文本——与完整 DSL 行为一致。
+- **修复：括号不配平不再导致整个标签退化为纯文本**
+  - `findTagArgClose` 匹配内容中所有裸 `(` / `)` 字符，因此任何括号不配平（如漏写一个 `)`）都会导致参数闭合搜索失败 → `getTagCloserType` 返回 `null` → 整个标签退化为纯文本。
+  - 当 `getTagCloserType` 返回 `null` 时，解析器现在强制进入 inline 子帧，而非回退为文本。inline 子帧使用 `scanInlineBoundary`（仅将完整的 `$$tag(` 计为嵌套层级），逐字符正确找到真正的闭合标记。
+  - 效果：单个漏括号现在只影响最内层不配平的标签，外层标签完整保留。此前整棵标签树都会坍塌为纯文本。
+  - 这是自 v1.0 以来的历史 bug，并非 shorthand 引入。
 ### 1.3.0
 
 - **新增：inline 隐式简写（`name(...)`）**

@@ -17,14 +17,18 @@ const cases: GoldenCase[] = [
     },
   },
   {
-    name: "[Order/onError] inline 子帧跑到 EOF 时仍应先报 INLINE_NOT_CLOSED",
+    name: "[Order/onError] 括号不配对时 inline fallback 应正确解析而非报错",
     run() {
+      // 1.3.2: findTagArgClose 因内容括号不配对返回 -1 时，
+      // fallback 到 inline 子帧逐字符扫描 endTag，tag 被成功解析，不再报错。
       const codes: string[] = [];
-      parseRichText("$$link(before (x)$$ tail", {
+      const result = parseRichText("$$link(before (x)$$ tail", {
         onError: (error) => codes.push(error.code),
       });
 
-      assert.deepEqual(codes, ["INLINE_NOT_CLOSED", "UNEXPECTED_CLOSE"]);
+      assert.deepEqual(codes, []);
+      // link 未注册 handler → passthrough 后 flatten 为单个文本节点
+      assert.equal(result.length, 1);
     },
   },
   {
@@ -57,7 +61,10 @@ const cases: GoldenCase[] = [
         onError: (error) => codes.push(error.code),
       });
 
-      assert.deepEqual(codes, ["INLINE_NOT_CLOSED", "RAW_NOT_CLOSED"]);
+      // 1.3.2: bold 的 findTagArgClose 因括号不配对 fallback 到 inline 子帧。
+      // 子帧内 $$code(js)% 先报 RAW_NOT_CLOSED，code 子帧到 EOF 报 INLINE_NOT_CLOSED，
+      // bold 恢复后重新扫描再次命中 )% → 第二个 RAW_NOT_CLOSED。
+      assert.deepEqual(codes, ["RAW_NOT_CLOSED", "INLINE_NOT_CLOSED", "RAW_NOT_CLOSED"]);
     },
   },
   {
@@ -79,7 +86,9 @@ const cases: GoldenCase[] = [
         onError: (error) => codes.push(error.code),
       });
 
-      assert.deepEqual(codes, ["INLINE_NOT_CLOSED", "BLOCK_NOT_CLOSED"]);
+      // 1.3.2: bold fallback 到 inline 子帧后，子帧内先遇到 $$info(T)* block 未闭合，
+      // 然后 bold 子帧到 EOF 报 INLINE_NOT_CLOSED，恢复后重新扫描再报 BLOCK_NOT_CLOSED。
+      assert.deepEqual(codes, ["BLOCK_NOT_CLOSED", "INLINE_NOT_CLOSED", "BLOCK_NOT_CLOSED"]);
     },
   },
   {

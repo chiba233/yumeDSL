@@ -547,6 +547,14 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     tagStartI: number,
     info: ShorthandStartInfo,
   ): boolean => {
+    if (frame.depth >= depthLimit) {
+      const span = info.argStart - info.tagOpenPos;
+      emitError(tracker, onError, "DEPTH_LIMIT", frame.text, tagStartI, span);
+      const degradedEnd = info.argStart;
+      appendBuf(frame, tagStartI, degradedEnd);
+      frame.i = degradedEnd;
+      return true;
+    }
     pushInlineChildFrame(frame, {
       tag: info.tag,
       tagStartI,
@@ -851,23 +859,17 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     // ── 确定标签形态（仅非 inline 帧需要）──
     const closerInfo = getTagCloserType(frameText, info.tagNameEnd + tagOpen.length, syntax);
     if (!closerInfo) {
-      const handler = gating?.handlers[info.tag];
-      const isRegistered = gating?.registeredTags.has(info.tag) ?? false;
-      // 没识别出合法 closer，说明这不是完整 structural form。
-      // 如果 inline form 本来允许，就保持老语义：报一个 INLINE_NOT_CLOSED，
-      // 然后只把 tag 头退回文本，剩余内容继续扫描。
-      if (!gating || supportsInlineForm(handler, gating.allowInline, isRegistered)) {
-        emitError(
-          tracker,
-          onError,
-          "INLINE_NOT_CLOSED",
-          frameText,
-          i,
-          info.argStart - info.tagOpenPos,
-        );
-      }
-      appendBuf(frame, i, info.argStart);
-      frame.i = info.argStart;
+      // findTagArgClose 因内容括号不配对返回 -1。
+      // 强制进入 lazy inline 模式：子帧逐字符扫描 endTag，不依赖括号配对。
+      // 无论 gating 结果如何都 push，避免回退文本导致上层失去同步点。
+      pushInlineChildFrame(frame, {
+        tag: info.tag,
+        tagStartI: i,
+        argStartI: info.argStart,
+        tagOpenPos: info.tagOpenPos,
+        closeToken: endTag,
+        implicitInlineShorthand: false,
+      });
       continue;
     }
 

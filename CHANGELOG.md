@@ -2,6 +2,20 @@
 
 # Changelog
 
+### 1.3.2
+
+
+
+### 1.3.1
+
+- **Fix: shorthand now respects `depthLimit`**
+  - Shorthand tags (`name(...)`) previously bypassed the depth-limit check because they do not go through the full tag-start recognizer path. Deep shorthand nesting could exceed `depthLimit` without degradation.
+  - `tryPushInlineShorthandChild` now checks `frame.depth >= depthLimit` and emits `DEPTH_LIMIT` error, degrading the shorthand tag head to plain text — consistent with full DSL behavior.
+- **Fix: unbalanced brackets no longer cause entire tag to degrade to plain text**
+  - `findTagArgClose` matched raw `(` / `)` characters in content, so any unbalanced bracket (e.g. a missing `)`) caused the argument-close search to fail → `getTagCloserType` returned `null` → the whole tag degraded to text.
+  - When `getTagCloserType` returns `null`, the parser now forces an inline child frame instead of falling back to text. The inline frame uses `scanInlineBoundary` (which only counts full `$$tag(` as nesting), so it correctly finds the real close token character-by-character.
+  - Effect: a single missing bracket now only affects the innermost unbalanced tag; outer tags survive. Previously the entire tag tree collapsed to plain text.
+  - This is a long-standing bug since v1.0, not introduced by shorthand.
 ### 1.3.0
 
 - **New: implicit inline shorthand (`name(...)`)**
