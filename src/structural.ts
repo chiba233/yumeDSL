@@ -860,16 +860,13 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     const closerInfo = getTagCloserType(frameText, info.tagNameEnd + tagOpen.length, syntax);
     if (!closerInfo) {
       // findTagArgClose 因内容括号不配对返回 -1。
-      // 强制进入 lazy inline 模式：子帧逐字符扫描 endTag，不依赖括号配对。
-      // 无论 gating 结果如何都 push，避免回退文本导致上层失去同步点。
-      pushInlineChildFrame(frame, {
-        tag: info.tag,
-        tagStartI: i,
-        argStartI: info.argStart,
-        tagOpenPos: info.tagOpenPos,
-        closeToken: endTag,
-        implicitInlineShorthand: false,
-      });
+      // 进入 lazy inline 模式：子帧逐字符扫描 endTag，不依赖括号配对。
+      // 仍需遵守 inline gating：若 gating 拒绝，降级为文本。
+      if (!tryPushInlineChild(frame, i, info)) {
+        const degradedEnd = skipTagBoundary(frameText, info, syntax, tagName);
+        appendBuf(frame, i, degradedEnd);
+        frame.i = degradedEnd;
+      }
       continue;
     }
 
