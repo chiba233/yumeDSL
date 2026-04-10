@@ -2,6 +2,15 @@
 
 # Changelog
 
+### 1.2.5
+
+- **Deferred `cloneParseOptions` on the incremental path**
+  - `nextParseOptionsSnapshot` is now computed only after all early full-rebuild guards pass. Previously, `cloneParseOptions(options)` ran unconditionally at function entry; if any guard triggered a full rebuild, the clone was wasted — and `parseIncrementalInternal` would clone again internally.
+- **Tracker reuse on full-rebuild fallback**
+  - `parseIncrementalInternal` now accepts an optional `existingTracker` parameter. When the incremental path falls back to full rebuild after `buildPositionTracker` has already been called, the existing tracker is passed through instead of being discarded and rebuilt.
+- **Single-pass `findDirtyRange`**
+  - The overlap scan and insertion-index search are now fused into a single linear pass. Previously, a no-overlap edit triggered a second traversal to locate the insertion point; the insertion index is now tracked as a side-product of the overlap scan, eliminating the extra pass.
+
 ### 1.2.4
 
 - **Zone splitting for pure-inline documents (`softZoneNodeCap`)**

@@ -355,6 +355,8 @@ interface IncrementalDebugStats {
   cumulativeReparsedBytes: number;
   probeSliceBytes: number;
   fellBackToFull: boolean;
+  /** pre-work overhead wasted before a full-rebuild fallback (clone + tracker + zone-scan) */
+  wastedPreWorkMs: number;
 }
 
 type IncrementalDebugSink = (stats: IncrementalDebugStats) => void;
@@ -707,13 +709,20 @@ const installLazyDocument = (
 const findDirtyRange = (zones: readonly Zone[], edit: IncrementalEdit): { from: number; to: number } => {
   let firstOverlap = -1;
   let lastOverlap = -1;
+  // 单遍扫描：同时追踪 overlap 和 insertionIndex，避免 no-overlap 时二次遍历。
+  let insertionIndex = zones.length;
+  let insertionFound = false;
 
   for (let i = 0; i < zones.length; i++) {
     const zone = zones[i];
-    const intersects = zone.endOffset > edit.startOffset && zone.startOffset < edit.oldEndOffset;
-    if (!intersects) continue;
-    if (firstOverlap === -1) firstOverlap = i;
-    lastOverlap = i;
+    if (zone.endOffset > edit.startOffset && zone.startOffset < edit.oldEndOffset) {
+      if (firstOverlap === -1) firstOverlap = i;
+      lastOverlap = i;
+    }
+    if (!insertionFound && zone.startOffset >= edit.startOffset) {
+      insertionIndex = i;
+      insertionFound = true;
+    }
   }
 
   if (firstOverlap !== -1) {
@@ -721,14 +730,6 @@ const findDirtyRange = (zones: readonly Zone[], edit: IncrementalEdit): { from: 
       from: Math.max(0, firstOverlap - LEFT_LOOKBEHIND_ZONES),
       to: Math.min(zones.length - 1, lastOverlap + 1),
     };
-  }
-
-  let insertionIndex = zones.length;
-  for (let i = 0; i < zones.length; i++) {
-    if (zones[i].startOffset >= edit.startOffset) {
-      insertionIndex = i;
-      break;
-    }
   }
 
   return {
@@ -838,12 +839,14 @@ const assertValidEdit = (doc: IncrementalDocument, edit: IncrementalEdit, newSou
 // 全量解析一次性产出完整快照：tree + zones + signature 缓存 + options snapshot。
 
 // 内部版本：接受 zoneCap 参数，session / updateInternal 通过此参数传递用户配置。
+// existingTracker: fallback 路径可传入已构建的 tracker 以避免重复构建。
 const parseIncrementalInternal = (
   source: string,
   options: IncrementalParseOptions | undefined,
   zoneCap: number,
+  existingTracker?: PositionTracker,
 ): IncrementalDocument => {
-  const tracker = buildPositionTracker(source);
+  const tracker = existingTracker ?? buildPositionTracker(source);
   const tree = parseWithPositions(source, tracker, options);
   const zones = buildZonesInternal(tree, zoneCap);
   for (let i = 0; i < zones.length; i++) {
@@ -906,6 +909,7 @@ const updateIncrementalInternal = (
   assertValidEdit(doc, edit, newSource);
   let cumulativeReparsedBytes = 0;
   let probeSliceBytes = 0;
+  const preWorkStart = incrementalDebugSink ? performance.now() : 0;
 
   const previousOptionsFingerprint =
     getCachedOptionsFingerprint(doc) ?? buildParseOptionsFingerprint(doc.parseOptions);
@@ -913,37 +917,51 @@ const updateIncrementalInternal = (
     ? buildParseOptionsFingerprint(options)
     : previousOptionsFingerprint;
   const runtimeParseOptions = options ?? doc.parseOptions;
-  const nextParseOptionsSnapshot = options ? cloneParseOptions(options) : doc.parseOptions;
+  // nextParseOptionsSnapshot 延后到确定走增量路径后再算，
+  // 避免 fullRebuild 路径白做一次 cloneParseOptions。
 
   const emitDebug = (fellBackToFull: boolean) => {
+    const wastedPreWorkMs = fellBackToFull && incrementalDebugSink
+      ? performance.now() - preWorkStart
+      : 0;
     incrementalDebugSink?.({
       cumulativeReparsedBytes,
       probeSliceBytes,
       fellBackToFull,
+      wastedPreWorkMs,
     });
   };
 
-  const fullRebuild = (): IncrementalDocument => {
-    const rebuilt = parseIncrementalInternal(newSource, runtimeParseOptions, zoneCap);
+  // early full-rebuild 路径：尚未构建 tracker，无需透传。
+  const earlyFullRebuild = (): IncrementalDocument => {
     emitDebug(true);
+    const rebuilt = parseIncrementalInternal(newSource, runtimeParseOptions, zoneCap);
     __internalObserver?.("internal-full-rebuild");
     return rebuilt;
   };
 
   const prevZones = getRawZones(doc);
 
-  if (previousOptionsFingerprint !== nextOptionsFingerprint) return fullRebuild();
+  if (previousOptionsFingerprint !== nextOptionsFingerprint) return earlyFullRebuild();
 
-  if (prevZones.length === 0) return fullRebuild();
+  if (prevZones.length === 0) return earlyFullRebuild();
 
   // zone 太少（≤1）→ 没有足够的左/脏/右结构可复用，增量路径开销白费。
   // 典型场景：纯 text 文档（0 个 zone breaker、softCap 也切不出来），
   // 或极短文档。直接走 full rebuild 更快。
-  if (prevZones.length <= 1) return fullRebuild();
+  if (prevZones.length <= 1) return earlyFullRebuild();
 
-  if (hasUnsafeZoneCoverageTailGap(prevZones, edit)) return fullRebuild();
+  if (hasUnsafeZoneCoverageTailGap(prevZones, edit)) return earlyFullRebuild();
 
   const newTracker = buildPositionTracker(newSource);
+
+  // late full-rebuild：tracker 已构建，透传给 parseIncrementalInternal 复用。
+  const fullRebuild = (): IncrementalDocument => {
+    emitDebug(true);
+    const rebuilt = parseIncrementalInternal(newSource, runtimeParseOptions, zoneCap, newTracker);
+    __internalObserver?.("internal-full-rebuild");
+    return rebuilt;
+  };
   const cumulativeBudget = Math.max(newSource.length * 2, 1024);
 
   const delta = newSource.length - doc.source.length;
@@ -991,6 +1009,9 @@ const updateIncrementalInternal = (
   const rightZones = oldRightZones.map((zone) => deferShiftZone(zone, delta));
 
   const nextRawZones = [...leftZones, ...dirtyZones, ...rightZones];
+
+  // 确定走增量路径，此时才 clone parseOptions（避免 fullRebuild 白做一次）。
+  const nextParseOptionsSnapshot = options ? cloneParseOptions(options) : doc.parseOptions;
 
   const updated: IncrementalDocument = {
     source: newSource,
