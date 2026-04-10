@@ -344,6 +344,7 @@ Most of the time you only need to bind `handlers`. The rest just tags along for 
 | `syntax`         | Custom syntax tokens (if you override `$$` prefix, etc.)                                                                                                   |
 | `tagName`        | Custom tag-name character rules                                                                                                                            |
 | `allowForms`     | Restrict accepted tag forms (default: all forms enabled)                                                                                                   |
+| `implicitInlineShorthand` | Control `name(...)` shorthand inside inline args (default: disabled). _Since 1.3_                                                                 |
 | `depthLimit`     | Nesting limit — rarely changes per call                                                                                                                    |
 | `createId`       | Custom token id generator (can be overridden per call)                                                                                                     |
 | `blockTags`      | Block-level line-break normalization — see [`declareMultilineTags`](https://github.com/chiba233/yumeDSL/wiki/en-Handler-Helpers#declaremultilinetagsnames) |
@@ -584,6 +585,7 @@ Both `ParseOptions` and `StructuralParseOptions` extend `ParserBaseOptions`:
 interface ParserBaseOptions {
     handlers?: Record<string, TagHandler>;
     allowForms?: readonly ("inline" | "raw" | "block")[];
+    implicitInlineShorthand?: boolean | readonly string[];
     depthLimit?: number;
     syntax?: Partial<SyntaxInput>;
     tagName?: Partial<TagNameConfig>;
@@ -608,6 +610,7 @@ interface StructuralParseOptions extends ParserBaseOptions {
 
 - `handlers`: tag name → handler definition
 - `allowForms`: restrict which tag forms are parsed (default: all forms enabled)
+- `implicitInlineShorthand`: control `name(...)` shorthand inside inline argument context (default: disabled). See [implicitInlineShorthand](#implicitinlineshorthand). _Since 1.3_
 - `depthLimit`: maximum nesting depth, default `50`
 - `syntax`: override default syntax tokens
 - `tagName`: override tag-name character rules
@@ -653,6 +656,54 @@ This is useful for user-generated content (comments, chat messages) where you wa
 prevent multi-line block or raw tags.
 
 When omitted, all forms are enabled.
+
+### implicitInlineShorthand
+
+> _Since 1.3_
+
+Inside an inline argument context, `implicitInlineShorthand` enables a lighter `name(...)` shorthand syntax that omits
+the full `$$name(...)$$` wrapper. This only takes effect inside inline args — top-level text is never affected.
+
+```ts
+implicitInlineShorthand?: boolean | readonly string[]
+```
+
+- `false` (default): shorthand disabled — only full `$$tag(...)$$` syntax is recognized.
+- `true`: enabled for every registered tag that supports inline form.
+- `string[]`: enabled only for the listed tag names.
+
+**Example:**
+
+```ts
+const dsl = createParser({
+    handlers: {
+        ...createSimpleInlineHandlers(["bold", "italic"]),
+    },
+    implicitInlineShorthand: true,
+});
+
+// Without shorthand (always works):
+dsl.parse("$$bold(Hello $$italic(world)$$)$$");
+
+// With shorthand enabled — equivalent result:
+dsl.parse("$$bold(Hello italic(world))$$");
+```
+
+**Whitelist mode** — enable shorthand only for specific tags:
+
+```ts
+const dsl = createParser({
+    handlers: {
+        ...createSimpleInlineHandlers(["bold", "italic", "code"]),
+    },
+    implicitInlineShorthand: ["bold", "italic"],
+    // code(...) shorthand is NOT recognized; bold(...) and italic(...) are
+});
+```
+
+**Parsing priority:** full DSL structures (`$$tag(...)$$`, `$$tag(...)%`, `$$tag(...)*`) are always matched first.
+Shorthand is only attempted when no full structure matches. Literal parentheses inside shorthand args must be escaped
+with `~)` / `~(`.
 
 ---
 
@@ -807,7 +858,7 @@ const tokens = dsl.parse(input);
 | **Handler Utilities** | `parsePipeArgs`, `parsePipeTextArgs`, `parsePipeTextList`, `extractText`, `createTextToken`, `splitTokensByPipe`, `materializeTextTokens`, `unescapeInline`, `readEscapedSequence`, `createToken`, `createTokenGuard`                                                                                                                                                                                                                                                                                                           |
 | **Token Traversal**   | `walkTokens`, `mapTokens`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | **Position Tracking** | `buildPositionTracker`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| **Types**             | `TextToken`, `TokenDraft`, `CreateId`, `DslContext`, `TagHandler`, `TagForm`, `ParseOptions`, `ParserBaseOptions`, `StructuralParseOptions`, `Parser`, `SyntaxInput`, `SyntaxConfig`, `TagNameConfig`, `BlockTagInput`, `MultilineForm`, `ErrorCode`, `ParseError`, `StructuralNode`, `SourcePosition`, `SourceSpan`, `PositionTracker`, `PipeArgs`, `PipeHandlerDefinition`, `EasyStableIdOptions`, `PrintOptions`, `TokenVisitContext`, `WalkVisitor`, `MapVisitor`, `Zone`, `IncrementalDocument`, `IncrementalEdit`, `IncrementalParseOptions`, `IncrementalSessionOptions`, `NarrowToken`, `NarrowDraft`, `NarrowTokenUnion` |
+| **Types**             | `TextToken`, `TokenDraft`, `CreateId`, `DslContext`, `TagHandler`, `TagForm`, `InlineShorthandOption`, `ParseOptions`, `ParserBaseOptions`, `StructuralParseOptions`, `Parser`, `SyntaxInput`, `SyntaxConfig`, `TagNameConfig`, `BlockTagInput`, `MultilineForm`, `ErrorCode`, `ParseError`, `StructuralNode`, `SourcePosition`, `SourceSpan`, `PositionTracker`, `PipeArgs`, `PipeHandlerDefinition`, `EasyStableIdOptions`, `PrintOptions`, `TokenVisitContext`, `WalkVisitor`, `MapVisitor`, `Zone`, `IncrementalDocument`, `IncrementalEdit`, `IncrementalParseOptions`, `IncrementalSessionOptions`, `NarrowToken`, `NarrowDraft`, `NarrowTokenUnion` |
 
 See the [Exports wiki page](https://github.com/chiba233/yumeDSL/wiki/en-Exports) for full signatures and detailed
 documentation.

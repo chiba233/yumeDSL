@@ -53,7 +53,8 @@
 >
 > 配合 [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker) 的 `parseSlice`——只重解析被修改的区域。
 > 如需跨 edit 做增量 structural 缓存（避免每次全量 `parseStructural`
-> ），见：[增量解析](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%A2%9E%E9%87%8F%E8%A7%A3%E6%9E%90)（默认入口是 `createIncrementalSession(...)`）。
+> ），见：[增量解析](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%A2%9E%E9%87%8F%E8%A7%A3%E6%9E%90)（默认入口是
+> `createIncrementalSession(...)`）。
 > 增量 API 属于实验能力，小版本可能出现 breaking change；生产接入请固定版本并按 wiki 的版本用法说明升级。
 > [完整性能数据](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E6%80%A7%E8%83%BD)
 
@@ -329,17 +330,18 @@ dsl.parse(text, {onError: (e) => console.warn(e)});
 
 大多数场景下，`createParser` 主要是为了绑定 `handlers`；其余选项只是顺手一起固化到实例上。
 
-| 选项               | 预绑定后的效果                                                                                                                                                                        |
-|------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **`handlers`**   | **标签定义 — 使用 `createParser` 的主要理由**                                                                                                                                             |
-| `syntax`         | 自定义语法符号（如覆盖 `$$` 前缀等）                                                                                                                                                          |
-| `tagName`        | 自定义标签名字符规则                                                                                                                                                                     |
-| `allowForms`     | 限制接受的标签形式（默认：全部启用）                                                                                                                                                             |
-| `depthLimit`     | 嵌套深度限制 — 很少需要逐次修改                                                                                                                                                              |
-| `createId`       | 自定义 token id 生成器（仍可按次覆盖）                                                                                                                                                       |
-| `blockTags`      | 块级换行规范化——详见 [`declareMultilineTags`](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%A4%84%E7%90%86%E5%99%A8%E8%BE%85%E5%8A%A9%E5%87%BD%E6%95%B0#declaremultilinetagsnames) |
-| `onError`        | 默认错误处理器（仍可按次覆盖）                                                                                                                                                                |
-| `trackPositions` | 为所有输出节点附加源码位置（仍可按次覆盖）                                                                                                                                                          |
+| 选项                        | 预绑定后的效果                                                                                                                                                                        |
+|---------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **`handlers`**            | **标签定义 — 使用 `createParser` 的主要理由**                                                                                                                                             |
+| `syntax`                  | 自定义语法符号（如覆盖 `$$` 前缀等）                                                                                                                                                          |
+| `tagName`                 | 自定义标签名字符规则                                                                                                                                                                     |
+| `allowForms`              | 限制接受的标签形式（默认：全部启用）                                                                                                                                                             |
+| `implicitInlineShorthand` | 控制 inline 参数中的 `name(...)` 简写（默认：关闭）。_1.3 起_                                                                                                                                   |
+| `depthLimit`              | 嵌套深度限制 — 很少需要逐次修改                                                                                                                                                              |
+| `createId`                | 自定义 token id 生成器（仍可按次覆盖）                                                                                                                                                       |
+| `blockTags`               | 块级换行规范化——详见 [`declareMultilineTags`](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%A4%84%E7%90%86%E5%99%A8%E8%BE%85%E5%8A%A9%E5%87%BD%E6%95%B0#declaremultilinetagsnames) |
+| `onError`                 | 默认错误处理器（仍可按次覆盖）                                                                                                                                                                |
+| `trackPositions`          | 为所有输出节点附加源码位置（仍可按次覆盖）                                                                                                                                                          |
 
 **不用 `createParser` 的话**，每次调用都需要传入完整选项：
 
@@ -568,6 +570,7 @@ blockTags: declareMultilineTags([
 interface ParserBaseOptions {
     handlers?: Record<string, TagHandler>;
     allowForms?: readonly ("inline" | "raw" | "block")[];
+    implicitInlineShorthand?: boolean | readonly string[];
     depthLimit?: number;
     syntax?: Partial<SyntaxInput>;
     tagName?: Partial<TagNameConfig>;
@@ -592,6 +595,8 @@ interface StructuralParseOptions extends ParserBaseOptions {
 
 - `handlers`：标签名 → 处理器定义
 - `allowForms`：限制解析器接受的标签形式（默认：全部启用）
+- `implicitInlineShorthand`：控制 inline 参数区内的 `name(...)`
+  简写（默认：关闭）。详见 [implicitInlineShorthand](#implicitinlineshorthand)。_1.3 起_
 - `depthLimit`：最大嵌套深度，默认 `50`
 - `syntax`：覆盖默认语法符号
 - `tagName`：覆盖标签名字符规则
@@ -633,6 +638,53 @@ const dsl2 = createParser({
 适用于用户生成内容（评论、聊天消息），希望允许简单的 inline 格式但禁止多行 block 或 raw 标签的场景。
 
 省略时启用全部形式。
+
+### implicitInlineShorthand
+
+> _1.3 起_
+
+在 inline 参数上下文中，`implicitInlineShorthand` 启用更轻量的 `name(...)` 简写语法，省去完整的 `$$name(...)$$` 包裹。
+仅在 inline 参数区内生效——顶层文本不受影响。
+
+```ts
+implicitInlineShorthand?: boolean | readonly string[]
+```
+
+- `false`（默认）：关闭简写——仅识别完整 `$$tag(...)$$` 语法。
+- `true`：对所有已注册且支持 inline form 的标签启用。
+- `string[]`：仅对白名单中的标签启用。
+
+**示例：**
+
+```ts
+const dsl = createParser({
+    handlers: {
+        ...createSimpleInlineHandlers(["bold", "italic"]),
+    },
+    implicitInlineShorthand: true,
+});
+
+// 不用简写（始终可用）：
+dsl.parse("$$bold(Hello $$italic(world)$$)$$");
+
+// 启用简写后——结果等价：
+dsl.parse("$$bold(Hello italic(world))$$");
+```
+
+**白名单模式** — 只对部分标签启用简写：
+
+```ts
+const dsl = createParser({
+    handlers: {
+        ...createSimpleInlineHandlers(["bold", "italic", "code"]),
+    },
+    implicitInlineShorthand: ["bold", "italic"],
+    // code(...) 简写不会被识别；bold(...) 和 italic(...) 可以
+});
+```
+
+**解析优先级：** 完整 DSL 结构（`$$tag(...)$$`、`$$tag(...)%`、`$$tag(...)*`）始终优先匹配。
+仅当无完整结构匹配时才尝试简写。简写参数中的字面括号需要用 `~)` / `~(` 转义。
 
 ---
 
@@ -770,16 +822,16 @@ const dsl = createParser({
 > ⚠️ 增量解析导出属于实验接口，小版本可能发生 breaking change。
 > 升级前请先对照 wiki 的签名与版本差异说明。
 
-| 分类           | 导出                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-|--------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **核心**       | `parseRichText`、`stripRichText`、`createParser`、`parseStructural`、`printStructural`、`buildZones`                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| **增量解析**     | `parseIncremental`、`createIncrementalSession`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| **配置**       | `DEFAULT_SYNTAX`、`createEasySyntax`、`createSyntax`、`DEFAULT_TAG_NAME`、`createTagNameConfig`、`createEasyStableId`                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| **处理器辅助函数**  | `createPipeHandlers`、`createSimpleInlineHandlers`、`createSimpleBlockHandlers`、`createSimpleRawHandlers`、`declareMultilineTags`                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| **处理器工具函数**  | `parsePipeArgs`、`parsePipeTextArgs`、`parsePipeTextList`、`extractText`、`createTextToken`、`splitTokensByPipe`、`materializeTextTokens`、`unescapeInline`、`readEscapedSequence`、`createToken`                                                                                                                                                                                                                                                                                                                                                                           |
-| **Token 遍历** | `walkTokens`、`mapTokens`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| **位置追踪**     | `buildPositionTracker`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| **类型**       | `TextToken`、`TokenDraft`、`CreateId`、`DslContext`、`TagHandler`、`TagForm`、`ParseOptions`、`ParserBaseOptions`、`StructuralParseOptions`、`Parser`、`SyntaxInput`、`SyntaxConfig`、`TagNameConfig`、`BlockTagInput`、`MultilineForm`、`ErrorCode`、`ParseError`、`StructuralNode`、`SourcePosition`、`SourceSpan`、`PositionTracker`、`PipeArgs`、`PipeHandlerDefinition`、`EasyStableIdOptions`、`PrintOptions`、`TokenVisitContext`、`WalkVisitor`、`MapVisitor`、`Zone`、`IncrementalDocument`、`IncrementalEdit`、`IncrementalParseOptions`、`IncrementalSessionOptions`、`NarrowToken`、`NarrowDraft`、`NarrowTokenUnion` |
+| 分类           | 导出                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+|--------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **核心**       | `parseRichText`、`stripRichText`、`createParser`、`parseStructural`、`printStructural`、`buildZones`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| **增量解析**     | `parseIncremental`、`createIncrementalSession`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| **配置**       | `DEFAULT_SYNTAX`、`createEasySyntax`、`createSyntax`、`DEFAULT_TAG_NAME`、`createTagNameConfig`、`createEasyStableId`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| **处理器辅助函数**  | `createPipeHandlers`、`createSimpleInlineHandlers`、`createSimpleBlockHandlers`、`createSimpleRawHandlers`、`declareMultilineTags`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| **处理器工具函数**  | `parsePipeArgs`、`parsePipeTextArgs`、`parsePipeTextList`、`extractText`、`createTextToken`、`splitTokensByPipe`、`materializeTextTokens`、`unescapeInline`、`readEscapedSequence`、`createToken`                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| **Token 遍历** | `walkTokens`、`mapTokens`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| **位置追踪**     | `buildPositionTracker`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| **类型**       | `TextToken`、`TokenDraft`、`CreateId`、`DslContext`、`TagHandler`、`TagForm`、`InlineShorthandOption`、`ParseOptions`、`ParserBaseOptions`、`StructuralParseOptions`、`Parser`、`SyntaxInput`、`SyntaxConfig`、`TagNameConfig`、`BlockTagInput`、`MultilineForm`、`ErrorCode`、`ParseError`、`StructuralNode`、`SourcePosition`、`SourceSpan`、`PositionTracker`、`PipeArgs`、`PipeHandlerDefinition`、`EasyStableIdOptions`、`PrintOptions`、`TokenVisitContext`、`WalkVisitor`、`MapVisitor`、`Zone`、`IncrementalDocument`、`IncrementalEdit`、`IncrementalParseOptions`、`IncrementalSessionOptions`、`NarrowToken`、`NarrowDraft`、`NarrowTokenUnion` |
 
 详见 [导出一览 wiki 页面](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%AF%BC%E5%87%BA%E4%B8%80%E8%A7%88)
 ：完整签名及详细文档。

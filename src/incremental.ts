@@ -338,19 +338,34 @@ const buildHandlersShapeFingerprint = (handlers: unknown): number => {
 
 const DEFAULT_PARSE_OPTIONS_FINGERPRINT = fnvFeedU32(fnvInit(), 0x9e3779b9);
 
-// 整合指纹：handlers + allowForms + syntax 8 字段 + tagName 两个函数引用。
+// 整合指纹：handlers + allowForms + shorthand 模式 + syntax 8 字段 + tagName 两个函数引用。
 // 任何一项变了 → fingerprint 不同 → 增量更新直接跳 full rebuild。
 const buildParseOptionsFingerprint = (options: IncrementalParseOptions | undefined): number => {
   if (!options) return DEFAULT_PARSE_OPTIONS_FINGERPRINT;
   const syntax = options.syntax ?? {};
   const tagName = options.tagName ?? {};
   const allowForms = options.allowForms ?? [];
+  const shorthandMode = options.implicitInlineShorthand;
 
   let hash = fnvInit();
   hash = fnvFeedU32(hash, buildHandlersShapeFingerprint(options.handlers));
   hash = fnvFeedU32(hash, allowForms.length);
   for (let i = 0; i < allowForms.length; i++) {
     hash = fnvFeedU32(hash, hashText(allowForms[i]));
+  }
+  if (Array.isArray(shorthandMode)) {
+    hash = fnvFeedU32(hash, 2);
+    hash = fnvFeedU32(hash, shorthandMode.length);
+    for (let i = 0; i < shorthandMode.length; i++) {
+      hash = fnvFeedU32(hash, hashText(shorthandMode[i]));
+    }
+  } else if (shorthandMode === false) {
+    hash = fnvFeedU32(hash, 0);
+  } else if (shorthandMode === true) {
+    hash = fnvFeedU32(hash, 1);
+  } else {
+    // undefined -> behavior equals false in buildGatingContext
+    hash = fnvFeedU32(hash, 0);
   }
 
   const syntaxKeys = [
@@ -517,6 +532,7 @@ const nodeSignature = (node: StructuralNode, budget?: SignatureBudget): number |
       }
       if (current.type === "inline") {
         let h = fnvFeedU32(fnvFeedU32(fnvInit(), NODE_TAG_INLINE), hashText(current.tag));
+        h = fnvFeedU32(h, current.implicitInlineShorthand ? 1 : 0);
         h = fnvFeedU32(h, current.children.length);
         frameStack.push({ kind: "exit", hash: h, valueBase: valueStack.length });
         for (let i = current.children.length - 1; i >= 0; i--) {

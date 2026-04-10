@@ -169,6 +169,7 @@ export interface DslContext {
 }
 
 export type TagForm = "inline" | "raw" | "block";
+export type InlineShorthandOption = boolean | readonly string[];
 
 /** @internal Alias — same union, used for line-break normalization context. */
 export type MultilineForm = TagForm;
@@ -212,6 +213,16 @@ export interface ParserBaseOptions {
    * Default: all forms enabled (`["inline", "raw", "block"]`).
    */
   allowForms?: readonly TagForm[];
+  /**
+   * Control implicit inline shorthand (`name(...)`) inside inline argument context.
+   *
+   * - `true`: enabled for every registered tag that supports inline form.
+   * - `false`: disable shorthand entirely.
+   * - `string[]`: enable shorthand only for listed tag names.
+   *
+   * Default: `false`.
+   */
+  implicitInlineShorthand?: InlineShorthandOption;
   /** Maximum nesting depth (default 50). */
   depthLimit?: number;
   /** Override DSL syntax tokens (default: `$$tag(…)$$` family). */
@@ -275,7 +286,17 @@ export type StructuralNode =
   | { type: "text"; value: string; position?: SourceSpan }
   | { type: "escape"; raw: string; position?: SourceSpan }
   | { type: "separator"; position?: SourceSpan }
-  | { type: "inline"; tag: string; children: StructuralNode[]; position?: SourceSpan }
+  | {
+      type: "inline";
+      tag: string;
+      children: StructuralNode[];
+      /**
+       * True when this inline node comes from implicit inline shorthand (`name(...)`)
+       * inside an inline-arg context.
+       */
+      implicitInlineShorthand?: boolean;
+      position?: SourceSpan;
+    }
   | { type: "raw"; tag: string; args: StructuralNode[]; content: string; position?: SourceSpan }
   | {
       type: "block";

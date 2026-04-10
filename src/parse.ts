@@ -133,7 +133,11 @@ interface ParsePipelineBase {
 }
 
 const resolveParsePipelineBase = (text: string, options: ParseOptions): ParsePipelineBase => {
-  const gating = buildGatingContext(options.handlers ?? {}, options.allowForms);
+  const gating = buildGatingContext(
+    options.handlers ?? {},
+    options.allowForms,
+    options.implicitInlineShorthand,
+  );
   return {
     gating,
     blockTagSet: resolveBlockTags(gating.handlers, options.blockTags),

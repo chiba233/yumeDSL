@@ -28,10 +28,10 @@
 //  主循环（~489 while）：
 //   ~492  帧完成                 textEnd 到达 / inline 未闭合处理
 //   ~520  转义序列               readEscapedSequence
-//   ~537  inline 帧 argClose     parenDepth 追踪 + )$$ / )% / )* form 判定
+//   ~537  inline 帧 argClose     )$$ / )% / )* form 判定 + shorthand 关闭
 //   ~715  非 inline 帧意外 endTag
 //   ~723  管道分隔符             insideArgs 时的 | 处理
-//   ~738  标签头识别             readTagStartInfo + 裸 ( 的 parenDepth++
+//   ~738  标签头识别             readTagStartInfo + shorthand 识别
 //   ~750  深度限制退化           skipTagBoundary
 //   ~759  inline 帧嵌套标签      gating 检查 + pushInlineChild（跳过 getTagCloserType）
 //   ~775  非 inline 帧 form 判定 getTagCloserType → inline / raw / block 分发
@@ -102,6 +102,7 @@ export type IndexedStructuralNode =
       type: "inline";
       tag: string;
       children: IndexedStructuralNode[];
+      implicitInlineShorthand?: boolean;
       _meta: TagMeta;
       position?: SourceSpan;
     }
@@ -126,7 +127,7 @@ interface ParseNodeFactory<TNode extends StructuralNode | IndexedStructuralNode>
   text(value: string, start: number, end: number): TNode;
   escape(raw: string, start: number, end: number): TNode;
   separator(start: number, end: number): TNode;
-  inline(tag: string, children: TNode[], meta: TagMeta): TNode;
+  inline(tag: string, children: TNode[], meta: TagMeta, implicitInlineShorthand: boolean): TNode;
   raw(tag: string, args: TNode[], content: string, meta: TagMeta): TNode;
   block(tag: string, args: TNode[], children: TNode[], meta: TagMeta): TNode;
 }
@@ -147,7 +148,10 @@ const publicNodeFactory: ParseNodeFactory<StructuralNode> = {
   text: (value) => ({ type: "text", value }),
   escape: (raw) => ({ type: "escape", raw }),
   separator: () => ({ type: "separator" }),
-  inline: (tag, children) => ({ type: "inline", tag, children }),
+  inline: (tag, children, _meta, implicitInlineShorthand) =>
+    implicitInlineShorthand
+      ? { type: "inline", tag, children, implicitInlineShorthand: true }
+      : { type: "inline", tag, children },
   raw: (tag, args, content) => ({ type: "raw", tag, args, content }),
   block: (tag, args, children) => ({ type: "block", tag, args, children }),
 };
@@ -156,7 +160,10 @@ const indexedNodeFactory: ParseNodeFactory<IndexedStructuralNode> = {
   text: (value, start, end) => ({ type: "text", value, _meta: { start, end } }),
   escape: (raw, start, end) => ({ type: "escape", raw, _meta: { start, end } }),
   separator: (start, end) => ({ type: "separator", _meta: { start, end } }),
-  inline: (tag, children, meta) => ({ type: "inline", tag, children, _meta: meta }),
+  inline: (tag, children, meta, implicitInlineShorthand) =>
+    implicitInlineShorthand
+      ? { type: "inline", tag, children, implicitInlineShorthand: true, _meta: meta }
+      : { type: "inline", tag, children, _meta: meta },
   raw: (tag, args, content, meta) => ({ type: "raw", tag, args, content, _meta: meta }),
   block: (tag, args, children, meta) => ({ type: "block", tag, args, children, _meta: meta }),
 };
@@ -236,8 +243,9 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     tagPosition: SourceSpan | undefined;
 
     // ── inline 专用：lazy close ──
-    closingEndTag: string | null; // non-null 表示这个帧遇到 endTag 时自行关闭
-    parenDepth: number; // 裸 ( ) 深度追踪，用于正确匹配 argClose
+    inlineCloseToken: string | null; // non-null 表示这个帧遇到 close token 时自行关闭
+    inlineCloseWidth: number; // 关闭时消费的源码长度（可为 0，用于被完整 DSL 打断）
+    implicitInlineShorthand: boolean; // name(...) shorthand 子帧
     tagStartI: number; // 标签头在 text 中的起始位置
     argStartI: number; // info.argStart
     tagOpenPos: number; // info.tagOpenPos，用于 error span
@@ -269,8 +277,9 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     tag: "",
     meta: null,
     tagPosition: undefined,
-    closingEndTag: null,
-    parenDepth: 0,
+    inlineCloseToken: null,
+    inlineCloseWidth: 0,
+    implicitInlineShorthand: false,
     tagStartI: 0,
     argStartI: 0,
     tagOpenPos: 0,
@@ -349,7 +358,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     const kind = child.returnKind;
     if (kind === "inline") {
       const closeStart = child.i; // child.i 停在 endTag 的位置
-      const nextI = closeStart + endTag.length;
+      const nextI = closeStart + child.inlineCloseWidth;
       const base = parent.baseOffset;
       const argOff = base + child.argStartI;
       const closeOff = base + closeStart;
@@ -362,7 +371,11 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         contentEnd: closeOff,
       };
       parent.i = nextI;
-      pushNode(parent.nodes, factory.inline(child.tag, childNodes, meta), makePosition(tracker, meta.start, meta.end));
+      pushNode(
+        parent.nodes,
+        factory.inline(child.tag, childNodes, meta, child.implicitInlineShorthand),
+        makePosition(tracker, meta.start, meta.end),
+      );
     } else if (kind === "rawArgs") {
       pushNode(
         parent.nodes,
@@ -445,6 +458,28 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     stack.push(child);
   };
 
+  interface InlineChildInit {
+    tag: string;
+    tagStartI: number;
+    argStartI: number;
+    tagOpenPos: number;
+    closeToken: string;
+    implicitInlineShorthand: boolean;
+  }
+
+  const pushInlineChildFrame = (frame: ParseFrame, init: InlineChildInit): void => {
+    flushBuffer(frame);
+    const child = makeFrame(frame.text, frame.depth + 1, true, frame.baseOffset);
+    child.i = init.argStartI;
+    child.textEnd = frame.textEnd;
+    pushChildFrame(child, "inline", stack.length - 1, init.tag, null, undefined);
+    child.inlineCloseToken = init.closeToken;
+    child.implicitInlineShorthand = init.implicitInlineShorthand;
+    child.tagStartI = init.tagStartI;
+    child.argStartI = init.argStartI;
+    child.tagOpenPos = init.tagOpenPos;
+  };
+
   // ── inline 子帧 push ──
   //
   // gating 检查 + flush + push 一体。返回 true 表示已 push，false 表示 gating 拒绝。
@@ -465,15 +500,61 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     ) {
       return false;
     }
-    flushBuffer(frame);
-    const child = makeFrame(frame.text, frame.depth + 1, true, frame.baseOffset);
-    child.i = info.argStart;
-    child.textEnd = frame.textEnd;
-    pushChildFrame(child, "inline", stack.length - 1, info.tag, null, undefined);
-    child.closingEndTag = endTag;
-    child.tagStartI = tagStartI;
-    child.argStartI = info.argStart;
-    child.tagOpenPos = info.tagOpenPos;
+    pushInlineChildFrame(frame, {
+      tag: info.tag,
+      tagStartI,
+      argStartI: info.argStart,
+      tagOpenPos: info.tagOpenPos,
+      closeToken: endTag,
+      implicitInlineShorthand: false,
+    });
+    return true;
+  };
+
+  interface ShorthandStartInfo {
+    tag: string;
+    tagOpenPos: number;
+    argStart: number;
+  }
+
+  const readInlineShorthandStart = (frameText: string, i: number): ShorthandStartInfo | null => {
+    if (!gating) return null;
+    if (!gating.inlineShorthandEnabled) return null;
+    const { isTagChar, isTagStartChar } = tagName;
+    if (i >= frameText.length || !isTagStartChar(frameText[i])) return null;
+
+    let tagNameEnd = i + 1;
+    while (tagNameEnd < frameText.length && isTagChar(frameText[tagNameEnd])) {
+      tagNameEnd++;
+    }
+    if (!frameText.startsWith(tagOpen, tagNameEnd)) return null;
+
+    const tag = frameText.slice(i, tagNameEnd);
+    if (!gating.registeredTags.has(tag)) return null;
+    if (gating.inlineShorthandTags && !gating.inlineShorthandTags.has(tag)) return null;
+    const handler = gating.handlers[tag];
+    if (!supportsInlineForm(handler, gating.allowInline, true)) return null;
+
+    return {
+      tag,
+      tagOpenPos: i,
+      argStart: tagNameEnd + tagOpen.length,
+    };
+  };
+
+  const tryPushInlineShorthandChild = (
+    frame: ParseFrame,
+    tagStartI: number,
+    info: ShorthandStartInfo,
+  ): boolean => {
+    pushInlineChildFrame(frame, {
+      tag: info.tag,
+      tagStartI,
+      argStartI: info.argStart,
+      tagOpenPos: info.tagOpenPos,
+      closeToken: tagClose,
+      implicitInlineShorthand: true,
+    });
     return true;
   };
 
@@ -486,18 +567,20 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
 
     // ── 帧完成 ──
     if (frame.i >= frame.textEnd) {
-      if (frame.closingEndTag !== null) {
+      if (frame.inlineCloseToken !== null) {
         // inline 帧走到文本末尾仍未关闭 → 未闭合错误
         // 这里不要整段吞掉：只把 tag 头回退成普通文本，并把父帧 i 放回 argStart。
         // 后续正文会继续在父帧里按正常字符流扫描，这是老版本错误恢复语义。
-        emitError(
-          tracker,
-          onError,
-          "INLINE_NOT_CLOSED",
-          frame.text,
-          frame.tagStartI,
-          frame.argStartI - frame.tagOpenPos,
-        );
+        if (!frame.implicitInlineShorthand) {
+          emitError(
+            tracker,
+            onError,
+            "INLINE_NOT_CLOSED",
+            frame.text,
+            frame.tagStartI,
+            frame.argStartI - frame.tagOpenPos,
+          );
+        }
         stack.pop();
         const parent = stack[frame.parentIndex];
         appendBuf(parent, frame.tagStartI, frame.argStartI);
@@ -529,26 +612,26 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
 
     // ── inline 帧的 argClose 检测 ──
     //
-    // inline 帧追踪裸 ( ) 深度。遇到 ) 且 parenDepth === 0 时，
-    // 根据后缀判定真实 form：)$$ → inline close，)% → raw，)* → block。
-    // 这样不需要预扫 findTagArgClose / getTagCloserType，每个字符只访问一次。
-    if (frame.closingEndTag !== null) {
+    // inline 帧不再做裸括号配平。
+    // 只在遇到 )$$ / )% / )* 时判定完整 form；shorthand 子帧只吃一个 )。
+    if (frame.inlineCloseToken !== null) {
       const { tagClose, rawOpen, blockOpen, blockClose } = syntax;
 
-      // ) 系列判定
-      if (frameText.startsWith(tagClose, i)) {
-        if (frame.parenDepth > 0) {
-          // 匹配内层裸 (，不是 argClose
-          frame.parenDepth--;
-          appendBuf(frame, i, i + tagClose.length);
-          frame.i += tagClose.length;
+      if (frame.inlineCloseToken === tagClose) {
+        if (frameText.startsWith(tagClose, i)) {
+          flushBuffer(frame);
+          frame.inlineCloseWidth = tagClose.length;
+          stack.pop();
+          completeChild(frame);
           continue;
         }
+      } else if (frameText.startsWith(tagClose, i)) {
+        // ) 系列判定（完整 DSL inline 参数区）
 
-        // parenDepth === 0 → 这是 argClose，检查后缀确定 form
         if (frameText.startsWith(endTag, i)) {
           // )$$ → inline close
           flushBuffer(frame);
+          frame.inlineCloseWidth = endTag.length;
           stack.pop();
           completeChild(frame);
           continue;
@@ -718,9 +801,11 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     // ── 标签头识别 ──
     const info = readTagStartInfo(frameText, i, syntax, tagName);
     if (!info) {
-      // inline 帧：裸 ( 递增 parenDepth
-      if (frame.closingEndTag !== null && frameText.startsWith(tagOpen, i)) {
-        frame.parenDepth++;
+      if (frame.inlineCloseToken !== null) {
+        const shorthand = readInlineShorthandStart(frameText, i);
+        if (shorthand && tryPushInlineShorthandChild(frame, i, shorthand)) {
+          continue;
+        }
       }
       appendBuf(frame, i, i + 1);
       frame.i++;
@@ -738,16 +823,29 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
 
     // ── inline 帧内的嵌套标签：直接 push 子帧，跳过 getTagCloserType ──
     //
-    // inline 帧自带 parenDepth 追踪，子帧遇到 ) 时会根据后缀
-    // ( )$$ / )% / )* ) 判定真实 form。不需要预扫 findTagArgClose。
+    // inline 帧子扫描直接逐字符前进：
+    // 子帧遇到 ) 时按自身 close token 判定关闭，不需要预扫 findTagArgClose。
     // 这使得纯 inline 深嵌套保持 O(n)。
     //
     // 注意：仍需检查 gating。如果标签的 inline form 不被支持，
     // 应该当普通字符处理，而不是盲目 push 子帧。
-    if (frame.closingEndTag !== null) {
+    if (frame.inlineCloseToken !== null) {
+      // shorthand 状态不跨完整 DSL 继承：
+      // 一旦命中完整结构起点，立刻结束 shorthand 子帧，把完整结构交给外层继续解析。
+      if (frame.implicitInlineShorthand) {
+        flushBuffer(frame);
+        frame.inlineCloseWidth = 0;
+        stack.pop();
+        completeChild(frame);
+        continue;
+      }
+
       if (!tryPushInlineChild(frame, i, info)) {
-        appendBuf(frame, i, i + 1);
-        frame.i++;
+        // 完整 DSL 结构优先于文本：即使当前 tag 不支持 inline form，
+        // 也要整段降级为文本，避免把内层 )$$ 误判成当前层关闭。
+        const degradedEnd = skipTagBoundary(frameText, info, syntax, tagName);
+        appendBuf(frame, i, degradedEnd);
+        frame.i = degradedEnd;
       }
       continue;
     }
@@ -1012,7 +1110,7 @@ export const parseStructural = (
     tagName: legacyTagName,
   });
   const gating = options?.handlers
-    ? buildGatingContext(options.handlers, options.allowForms)
+    ? buildGatingContext(options.handlers, options.allowForms, options.implicitInlineShorthand)
     : null;
   // public 路径只需要 position，不需要 _meta。
   // 因此这里直接走 parsePublicNodes，避免先构内部树再做 strip/copy。

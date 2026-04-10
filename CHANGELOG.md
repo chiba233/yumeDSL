@@ -2,6 +2,28 @@
 
 # Changelog
 
+### 1.3.0
+
+- **New: implicit inline shorthand (`name(...)`)**
+  - Added shorthand parsing inside inline-argument context.
+  - Parsing priority is strict: full DSL structures (`inline` / `raw` / `block`) are matched before shorthand, then plain text.
+  - Shorthand state is isolated and does not cross full-structure boundaries.
+  - The inline-argument scanner no longer relies on bare-parenthesis balancing for shorthand handling; it keeps single-pass, non-backtracking O(n) behavior.
+- **Config: `implicitInlineShorthand`**
+  - New parse option: `implicitInlineShorthand?: boolean | readonly string[]`.
+  - `false` (default): disabled.
+  - `true`: enabled for all registered tags that support inline form.
+  - `string[]`: enabled only for listed tags.
+- **Incremental correctness fix**
+  - Fixed parse-options fingerprint mismatch for `implicitInlineShorthand` defaults.
+  - `undefined` now fingerprints as `false` (matching runtime behavior), so switching from `undefined` to `true` correctly triggers a rebuild instead of reusing stale incremental state.
+- **Structural node metadata**
+  - `StructuralNode` inline nodes now include optional `implicitInlineShorthand?: boolean`.
+  - This flag is `true` only when the inline node is produced by implicit shorthand parsing (`name(...)`) inside inline-argument context.
+- **Incremental signature consistency**
+  - Zone/node signatures now include the inline shorthand flag, preventing structural-reuse mismatches between shorthand and non-shorthand inline nodes.
+- No breaking changes to existing public APIs.
+
 ### 1.2.7
 
 - **Remaining native recursion removed from runtime hot paths**

@@ -2,6 +2,28 @@
 
 # 更新日志
 
+### 1.3.0
+
+- **新增：inline 隐式简写（`name(...)`）**
+  - 在 inline 参数上下文中支持 shorthand 解析。
+  - 解析优先级固定为：完整 DSL 结构（`inline` / `raw` / `block`）优先，其次 shorthand，最后普通文本。
+  - shorthand 状态不会跨完整结构继承，避免跨层误闭合。
+  - inline 参数扫描在 shorthand 处理上不再依赖裸括号配平，仍保持单遍扫描、无回溯、O(n)。
+- **配置项：`implicitInlineShorthand`**
+  - 新增解析选项：`implicitInlineShorthand?: boolean | readonly string[]`。
+  - `false`（默认）：关闭。
+  - `true`：对所有已注册且支持 inline form 的标签开启。
+  - `string[]`：仅对白名单标签开启。
+- **增量正确性修复**
+  - 修复 `implicitInlineShorthand` 默认值与增量指纹不一致的问题。
+  - `undefined` 现在按 `false` 参与指纹计算（与运行时默认行为一致），从 `undefined` 切到 `true` 时会正确触发重建，不会复用过期增量结果。
+- **结构节点元信息**
+  - `StructuralNode` 的 inline 节点新增可选字段 `implicitInlineShorthand?: boolean`。
+  - 仅当该 inline 节点由 inline 参数上下文中的 shorthand（`name(...)`）生成时，该字段为 `true`。
+- **增量签名一致性**
+  - zone/node 签名已纳入 inline shorthand 标记，避免 shorthand 与非 shorthand inline 节点在复用路径上发生结构误判。
+- 现有公共 API 无破坏性变化。
+
 ### 1.2.7
 
 - **清除运行时热路径中剩余的原生递归**

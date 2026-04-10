@@ -1,4 +1,5 @@
 import type {
+  InlineShorthandOption,
   ParserBaseOptions,
   PositionTracker,
   SyntaxConfig,
@@ -16,6 +17,8 @@ export interface GatingContext {
   handlers: Record<string, TagHandler>;
   registeredTags: ReadonlySet<string>;
   allowInline: boolean;
+  inlineShorthandEnabled: boolean;
+  inlineShorthandTags: ReadonlySet<string> | null;
 }
 
 export const filterHandlersByForms = (
@@ -80,11 +83,30 @@ export const supportsInlineForm = (
 export const buildGatingContext = (
   handlers: Record<string, TagHandler>,
   allowForms: readonly TagForm[] | undefined,
+  implicitInlineShorthand: InlineShorthandOption | undefined,
 ): GatingContext => {
   const registeredTags = new Set(Object.keys(handlers));
   const filtered = allowForms ? filterHandlersByForms(handlers, new Set(allowForms)) : handlers;
   const allowInline = !allowForms || allowForms.includes("inline");
-  return { handlers: filtered, registeredTags, allowInline };
+
+  let inlineShorthandEnabled = false;
+  let inlineShorthandTags: ReadonlySet<string> | null = null;
+
+  if (Array.isArray(implicitInlineShorthand)) {
+    inlineShorthandEnabled = true;
+    inlineShorthandTags = new Set(implicitInlineShorthand);
+  } else if (implicitInlineShorthand === true) {
+    inlineShorthandEnabled = true;
+    inlineShorthandTags = null;
+  }
+
+  return {
+    handlers: filtered,
+    registeredTags,
+    allowInline,
+    inlineShorthandEnabled,
+    inlineShorthandTags,
+  };
 };
 
 // ── Shared base options ──
