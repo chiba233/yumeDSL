@@ -338,6 +338,9 @@ const buildHandlersShapeFingerprint = (handlers: unknown): number => {
 
 const DEFAULT_PARSE_OPTIONS_FINGERPRINT = fnvFeedU32(fnvInit(), 0x9e3779b9);
 
+const normalizeShorthandList = (input: readonly string[]): string[] =>
+  Array.from(new Set(input)).sort();
+
 // 整合指纹：handlers + allowForms + shorthand 模式 + syntax 8 字段 + tagName 两个函数引用。
 // 任何一项变了 → fingerprint 不同 → 增量更新直接跳 full rebuild。
 const buildParseOptionsFingerprint = (options: IncrementalParseOptions | undefined): number => {
@@ -354,10 +357,11 @@ const buildParseOptionsFingerprint = (options: IncrementalParseOptions | undefin
     hash = fnvFeedU32(hash, hashText(allowForms[i]));
   }
   if (Array.isArray(shorthandMode)) {
+    const normalized = normalizeShorthandList(shorthandMode);
     hash = fnvFeedU32(hash, 2);
-    hash = fnvFeedU32(hash, shorthandMode.length);
-    for (let i = 0; i < shorthandMode.length; i++) {
-      hash = fnvFeedU32(hash, hashText(shorthandMode[i]));
+    hash = fnvFeedU32(hash, normalized.length);
+    for (let i = 0; i < normalized.length; i++) {
+      hash = fnvFeedU32(hash, hashText(normalized[i]));
     }
   } else if (shorthandMode === false) {
     hash = fnvFeedU32(hash, 0);

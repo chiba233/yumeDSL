@@ -703,7 +703,7 @@ const dsl = createParser({
 
 **Parsing priority:** full DSL structures (`$$tag(...)$$`, `$$tag(...)%`, `$$tag(...)*`) are always matched first.
 Shorthand is only attempted when no full structure matches. Literal parentheses inside shorthand args must be escaped
-with `~)` / `~(`.
+with `\)` / `\(`.
 
 ---
 

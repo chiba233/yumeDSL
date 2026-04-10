@@ -7,12 +7,12 @@ export interface PrintOptions {
 }
 
 type PrintTask =
-  | { kind: "nodes"; nodes: StructuralNode[]; index: number }
+  | { kind: "nodes"; nodes: StructuralNode[]; index: number; inInlineArgs: boolean }
   | { kind: "text"; value: string };
 
 const printNodes = (nodes: StructuralNode[], s: SyntaxInput): string => {
   let out = "";
-  const stack: PrintTask[] = [{ kind: "nodes", nodes, index: 0 }];
+  const stack: PrintTask[] = [{ kind: "nodes", nodes, index: 0, inInlineArgs: false }];
 
   while (stack.length > 0) {
     const task = stack[stack.length - 1]!;
@@ -35,20 +35,24 @@ const printNodes = (nodes: StructuralNode[], s: SyntaxInput): string => {
     } else if (node.type === "separator") {
       out += s.tagDivider;
     } else if (node.type === "inline") {
-      stack.push({ kind: "text", value: s.endTag });
-      stack.push({ kind: "nodes", nodes: node.children, index: 0 });
-      stack.push({ kind: "text", value: s.tagPrefix + node.tag + s.tagOpen });
+      const isImplicitShorthand = node.implicitInlineShorthand === true && task.inInlineArgs;
+      stack.push({ kind: "text", value: isImplicitShorthand ? s.tagClose : s.endTag });
+      stack.push({ kind: "nodes", nodes: node.children, index: 0, inInlineArgs: true });
+      stack.push({
+        kind: "text",
+        value: (isImplicitShorthand ? "" : s.tagPrefix) + node.tag + s.tagOpen,
+      });
     } else if (node.type === "raw") {
       stack.push({ kind: "text", value: s.rawClose });
       stack.push({ kind: "text", value: node.content });
       stack.push({ kind: "text", value: s.rawOpen });
-      stack.push({ kind: "nodes", nodes: node.args, index: 0 });
+      stack.push({ kind: "nodes", nodes: node.args, index: 0, inInlineArgs: true });
       stack.push({ kind: "text", value: s.tagPrefix + node.tag + s.tagOpen });
     } else if (node.type === "block") {
       stack.push({ kind: "text", value: s.blockClose });
-      stack.push({ kind: "nodes", nodes: node.children, index: 0 });
+      stack.push({ kind: "nodes", nodes: node.children, index: 0, inInlineArgs: false });
       stack.push({ kind: "text", value: s.blockOpen });
-      stack.push({ kind: "nodes", nodes: node.args, index: 0 });
+      stack.push({ kind: "nodes", nodes: node.args, index: 0, inInlineArgs: true });
       stack.push({ kind: "text", value: s.tagPrefix + node.tag + s.tagOpen });
     }
   }
@@ -59,7 +63,10 @@ const printNodes = (nodes: StructuralNode[], s: SyntaxInput): string => {
 /**
  * Serialize a structural parse tree back to DSL source text.
  *
- * Always prints full tag syntax — no gating or validation is applied.
+ * No gating or validation is applied.
+ * Inline nodes marked with `implicitInlineShorthand: true` are serialized as
+ * shorthand (`tag(...)` / `tag<...>` depending on syntax) only when they appear
+ * in an inline-argument context; other nodes use full syntax.
  * If the tree contains nodes whose form is not supported by the runtime parser,
  * they will be printed with full syntax and naturally degrade to plain text
  * when re-parsed.

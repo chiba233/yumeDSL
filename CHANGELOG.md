@@ -9,11 +9,18 @@
   - Parsing priority is strict: full DSL structures (`inline` / `raw` / `block`) are matched before shorthand, then plain text.
   - Shorthand state is isolated and does not cross full-structure boundaries.
   - The inline-argument scanner no longer relies on bare-parenthesis balancing for shorthand handling; it keeps single-pass, non-backtracking O(n) behavior.
+- **Print integration: `printStructural` now preserves shorthand form**
+  - Inline nodes marked with `implicitInlineShorthand: true` are printed as `name(...)` (or syntax-equivalent shorthand) when they are in inline-argument context.
+  - Outside inline-argument context, printing remains full-form for backward compatibility.
 - **Config: `implicitInlineShorthand`**
   - New parse option: `implicitInlineShorthand?: boolean | readonly string[]`.
   - `false` (default): disabled.
   - `true`: enabled for all registered tags that support inline form.
   - `string[]`: enabled only for listed tags.
+- **Behavior boundary (compatibility note)**
+  - `implicitInlineShorthand` is active only during inline-argument child scanning inside `$$tag(` context.
+  - Top-level text scanning and full DSL entry points do not reinterpret plain `name(...)` as shorthand.
+  - Shorthand output is marked only on inline child nodes (`implicitInlineShorthand: true`) and does not alter existing `$$tag(...)$$` semantics.
 - **Incremental correctness fix**
   - Fixed parse-options fingerprint mismatch for `implicitInlineShorthand` defaults.
   - `undefined` now fingerprints as `false` (matching runtime behavior), so switching from `undefined` to `true` correctly triggers a rebuild instead of reusing stale incremental state.

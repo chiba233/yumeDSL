@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { parseStructural, printStructural, createParser } from "../src/index.ts";
+import { parseStructural, printStructural, createParser, createSimpleInlineHandlers } from "../src/index.ts";
 import type { StructuralNode } from "../src/types.ts";
 import type { GoldenCase } from "./testHarness.ts";
 import { runGoldenCases } from "./testHarness.ts";
@@ -37,6 +37,17 @@ const cases: GoldenCase[] = [
     name: "printStructural: nested inline tags round-trip",
     run: () => {
       roundTrip("$$bold(hello $$italic(world)$$)$$");
+    },
+  },
+  {
+    name: "printStructural: implicit inline shorthand round-trip when node is marked",
+    run: () => {
+      const source = "$$bold(bold(x))$$";
+      const tree = parseStructural(source, {
+        handlers: createSimpleInlineHandlers(["bold"]),
+        implicitInlineShorthand: true,
+      });
+      assert.equal(printStructural(tree), source);
     },
   },
   {
@@ -177,6 +188,58 @@ const cases: GoldenCase[] = [
         },
       ];
       assert.equal(printStructural(tree), "hello $$bold(world)$$");
+    },
+  },
+  {
+    name: "printStructural: top-level shorthand-flagged inline still serializes as full form",
+    run: () => {
+      const tree: StructuralNode[] = [
+        {
+          type: "inline",
+          tag: "bold",
+          implicitInlineShorthand: true,
+          children: [{ type: "text", value: "world" }],
+        },
+      ];
+      assert.equal(printStructural(tree), "$$bold(world)$$");
+    },
+  },
+  {
+    name: "printStructural: shorthand-flagged inline in args respects custom syntax",
+    run: () => {
+      const syntax = {
+        tagPrefix: "@@",
+        tagOpen: "[",
+        tagClose: "]",
+        tagDivider: ";",
+        endTag: "]@@",
+        rawOpen: "]%",
+        blockOpen: "]*",
+        rawClose: "%end@@",
+        blockClose: "*end@@",
+        escapeChar: "~",
+      };
+      const tree: StructuralNode[] = [
+        {
+          type: "inline",
+          tag: "bold",
+          children: [{ type: "text", value: "ok" }],
+        },
+        {
+          type: "inline",
+          tag: "bold",
+          implicitInlineShorthand: true,
+          children: [
+            {
+              type: "inline",
+              tag: "bold",
+              implicitInlineShorthand: true,
+              children: [{ type: "text", value: "ok" }],
+            },
+          ],
+        },
+      ];
+      assert.equal(printStructural(tree, { syntax }), "@@bold[ok]@@@@bold[bold[ok]]@@");
     },
   },
   {

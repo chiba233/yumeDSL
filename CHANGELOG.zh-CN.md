@@ -9,11 +9,18 @@
   - 解析优先级固定为：完整 DSL 结构（`inline` / `raw` / `block`）优先，其次 shorthand，最后普通文本。
   - shorthand 状态不会跨完整结构继承，避免跨层误闭合。
   - inline 参数扫描在 shorthand 处理上不再依赖裸括号配平，仍保持单遍扫描、无回溯、O(n)。
+- **print 联动：`printStructural` 支持 shorthand 形态输出**
+  - 当 inline 节点带 `implicitInlineShorthand: true` 且位于 inline 参数上下文时，打印为 `name(...)`（或自定义语法下的等价 shorthand 形态）。
+  - 非 inline 参数上下文仍按完整 DSL 形态输出，保证向后兼容。
 - **配置项：`implicitInlineShorthand`**
   - 新增解析选项：`implicitInlineShorthand?: boolean | readonly string[]`。
   - `false`（默认）：关闭。
   - `true`：对所有已注册且支持 inline form 的标签开启。
   - `string[]`：仅对白名单标签开启。
+- **行为边界（兼容性说明）**
+  - `implicitInlineShorthand` 仅在 `$$tag(` 的 inline 参数子扫描上下文中生效。
+  - 顶层文本扫描与完整 DSL 结构入口不会把普通 `name(...)` 当作 shorthand。
+  - shorthand 产物仅作为 inline 子节点标记（`implicitInlineShorthand: true`），不会改变完整 `$$tag(...)$$` 的既有语义。
 - **增量正确性修复**
   - 修复 `implicitInlineShorthand` 默认值与增量指纹不一致的问题。
   - `undefined` 现在按 `false` 参与指纹计算（与运行时默认行为一致），从 `undefined` 切到 `true` 时会正确触发重建，不会复用过期增量结果。

@@ -1115,6 +1115,50 @@ const cases: GoldenCase[] = [
       assert.ok(touchedBytes < source.length / 4, `touched=${touchedBytes}, source=${source.length}`);
     },
   },
+  {
+    name: "[Incremental/Fingerprint] implicitInlineShorthand whitelist should be order/duplicate insensitive",
+    run: () => {
+      const handlers = {
+        ...createSimpleInlineHandlers(["bold"]),
+        ...createSimpleRawHandlers(["code"]),
+      };
+      const source = "$$bold(x)$$\n$$code(ts)%\nA\n%end$$";
+      const doc = parseIncremental(source, {
+        handlers,
+        implicitInlineShorthand: ["bold", "italic"],
+      });
+      const editAt = source.indexOf("x");
+      const newSource = applyEdit(source, editAt, editAt + 1, "y");
+
+      const reorderedStats = captureIncrementalDebug(() => {
+        updateIncremental(
+          doc,
+          { startOffset: editAt, oldEndOffset: editAt + 1, newText: "y" },
+          newSource,
+          {
+            handlers,
+            implicitInlineShorthand: ["italic", "bold"],
+          },
+        );
+      });
+      const duplicateStats = captureIncrementalDebug(() => {
+        updateIncremental(
+          doc,
+          { startOffset: editAt, oldEndOffset: editAt + 1, newText: "y" },
+          newSource,
+          {
+            handlers,
+            implicitInlineShorthand: ["bold", "bold", "italic"],
+          },
+        );
+      });
+
+      assert.ok(reorderedStats);
+      assert.equal(reorderedStats.fellBackToFull, false);
+      assert.ok(duplicateStats);
+      assert.equal(duplicateStats.fellBackToFull, false);
+    },
+  },
 ];
 
 await runGoldenCases("Incremental", "incremental case", cases);
