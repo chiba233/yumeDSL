@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import type { GoldenCase } from "./testHarness.ts";
 import { runGoldenCases } from "./testHarness.ts";
-import { parseRichText, materializeTextTokens } from "../src/index.ts";
+import { createSimpleInlineHandlers, parseRichText, materializeTextTokens } from "../src/index.ts";
 
 const cases: GoldenCase[] = [
   {
@@ -29,6 +29,36 @@ const cases: GoldenCase[] = [
       assert.deepEqual(codes, []);
       // link 未注册 handler → passthrough 后 flatten 为单个文本节点
       assert.equal(result.length, 1);
+    },
+  },
+  {
+    name: "[Order/onError] inline fallback 在 inline form 被禁用时不应误报 INLINE_NOT_CLOSED（registered）",
+    run() {
+      const input = "$$code(a";
+      const codes: string[] = [];
+      const result = parseRichText(input, {
+        handlers: createSimpleInlineHandlers(["code"]),
+        allowForms: ["raw", "block"],
+        onError: (error) => codes.push(error.code),
+      });
+
+      assert.deepEqual(codes, []);
+      assert.equal(materializeTextTokens(result).map((token) => token.value ?? "").join(""), input);
+    },
+  },
+  {
+    name: "[Order/onError] inline fallback 在 inline form 被禁用时不应误报 INLINE_NOT_CLOSED（unknown）",
+    run() {
+      const input = "$$foo(a";
+      const codes: string[] = [];
+      const result = parseRichText(input, {
+        handlers: {},
+        allowForms: ["raw", "block"],
+        onError: (error) => codes.push(error.code),
+      });
+
+      assert.deepEqual(codes, []);
+      assert.equal(materializeTextTokens(result).map((token) => token.value ?? "").join(""), input);
     },
   },
   {
