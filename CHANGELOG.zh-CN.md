@@ -10,6 +10,8 @@
   - `parseIncrementalInternal` 新增可选 `existingTracker` 参数。当增量路径在 `buildPositionTracker` 已构建之后 fallback 到全量重建时，直接透传已有 tracker，避免重复构建。
 - **`findDirtyRange` 单遍扫描**
   - 重叠检测与插入点搜索合并为单次线性遍历。此前无重叠的编辑会触发第二次遍历来定位插入点；现在插入点作为重叠扫描的副产品一并记录，消除了额外遍历。
+- **`cloneSnapshotValueInternal` 消除逐层 `Object.keys` 分配**
+  - plain-object 分支从 `Object.keys(value)` + 索引循环改为 `for...in` 直接遍历，省去递归深拷贝时每层的临时 `string[]` 分配。语义不变——`isPlainObject` 已保证 prototype 为 `Object.prototype`（内置属性不可枚举）或 `null`（无继承）。
 
 ### 1.2.4
 

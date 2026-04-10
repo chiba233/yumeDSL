@@ -10,6 +10,8 @@
   - `parseIncrementalInternal` now accepts an optional `existingTracker` parameter. When the incremental path falls back to full rebuild after `buildPositionTracker` has already been called, the existing tracker is passed through instead of being discarded and rebuilt.
 - **Single-pass `findDirtyRange`**
   - The overlap scan and insertion-index search are now fused into a single linear pass. Previously, a no-overlap edit triggered a second traversal to locate the insertion point; the insertion index is now tracked as a side-product of the overlap scan, eliminating the extra pass.
+- **`cloneSnapshotValueInternal` avoids per-level `Object.keys` allocation**
+  - Plain-object branch switched from `Object.keys(value)` + indexed loop to `for...in` direct iteration. This eliminates a temporary `string[]` allocation at every recursion level during deep clone. Semantics are unchanged — `isPlainObject` guarantees the prototype is `Object.prototype` (built-in props are non-enumerable) or `null` (no inheritance).
 
 ### 1.2.4
 

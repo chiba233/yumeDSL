@@ -136,9 +136,7 @@ const cloneSnapshotValueInternal = <T>(value: T, seen: WeakMap<object, unknown>)
     if (seenObject) return seenObject as T;
     const next: Record<string, unknown> = {};
     seen.set(value, next);
-    const keys = Object.keys(value);
-    for (let i = 0; i < keys.length; i++) {
-      const key = keys[i];
+    for (const key in value) {
       next[key] = cloneSnapshotValueInternal(value[key], seen);
     }
     return next as T;
