@@ -571,16 +571,14 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         // inline 帧走到文本末尾仍未关闭 → 未闭合错误
         // 这里不要整段吞掉：只把 tag 头回退成普通文本，并把父帧 i 放回 argStart。
         // 后续正文会继续在父帧里按正常字符流扫描，这是老版本错误恢复语义。
-        if (!frame.implicitInlineShorthand) {
-          emitError(
-            tracker,
-            onError,
-            "INLINE_NOT_CLOSED",
-            frame.text,
-            frame.tagStartI,
-            frame.argStartI - frame.tagOpenPos,
-          );
-        }
+        emitError(
+          tracker,
+          onError,
+          frame.implicitInlineShorthand ? "SHORTHAND_NOT_CLOSED" : "INLINE_NOT_CLOSED",
+          frame.text,
+          frame.tagStartI,
+          frame.argStartI - frame.tagOpenPos,
+        );
         stack.pop();
         const parent = stack[frame.parentIndex];
         appendBuf(parent, frame.tagStartI, frame.argStartI);

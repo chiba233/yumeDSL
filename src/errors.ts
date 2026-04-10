@@ -8,6 +8,7 @@ const ERROR_MESSAGES: Record<ErrorCode, string> = {
   RAW_NOT_CLOSED: "Raw block not closed",
   RAW_CLOSE_MALFORMED: "Malformed raw close",
   INLINE_NOT_CLOSED: "Inline tag not closed",
+  SHORTHAND_NOT_CLOSED: "Inline shorthand not closed",
 };
 
 export const getErrorContext = (

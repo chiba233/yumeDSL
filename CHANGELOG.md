@@ -22,6 +22,10 @@
   - This flag is `true` only when the inline node is produced by implicit shorthand parsing (`name(...)`) inside inline-argument context.
 - **Incremental signature consistency**
   - Zone/node signatures now include the inline shorthand flag, preventing structural-reuse mismatches between shorthand and non-shorthand inline nodes.
+- **Diagnostics**
+  - Added new parse error code: `SHORTHAND_NOT_CLOSED`.
+  - Emitted when an implicit inline shorthand frame (`name(...)`) reaches EOF without a closing `)`.
+  - Existing `INLINE_NOT_CLOSED` behavior for full inline form is unchanged.
 - No breaking changes to existing public APIs.
 
 ### 1.2.7

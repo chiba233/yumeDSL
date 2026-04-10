@@ -22,6 +22,10 @@
   - 仅当该 inline 节点由 inline 参数上下文中的 shorthand（`name(...)`）生成时，该字段为 `true`。
 - **增量签名一致性**
   - zone/node 签名已纳入 inline shorthand 标记，避免 shorthand 与非 shorthand inline 节点在复用路径上发生结构误判。
+- **诊断信息**
+  - 新增解析错误码：`SHORTHAND_NOT_CLOSED`。
+  - 当隐式 inline shorthand 帧（`name(...)`）在 EOF 前未遇到闭合 `)` 时上报该错误。
+  - 现有完整 inline form 的 `INLINE_NOT_CLOSED` 语义保持不变。
 - 现有公共 API 无破坏性变化。
 
 ### 1.2.7
