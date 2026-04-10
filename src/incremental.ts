@@ -118,31 +118,117 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> => {
   return prototype === Object.prototype || prototype === null;
 };
 
-// 递归深拷贝：只处理 plain object 和 array，函数/class 实例原样返回。
-// seen WeakMap 防循环引用。
+// 深拷贝：只处理 plain object 和 array，函数/class 实例原样返回。
+// 显式栈 + seen WeakMap 防循环引用（不走原生递归，避免深层栈溢出）。
 const cloneSnapshotValueInternal = <T>(value: T, seen: WeakMap<object, unknown>): T => {
-  if (Array.isArray(value)) {
-    const seenArray = seen.get(value);
-    if (seenArray) return seenArray as T;
-    const next = new Array(value.length);
-    seen.set(value, next);
-    for (let i = 0; i < value.length; i++) {
-      next[i] = cloneSnapshotValueInternal(value[i], seen);
+  type ObjectFrame = {
+    kind: "object";
+    source: Record<string, unknown>;
+    target: Record<string, unknown>;
+    keys: string[];
+    index: number;
+  };
+  type ArrayFrame = {
+    kind: "array";
+    source: unknown[];
+    target: unknown[];
+    index: number;
+  };
+  type CloneFrame = ObjectFrame | ArrayFrame;
+  type CloneContainer = {
+    source: object;
+    clone: unknown[] | Record<string, unknown>;
+    kind: "array" | "object";
+  };
+
+  const asContainer = (
+    candidate: unknown,
+  ): CloneContainer | undefined => {
+    if (Array.isArray(candidate)) {
+      return { source: candidate, clone: new Array(candidate.length), kind: "array" };
     }
-    return next as T;
-  }
-  if (isPlainObject(value)) {
-    const seenObject = seen.get(value);
-    if (seenObject) return seenObject as T;
-    const next: Record<string, unknown> = {};
-    seen.set(value, next);
-    for (const key in value) {
-      if (Object.hasOwn(value, key))
-        next[key] = cloneSnapshotValueInternal(value[key], seen);
+    if (isPlainObject(candidate)) {
+      return { source: candidate, clone: {}, kind: "object" };
     }
-    return next as T;
+    return undefined;
+  };
+
+  const rootContainer = asContainer(value);
+  if (!rootContainer) return value;
+
+  const pushContainerFrame = (container: CloneContainer, stack: CloneFrame[]): void => {
+    if (container.kind === "array") {
+      stack.push({
+        kind: "array",
+        source: container.source as unknown[],
+        target: container.clone as unknown[],
+        index: 0,
+      });
+      return;
+    }
+    stack.push({
+      kind: "object",
+      source: container.source as Record<string, unknown>,
+      target: container.clone as Record<string, unknown>,
+      keys: Object.keys(container.source as Record<string, unknown>),
+      index: 0,
+    });
+  };
+
+  const rootSeen = seen.get(rootContainer.source);
+  if (rootSeen !== undefined) return rootSeen as T;
+  seen.set(rootContainer.source, rootContainer.clone);
+
+  const stack: CloneFrame[] = [];
+  pushContainerFrame(rootContainer, stack);
+
+  while (stack.length > 0) {
+    const frame = stack[stack.length - 1];
+    if (frame.kind === "array") {
+      if (frame.index >= frame.source.length) {
+        stack.pop();
+        continue;
+      }
+      const i = frame.index++;
+      const child = frame.source[i];
+      const container = asContainer(child);
+      if (!container) {
+        frame.target[i] = child;
+        continue;
+      }
+      const cached = seen.get(container.source);
+      if (cached !== undefined) {
+        frame.target[i] = cached;
+        continue;
+      }
+      seen.set(container.source, container.clone);
+      frame.target[i] = container.clone;
+      pushContainerFrame(container, stack);
+      continue;
+    }
+
+    if (frame.index >= frame.keys.length) {
+      stack.pop();
+      continue;
+    }
+    const key = frame.keys[frame.index++];
+    const child = frame.source[key];
+    const container = asContainer(child);
+    if (!container) {
+      frame.target[key] = child;
+      continue;
+    }
+    const cached = seen.get(container.source);
+    if (cached !== undefined) {
+      frame.target[key] = cached;
+      continue;
+    }
+    seen.set(container.source, container.clone);
+    frame.target[key] = container.clone;
+    pushContainerFrame(container, stack);
   }
-  return value;
+
+  return rootContainer.clone as T;
 };
 
 const cloneSnapshotValue = <T>(value: T): T =>

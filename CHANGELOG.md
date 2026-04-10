@@ -2,6 +2,14 @@
 
 # Changelog
 
+### 1.2.7
+
+- **Remaining native recursion removed from runtime hot paths**
+  - `cloneSnapshotValueInternal` (incremental parse-options snapshot clone) was rewritten from native recursion to explicit-stack iteration with cycle-safe `WeakMap` tracking.
+  - `cloneToken` (render-side token deep clone used by block-boundary trimming) was rewritten from native recursion to explicit-stack DFS cloning.
+  - This closes two remaining stack-safety short-board spots in deep-tree workflows and keeps behavior unchanged.
+- No public API changes
+
 ### 1.2.6
 
 - **Incremental signature path stack safety**

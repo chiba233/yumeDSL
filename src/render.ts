@@ -94,14 +94,43 @@ const shiftPosition = (
 };
 
 const cloneToken = (token: TextToken): TextToken => {
-  const cloned: TextToken = {
-    ...token,
-    value: Array.isArray(token.value) ? token.value.map(cloneToken) : token.value,
+  const cloneShallow = (source: TextToken, value: string | TextToken[]): TextToken => {
+    const cloned: TextToken = { ...source, value };
+    if (source.position) cloned.position = { start: source.position.start, end: source.position.end };
+    return cloned;
   };
-  if (token.position) {
-    cloned.position = { start: token.position.start, end: token.position.end };
+
+  if (typeof token.value === "string") {
+    return cloneShallow(token, token.value);
   }
-  return cloned;
+
+  interface CloneFrame {
+    source: TextToken[];
+    target: TextToken[];
+    index: number;
+  }
+
+  const rootChildren: TextToken[] = [];
+  const root = cloneShallow(token, rootChildren);
+  const stack: CloneFrame[] = [{ source: token.value, target: rootChildren, index: 0 }];
+
+  while (stack.length > 0) {
+    const frame = stack[stack.length - 1];
+    if (frame.index >= frame.source.length) {
+      stack.pop();
+      continue;
+    }
+    const child = frame.source[frame.index++];
+    if (typeof child.value === "string") {
+      frame.target.push(cloneShallow(child, child.value));
+      continue;
+    }
+    const nextChildren: TextToken[] = [];
+    frame.target.push(cloneShallow(child, nextChildren));
+    stack.push({ source: child.value, target: nextChildren, index: 0 });
+  }
+
+  return root;
 };
 
 // 注意：这里必须 clone 再改，不能直接 mutate renderNodes 返回的 token。
