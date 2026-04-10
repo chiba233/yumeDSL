@@ -12,7 +12,7 @@
   - When `getTagCloserType` returns `null`, the parser now forces an inline child frame instead of falling back to text. The inline frame uses `scanInlineBoundary` (which only counts full `$$tag(` as nesting), so it correctly finds the real close token character-by-character.
   - Effect: a single missing bracket now only affects the innermost unbalanced tag; outer tags survive. Previously the entire tag tree collapsed to plain text.
   - This is a long-standing bug since v1.0, not introduced by shorthand.
-  - 
+
 ### 1.3.0
 
 - **New: implicit inline shorthand (`name(...)`)**
