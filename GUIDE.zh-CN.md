@@ -236,6 +236,15 @@ Inline 内容递归解析，嵌套自然生效。
 $$bold(Hello $$italic(world)$$)$$
 ```
 
+Inline 简写示例（`implicitInlineShorthand`）：
+
+```text
+$$bold(1234underline()test())$$
+```
+
+备注：简写仅在 inline 参数区生效，且仅匹配已注册并支持 inline form
+的标签。配置方式见下文 [implicitInlineShorthand](#implicitinlineshorthand)。
+
 ### Raw 标签
 
 ```text

@@ -242,6 +242,16 @@ Inline content is parsed recursively, so nesting works naturally.
 $$bold(Hello $$italic(world)$$)$$
 ```
 
+Inline shorthand example (`implicitInlineShorthand`):
+
+```text
+$$bold(1234underline()test())$$
+```
+
+Note: shorthand only works inside inline arguments, and only for registered
+inline-capable tags. See [implicitInlineShorthand](#implicitinlineshorthand)
+for configuration details.
+
 ### Raw
 
 ```text
