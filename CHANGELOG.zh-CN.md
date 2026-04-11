@@ -2,6 +2,19 @@
 
 # 更新日志
 
+### 1.3.2
+
+- **修复：shorthand 在紧邻父级闭合边界时不再抢占闭合（`=bold<bold<>=`）**
+  - 在 inline 参数 shorthand 模式下，`name<` 曾可能在参数起点恰好命中父级 `endTag` 时仍被当作 shorthand 子标签。
+  - `tryPushInlineShorthandChild` 现已在该边界拒绝进入 shorthand 子帧，父级 inline 闭合归属父帧。
+- **修复：shorthand 不再通过首个 `tagClose` 误吃父级闭合（`=bold<bold<<>=`）**
+  - shorthand 候选可能吞掉本该作为父级 `endTag` 起点的 `tagClose`，导致外层 inline 退化为纯文本。
+  - 现在该模式会按歧义处理，`name<...` 保留为父级内容文本。
+- **性能：同帧复用 shorthand 歧义前探结果**
+  - 新增帧级前探缓存（`start` / `firstClose` / `firstCloseIsEndTag`），减少相邻 shorthand 候选的重复向前扫描。
+  - 语义不变，仅优化重复探测开销。
+- 无公共 API 变化
+
 ### 1.3.1
 
 - **修复：shorthand 现在正确受 `depthLimit` 约束**

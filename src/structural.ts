@@ -255,6 +255,11 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     pendingArgs: TNode[] | null; // blockArgs 完成后暂存
     contentStartI: number; // block content 起始位置
     contentEndI: number; // block/raw content 结束位置
+
+    // ── shorthand 前探缓存（仅父 inline endTag 模式使用） ──
+    shorthandProbeStartI: number; // 最近一次前探起点
+    shorthandProbeFirstCloseI: number; // 最近一次前探命中的首个 tagClose；-1 表示未找到
+    shorthandProbeFirstCloseIsEndTag: boolean; // 首个 tagClose 是否就是 endTag 起点
   }
 
   const makeFrame = (
@@ -287,6 +292,9 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     pendingArgs: null,
     contentStartI: 0,
     contentEndI: 0,
+    shorthandProbeStartI: -1,
+    shorthandProbeFirstCloseI: -1,
+    shorthandProbeFirstCloseIsEndTag: false,
   });
 
   // ── 缓冲区 ──
@@ -548,6 +556,48 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     tagStartI: number,
     info: ShorthandStartInfo,
   ): boolean => {
+    // Guard ambiguity like `=bold<bold<>=`:
+    // if shorthand arg starts exactly at parent's inline close token (`endTag`),
+    // this `name<` is text and the following close belongs to parent.
+    if (frame.inlineCloseToken === endTag && frame.text.startsWith(endTag, info.argStart)) {
+      return false;
+    }
+
+    // Guard ambiguity where shorthand would consume the `tagClose` that is
+    // actually the start of parent's `endTag` (e.g. `=bold<bold<<>=`).
+    if (frame.inlineCloseToken === endTag) {
+      const canReuseProbe =
+        frame.shorthandProbeStartI >= 0 &&
+        info.argStart >= frame.shorthandProbeStartI &&
+        (frame.shorthandProbeFirstCloseI === -1 || info.argStart <= frame.shorthandProbeFirstCloseI);
+
+      if (!canReuseProbe) {
+        let firstClose = -1;
+        let probe = info.argStart;
+        while (probe < frame.text.length) {
+          const [escaped, nextEsc] = readEscapedSequence(frame.text, probe, syntax);
+          if (escaped !== null) {
+            probe = nextEsc;
+            continue;
+          }
+          if (frame.text.startsWith(tagClose, probe)) {
+            firstClose = probe;
+            break;
+          }
+          probe++;
+        }
+
+        frame.shorthandProbeStartI = info.argStart;
+        frame.shorthandProbeFirstCloseI = firstClose;
+        frame.shorthandProbeFirstCloseIsEndTag =
+          firstClose !== -1 && frame.text.startsWith(endTag, firstClose);
+      }
+
+      if (frame.shorthandProbeFirstCloseIsEndTag) {
+        return false;
+      }
+    }
+
     if (frame.depth >= depthLimit) {
       const span = info.argStart - info.tagOpenPos;
       emitError(tracker, onError, "DEPTH_LIMIT", frame.text, tagStartI, span, emittedErrorKeys);

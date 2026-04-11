@@ -2,6 +2,19 @@
 
 # Changelog
 
+### 1.3.2
+
+- **Fix: shorthand no longer steals parent close on immediate boundary (`=bold<bold<>=`)**
+  - In inline-arg shorthand mode, `name<` could be parsed as a shorthand child even when its arg start was exactly at the parent `endTag` boundary.
+  - `tryPushInlineShorthandChild` now rejects shorthand push on that boundary, so the parent inline close remains owned by the parent frame.
+- **Fix: shorthand no longer steals parent close via first `tagClose` (`=bold<bold<<>=`)**
+  - A shorthand candidate could consume the `tagClose` that should start the parent `endTag`, causing outer inline degradation to plain text.
+  - The parser now treats this pattern as ambiguous and keeps `name<...` as text under the parent inline frame.
+- **Perf: reuse shorthand ambiguity probe within a frame**
+  - Added per-frame probe cache (`start`, `firstClose`, `firstCloseIsEndTag`) to avoid repeated forward scans for nearby shorthand candidates.
+  - This preserves behavior while reducing repeated work in dense shorthand inputs.
+- No public API changes
+
 ### 1.3.1
 
 - **Fix: shorthand now respects `depthLimit`**
