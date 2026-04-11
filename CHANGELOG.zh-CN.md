@@ -4,17 +4,18 @@
 
 ### 1.3.4
 
-- **重构：统一闭合归属判定**
-  - 新增统一的归属仲裁函数，集中处理 shorthand / full-form 的闭合竞争。
-  - shorthand 的 push、close、fallback 恢复路径改为复用同一套规则。
-- **修复：full-form close 与 shorthand continuation 竞争时，优先 full-form**
-  - 当 `tagClose` 与父级 `endTag` 在同一游标重叠时，优先保留父级 full-form 闭合归属。
-  - 避免 shorthand 抢占父级闭合，覆盖 `=bold<bold<=bold<>=>=` 及等价自定义分隔符场景。
-- **修复：endTag 延迟确认显式化，且对截断安全**
-  - endTag 探测结果细分为 `full` / `truncated-prefix` / `none`。
-  - 仅 `full` 视为可消费闭合；命中截断前缀时立即解除延迟并恢复常规扫描。
-- **模型一致性**
-  - 移除分支内各自猜测式判优，收敛为单一、确定的归属规则。
+- **重构：inline 状态机路径收敛为单入口**
+  - inline close 处理、tag/text 消费、EOF 收敛分别抽成单入口函数。
+  - 主循环控制流更平坦、更一致；语义保持不变。
+- **解析策略定稿：局部恢复优先于整段保留**
+  - 错误恢复明确采用“局部成功 / 局部失败”的最近边界恢复，不再追求把历史 malformed 片段整坨保留。
+  - 该策略是有意选择，用于统一解析模型与用户心智。
+- **shorthand / full-form 归属仲裁继续集中化**
+  - push / close / EOF 阶段继续复用同一归属判定函数。
+  - 在 shorthand continuation 与 full-form close 竞争时，仍优先 full-form close。
+- **测试：新增 shorthand 开关行为矩阵**
+  - 新增 `implicitInlineShorthand=false/true` 双模式行为矩阵测试，固定当前恢复输出。
+  - 同时覆盖 `extractText` 预期与 `printStructural` 回环（round-trip）检查，防止回归漂移。
 - 无公共 API 变化
 
 ### 1.3.3

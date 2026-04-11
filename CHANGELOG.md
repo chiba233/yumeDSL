@@ -4,17 +4,18 @@
 
 ### 1.3.4
 
-- **Refactor: unified close-ownership arbitration**
-  - Added one shared ownership resolver for shorthand/full-form close conflicts.
-  - The same rule is now used in shorthand push, shorthand close, and fallback resume paths.
-- **Fix: full-form close wins when competing with shorthand continuation**
-  - When `tagClose` and parent `endTag` overlap at the same cursor, parser keeps ownership for the parent full-form close.
-  - Prevents shorthand from stealing parent closure in conflict cases such as `=bold<bold<=bold<>=>=` (and equivalent custom delimiters).
-- **Fix: delayed endTag confirmation is explicit and truncation-safe**
-  - End-tag probe now returns `full` / `truncated-prefix` / `none`.
-  - Only `full` consumes close; truncated prefix immediately exits delay and resumes normal scan.
-- **Model consistency**
-  - Removed branch-local conflict guessing and consolidated to one deterministic ownership rule.
+- **Refactor: single-entry inline state machine paths**
+  - Inline close handling, tag/text consumption, and EOF finalization are now routed through dedicated single-entry functions.
+  - Main loop control flow is flatter and consistent; behavior remains unchanged.
+- **Parser policy clarified: local recovery over whole-segment fallback**
+  - Error recovery now explicitly follows local success/local failure semantics (nearest-boundary recovery), instead of trying to preserve malformed fragments as one historical blob.
+  - This is intentional for parser-model consistency and user mental model unification.
+- **Shorthand/full-form arbitration stays centralized**
+  - Close ownership decisions continue to use one resolver across push/close/EOF phases.
+  - `full-form close` remains prioritized when competing with shorthand continuation.
+- **Tests: added shorthand on/off behavior matrix**
+  - New behavior matrix tests lock current recovery outputs under both `implicitInlineShorthand=false` and `true`.
+  - Includes `extractText` expectations and structural print round-trip checks to prevent accidental drift.
 - No public API changes
 
 ### 1.3.3

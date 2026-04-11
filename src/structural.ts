@@ -680,283 +680,202 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
   // ── 主循环 ──
 
   const stack: ParseFrame[] = [makeFrame(text, depth, insideArgs, baseOffset)];
+  const tryConsumeInlineCloseAtCursor = (frame: ParseFrame, frameText: string, i: number): boolean => {
+    if (frame.inlineCloseToken === null) return false;
+    const { tagClose, rawOpen, blockOpen, blockClose } = syntax;
 
-  while (stack.length > 0) {
-    const frame = stack[stack.length - 1];
-
-    // ── 帧完成 ──
-    if (frame.i >= frame.textEnd) {
-      if (frame.inlineCloseToken !== null) {
-        // inline 帧走到文本末尾仍未关闭 → 未闭合错误
-        // 这里不要整段吞掉：只把 tag 头回退成普通文本，并把父帧 i 放回 argStart。
-        // 后续正文会继续在父帧里按正常字符流扫描，这是老版本错误恢复语义。
-        emitError(
-          tracker,
-          onError,
-          frame.implicitInlineShorthand ? "SHORTHAND_NOT_CLOSED" : "INLINE_NOT_CLOSED",
-          frame.text,
-          frame.tagStartI,
-          frame.argStartI - frame.tagOpenPos,
-          emittedErrorKeys,
-        );
-        stack.pop();
-        const parent = stack[frame.parentIndex];
-        const eofOwnership = resolveShorthandOwnership({
-          phase: "eof",
+    if (frame.inlineCloseToken === tagClose) {
+      if (!frameText.startsWith(tagClose, i)) return false;
+      const parent = frame.parentIndex >= 0 ? stack[frame.parentIndex] : null;
+      if (
+        resolveShorthandOwnership({
+          phase: "close",
           frame,
-          parent: parent ?? null,
-        });
-        if (eofOwnership === "defer-parent") {
-          appendBuf(parent, frame.tagStartI, frame.argStartI);
-          parent.i = frame.argStartI;
-          continue;
+          parent,
+          at: i,
+        }) === "defer-parent"
+      ) {
+        stack.pop();
+        if (!parent) {
+          return true;
         }
         appendBuf(parent, frame.tagStartI, frame.argStartI);
         parent.i = frame.argStartI;
-        continue;
+        return true;
       }
       flushBuffer(frame);
+      frame.inlineCloseWidth = tagClose.length;
       stack.pop();
-      if (frame.returnKind === null) return frame.nodes;
       completeChild(frame);
-      continue;
+      return true;
     }
 
-    const frameText = frame.text;
-    const i = frame.i;
+    if (!frameText.startsWith(tagClose, i)) return false;
 
-    // ── 转义序列 ──
-    const [escaped, next] = readEscapedSequence(frameText, i, syntax);
-    if (escaped !== null) {
-      flushBuffer(frame);
-      pushNode(
-        frame.nodes,
-        factory.escape(frameText.slice(i, next), frame.baseOffset + i, frame.baseOffset + next),
-        makePosition(tracker, frame.baseOffset + i, frame.baseOffset + next),
-      );
-      frame.i = next;
-      continue;
-    }
-
-    // ── inline 帧的 argClose 检测 ──
-    //
-    // inline 帧不再做裸括号配平。
-    // 只在遇到 )$$ / )% / )* 时判定完整 form；shorthand 子帧只吃一个 )。
-    if (frame.inlineCloseToken !== null) {
-      const { tagClose, rawOpen, blockOpen, blockClose } = syntax;
-
-      if (frame.inlineCloseToken === tagClose) {
-        if (frameText.startsWith(tagClose, i)) {
-          const parent = frame.parentIndex >= 0 ? stack[frame.parentIndex] : null;
-          if (
-            resolveShorthandOwnership({
-              phase: "close",
-              frame,
-              parent,
-              at: i,
-            }) === "defer-parent"
-          ) {
-            stack.pop();
-            if (!parent) {
-              continue;
-            }
-            appendBuf(parent, frame.tagStartI, frame.argStartI);
-            parent.i = frame.argStartI;
-            continue;
-          }
-          flushBuffer(frame);
-          frame.inlineCloseWidth = tagClose.length;
-          stack.pop();
-          completeChild(frame);
-          continue;
-        }
-      } else if (frameText.startsWith(tagClose, i)) {
-        // ) 系列判定（完整 DSL inline 参数区）
-
-        if (scanEndTagAt(frameText, i, frame.textEnd) === "full") {
-          // )$$ → inline close
-          flushBuffer(frame);
-          frame.inlineCloseWidth = endTag.length;
-          stack.pop();
-          completeChild(frame);
-          continue;
-        }
-
-        if (frameText.startsWith(rawOpen, i)) {
-          // )% → raw form
-          const argClose = i;
-          const contentStart = argClose + rawOpen.length;
-          const closeStart = findRawClose(frameText, contentStart, syntax);
-          const parent = stack[frame.parentIndex];
-          const tagStartI = frame.tagStartI;
-
-          if (closeStart === -1) {
-            const malformed = findMalformedWholeLineTokenCandidate(
-              frameText,
-              contentStart,
-              syntax.rawClose,
-            );
-            emitError(
-              tracker,
-              onError,
-              malformed ? "RAW_CLOSE_MALFORMED" : "RAW_NOT_CLOSED",
-              frameText,
-              malformed?.index ?? tagStartI,
-              malformed?.length ?? contentStart - tagStartI,
-              emittedErrorKeys,
-            );
-            // 降级：回退到父帧，整段当文本
-            stack.pop();
-            appendBuf(parent, tagStartI, contentStart);
-            parent.i = contentStart;
-            continue;
-          }
-
-          if (gating && !gating.handlers[frame.tag]?.raw) {
-            // handler 不支持 raw → 整段降级为文本
-            const end = closeStart + syntax.rawClose.length;
-            stack.pop();
-            appendBuf(parent, tagStartI, end);
-            parent.i = end;
-            continue;
-          }
-
-          // raw 正常路径：当前帧的 nodes 就是 args
-          flushBuffer(frame);
-          const nextI = closeStart + syntax.rawClose.length;
-          const meta = buildComplexMeta(
-            parent,
-            tagStartI,
-            frame.argStartI,
-            argClose,
-            contentStart,
-            closeStart,
-            syntax.rawClose.length,
-          );
-          const args = frame.nodes;
-          stack.pop();
-          parent.i = nextI;
-          pushNode(
-            parent.nodes,
-            factory.raw(frame.tag, args, frameText.slice(contentStart, closeStart), meta.meta),
-            meta.pos,
-          );
-          continue;
-        }
-
-        if (frameText.startsWith(blockOpen, i)) {
-          // )* → block form
-          const argClose = i;
-          const contentStart = argClose + blockOpen.length;
-          const closeStart = findBlockClose(frameText, contentStart, syntax, tagName);
-          const parent = stack[frame.parentIndex];
-          const tagStartI = frame.tagStartI;
-
-          if (closeStart === -1) {
-            const malformed = findMalformedWholeLineTokenCandidate(
-              frameText,
-              contentStart,
-              blockClose,
-            );
-            emitError(
-              tracker,
-              onError,
-              malformed ? "BLOCK_CLOSE_MALFORMED" : "BLOCK_NOT_CLOSED",
-              frameText,
-              malformed?.index ?? tagStartI,
-              malformed?.length ?? contentStart - tagStartI,
-              emittedErrorKeys,
-            );
-            stack.pop();
-            appendBuf(parent, tagStartI, contentStart);
-            parent.i = contentStart;
-            continue;
-          }
-
-          if (gating && !gating.handlers[frame.tag]?.block) {
-            const end = closeStart + blockClose.length;
-            stack.pop();
-            appendBuf(parent, tagStartI, end);
-            parent.i = end;
-            continue;
-          }
-
-          // block 正常路径：当前帧的 nodes 就是 args
-          flushBuffer(frame);
-          const nextI = closeStart + blockClose.length;
-          const metaResult = buildComplexMeta(
-            parent,
-            tagStartI,
-            frame.argStartI,
-            argClose,
-            contentStart,
-            closeStart,
-            blockClose.length,
-          );
-          const args = frame.nodes;
-          stack.pop();
-
-          // push content 帧
-          parent.i = nextI;
-          parent.pendingArgs = args;
-          const contentFrame = makeFrame(
-            frameText,
-            parent.depth + 1,
-            false,
-            parent.baseOffset,
-            contentStart,
-            closeStart,
-          );
-          pushChildFrame(
-            contentFrame,
-            "blockContent",
-            frame.parentIndex,
-            frame.tag,
-            metaResult.meta,
-            metaResult.pos,
-          );
-          continue;
-        }
-
-        // ) 后面不是 $$ / % / * → 普通文本
-        appendBuf(frame, i, i + tagClose.length);
-        frame.i += tagClose.length;
-        continue;
-      }
-    }
-
-    // ── 非 inline 帧的意外 endTag ──
+    // ) 系列判定（完整 DSL inline 参数区）
     if (scanEndTagAt(frameText, i, frame.textEnd) === "full") {
-      emitError(tracker, onError, "UNEXPECTED_CLOSE", frameText, i, endTag.length, emittedErrorKeys);
-      appendBuf(frame, i, i + endTag.length);
-      frame.i += endTag.length;
-      continue;
-    }
-
-    // ── 管道分隔符（仅参数区内） ──
-    if (frame.insideArgs && frameText.startsWith(tagDivider, i)) {
+      // )$$ → inline close
       flushBuffer(frame);
-      pushNode(
-        frame.nodes,
-        factory.separator(frame.baseOffset + i, frame.baseOffset + i + tagDivider.length),
-        makePosition(tracker, frame.baseOffset + i, frame.baseOffset + i + tagDivider.length),
-      );
-      frame.i += tagDivider.length;
-      continue;
+      frame.inlineCloseWidth = endTag.length;
+      stack.pop();
+      completeChild(frame);
+      return true;
     }
 
+    if (frameText.startsWith(rawOpen, i)) {
+      // )% → raw form
+      const argClose = i;
+      const contentStart = argClose + rawOpen.length;
+      const closeStart = findRawClose(frameText, contentStart, syntax);
+      const parent = stack[frame.parentIndex];
+      const tagStartI = frame.tagStartI;
+
+      if (closeStart === -1) {
+        const malformed = findMalformedWholeLineTokenCandidate(
+          frameText,
+          contentStart,
+          syntax.rawClose,
+        );
+        emitError(
+          tracker,
+          onError,
+          malformed ? "RAW_CLOSE_MALFORMED" : "RAW_NOT_CLOSED",
+          frameText,
+          malformed?.index ?? tagStartI,
+          malformed?.length ?? contentStart - tagStartI,
+          emittedErrorKeys,
+        );
+        // 降级：回退到父帧，整段当文本
+        stack.pop();
+        appendBuf(parent, tagStartI, contentStart);
+        parent.i = contentStart;
+        return true;
+      }
+
+      if (gating && !gating.handlers[frame.tag]?.raw) {
+        // handler 不支持 raw → 整段降级为文本
+        const end = closeStart + syntax.rawClose.length;
+        stack.pop();
+        appendBuf(parent, tagStartI, end);
+        parent.i = end;
+        return true;
+      }
+
+      // raw 正常路径：当前帧的 nodes 就是 args
+      flushBuffer(frame);
+      const nextI = closeStart + syntax.rawClose.length;
+      const meta = buildComplexMeta(
+        parent,
+        tagStartI,
+        frame.argStartI,
+        argClose,
+        contentStart,
+        closeStart,
+        syntax.rawClose.length,
+      );
+      const args = frame.nodes;
+      stack.pop();
+      parent.i = nextI;
+      pushNode(
+        parent.nodes,
+        factory.raw(frame.tag, args, frameText.slice(contentStart, closeStart), meta.meta),
+        meta.pos,
+      );
+      return true;
+    }
+
+    if (frameText.startsWith(blockOpen, i)) {
+      // )* → block form
+      const argClose = i;
+      const contentStart = argClose + blockOpen.length;
+      const closeStart = findBlockClose(frameText, contentStart, syntax, tagName);
+      const parent = stack[frame.parentIndex];
+      const tagStartI = frame.tagStartI;
+
+      if (closeStart === -1) {
+        const malformed = findMalformedWholeLineTokenCandidate(
+          frameText,
+          contentStart,
+          blockClose,
+        );
+        emitError(
+          tracker,
+          onError,
+          malformed ? "BLOCK_CLOSE_MALFORMED" : "BLOCK_NOT_CLOSED",
+          frameText,
+          malformed?.index ?? tagStartI,
+          malformed?.length ?? contentStart - tagStartI,
+          emittedErrorKeys,
+        );
+        stack.pop();
+        appendBuf(parent, tagStartI, contentStart);
+        parent.i = contentStart;
+        return true;
+      }
+
+      if (gating && !gating.handlers[frame.tag]?.block) {
+        const end = closeStart + blockClose.length;
+        stack.pop();
+        appendBuf(parent, tagStartI, end);
+        parent.i = end;
+        return true;
+      }
+
+      // block 正常路径：当前帧的 nodes 就是 args
+      flushBuffer(frame);
+      const nextI = closeStart + blockClose.length;
+      const metaResult = buildComplexMeta(
+        parent,
+        tagStartI,
+        frame.argStartI,
+        argClose,
+        contentStart,
+        closeStart,
+        blockClose.length,
+      );
+      const args = frame.nodes;
+      stack.pop();
+
+      // push content 帧
+      parent.i = nextI;
+      parent.pendingArgs = args;
+      const contentFrame = makeFrame(
+        frameText,
+        parent.depth + 1,
+        false,
+        parent.baseOffset,
+        contentStart,
+        closeStart,
+      );
+      pushChildFrame(
+        contentFrame,
+        "blockContent",
+        frame.parentIndex,
+        frame.tag,
+        metaResult.meta,
+        metaResult.pos,
+      );
+      return true;
+    }
+
+    // ) 后面不是 $$ / % / * → 普通文本
+    appendBuf(frame, i, i + tagClose.length);
+    frame.i += tagClose.length;
+    return true;
+  };
+  const tryConsumeTagOrTextAtCursor = (frame: ParseFrame, frameText: string, i: number): boolean => {
     // ── 标签头识别 ──
     const info = readTagStartInfo(frameText, i, syntax, tagName);
     if (!info) {
       if (frame.inlineCloseToken !== null) {
         const shorthand = readInlineShorthandStart(frameText, i);
         if (shorthand && tryPushInlineShorthandChild(frame, i, shorthand)) {
-          continue;
+          return true;
         }
       }
       appendBuf(frame, i, i + 1);
       frame.i++;
-      continue;
+      return true;
     }
 
     // ── 深度限制 → 整个标签退化 ──
@@ -973,17 +892,10 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       const degradedEnd = skipTagBoundary(frameText, info, syntax, tagName);
       appendBuf(frame, i, degradedEnd);
       frame.i = degradedEnd;
-      continue;
+      return true;
     }
 
     // ── inline 帧内的嵌套标签：直接 push 子帧，跳过 getTagCloserType ──
-    //
-    // inline 帧子扫描直接逐字符前进：
-    // 子帧遇到 ) 时按自身 close token 判定关闭，不需要预扫 findTagArgClose。
-    // 这使得纯 inline 深嵌套保持 O(n)。
-    //
-    // 注意：仍需检查 gating。如果标签的 inline form 不被支持，
-    // 应该当普通字符处理，而不是盲目 push 子帧。
     if (frame.inlineCloseToken !== null) {
       if (!tryPushInlineChild(frame, i, info)) {
         // 完整 DSL 结构优先于文本：即使当前 tag 不支持 inline form，
@@ -992,7 +904,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         appendBuf(frame, i, degradedEnd);
         frame.i = degradedEnd;
       }
-      continue;
+      return true;
     }
 
     // ── 确定标签形态（仅非 inline 帧需要）──
@@ -1006,7 +918,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         appendBuf(frame, i, degradedEnd);
         frame.i = degradedEnd;
       }
-      continue;
+      return true;
     }
 
     const handler = gating?.handlers[info.tag];
@@ -1017,7 +929,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         appendBuf(frame, i, i + 1);
         frame.i++;
       }
-      continue;
+      return true;
     }
 
     // ── Raw 形态 ──
@@ -1042,14 +954,14 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         );
         appendBuf(frame, i, contentStart);
         frame.i = contentStart;
-        continue;
+        return true;
       }
 
       if (gating && !handler?.raw) {
         const end = closeStart + syntax.rawClose.length;
         appendBuf(frame, i, end);
         frame.i = end;
-        continue;
+        return true;
       }
 
       const { meta, pos, nextI } = buildComplexMeta(
@@ -1076,7 +988,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       pushChildFrame(child, "rawArgs", stack.length - 1, info.tag, meta, pos);
       child.contentStartI = contentStart;
       child.contentEndI = closeStart;
-      continue;
+      return true;
     }
 
     // ── Block 形态 ──
@@ -1100,14 +1012,14 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       );
       appendBuf(frame, i, contentStart);
       frame.i = contentStart;
-      continue;
+      return true;
     }
 
     if (gating && !handler?.block) {
       const end = closeStart + syntax.blockClose.length;
       appendBuf(frame, i, end);
       frame.i = end;
-      continue;
+      return true;
     }
 
     const { meta, pos, nextI } = buildComplexMeta(
@@ -1137,6 +1049,105 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     pushChildFrame(child, "blockArgs", stack.length - 1, info.tag, meta, pos);
     child.contentStartI = contentStart;
     child.contentEndI = closeStart;
+    return true;
+  };
+  const tryFinalizeFrameAtEof = (frame: ParseFrame): boolean => {
+    if (frame.i < frame.textEnd) return false;
+
+    if (frame.inlineCloseToken !== null) {
+      // inline 帧走到文本末尾仍未关闭 → 未闭合错误
+      // 这里不要整段吞掉：只把 tag 头回退成普通文本，并把父帧 i 放回 argStart。
+      // 后续正文会继续在父帧里按正常字符流扫描，这是老版本错误恢复语义。
+      emitError(
+        tracker,
+        onError,
+        frame.implicitInlineShorthand ? "SHORTHAND_NOT_CLOSED" : "INLINE_NOT_CLOSED",
+        frame.text,
+        frame.tagStartI,
+        frame.argStartI - frame.tagOpenPos,
+        emittedErrorKeys,
+      );
+      stack.pop();
+      const parent = stack[frame.parentIndex];
+      const eofOwnership = resolveShorthandOwnership({
+        phase: "eof",
+        frame,
+        parent: parent ?? null,
+      });
+      if (eofOwnership === "defer-parent") {
+        appendBuf(parent, frame.tagStartI, frame.argStartI);
+        parent.i = frame.argStartI;
+        return true;
+      }
+
+      appendBuf(parent, frame.tagStartI, frame.argStartI);
+      parent.i = frame.argStartI;
+      return true;
+    }
+
+    flushBuffer(frame);
+    stack.pop();
+    if (frame.returnKind === null) return true;
+    completeChild(frame);
+    return true;
+  };
+
+  while (stack.length > 0) {
+    const frame = stack[stack.length - 1];
+
+    // ── 帧完成 ──
+    if (tryFinalizeFrameAtEof(frame)) {
+      if (stack.length === 0) return frame.nodes;
+      continue;
+    }
+
+    const frameText = frame.text;
+    const i = frame.i;
+
+    // ── 转义序列 ──
+    const [escaped, next] = readEscapedSequence(frameText, i, syntax);
+    if (escaped !== null) {
+      flushBuffer(frame);
+      pushNode(
+        frame.nodes,
+        factory.escape(frameText.slice(i, next), frame.baseOffset + i, frame.baseOffset + next),
+        makePosition(tracker, frame.baseOffset + i, frame.baseOffset + next),
+      );
+      frame.i = next;
+      continue;
+    }
+
+    // ── inline 帧的 argClose 检测 ──
+    //
+    // inline 帧不再做裸括号配平。
+    // 只在遇到 )$$ / )% / )* 时判定完整 form；shorthand 子帧只吃一个 )。
+    if (tryConsumeInlineCloseAtCursor(frame, frameText, i)) {
+      continue;
+    }
+
+    // ── 非 inline 帧的意外 endTag ──
+    if (scanEndTagAt(frameText, i, frame.textEnd) === "full") {
+      emitError(tracker, onError, "UNEXPECTED_CLOSE", frameText, i, endTag.length, emittedErrorKeys);
+      appendBuf(frame, i, i + endTag.length);
+      frame.i += endTag.length;
+      continue;
+    }
+
+    // ── 管道分隔符（仅参数区内） ──
+    if (frame.insideArgs && frameText.startsWith(tagDivider, i)) {
+      flushBuffer(frame);
+      pushNode(
+        frame.nodes,
+        factory.separator(frame.baseOffset + i, frame.baseOffset + i + tagDivider.length),
+        makePosition(tracker, frame.baseOffset + i, frame.baseOffset + i + tagDivider.length),
+      );
+      frame.i += tagDivider.length;
+      continue;
+    }
+
+    if (tryConsumeTagOrTextAtCursor(frame, frameText, i)) {
+      continue;
+    }
   }
 
   return [];
