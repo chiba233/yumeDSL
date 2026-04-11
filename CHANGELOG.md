@@ -2,6 +2,21 @@
 
 # Changelog
 
+### 1.3.4
+
+- **Fix: resolve shorthand/full-form close conflicts by preserving full-form close ownership**
+  - In inline-arg context, when shorthand close (`tagClose`) overlaps a parent full-form close (`endTag`), the parser now prioritizes full-form close ownership.
+  - This fixes conflict cases such as `=bold<bold<=bold<>=>=` and nested custom-syntax variants without introducing broad fallback heuristics.
+- **Parser model refinement: local overlap decision instead of long-range rescue scanning**
+  - Removed forward-looking rescue behavior that depended on scanning ahead for another `endTag`.
+  - Conflict handling is now decided at the current cursor position with stack-top frame semantics, keeping behavior deterministic and consistent with stepwise parsing.
+- **Fix: delayed endTag confirmation with truncation-safe matching**
+  - Added explicit end-tag match states (`full` / `truncated-prefix` / `none`) for overlap points.
+  - If an `endTag` prefix is truncated, delay is dropped immediately and scanning continues as text; only `full` matches are treated as close tokens.
+- **Performance: avoid redundant overlap work in shorthand ambiguity path**
+  - Kept shorthand probe reuse and switched overlap checks to bounded match evaluation at the cursor, reducing unnecessary repeated scans in conflict-heavy inputs.
+- No public API changes
+
 ### 1.3.3
 
 - **Fix: restore data correctness for shorthand + full DSL nesting**

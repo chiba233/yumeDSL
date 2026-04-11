@@ -551,6 +551,20 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     };
   };
 
+  type EndTagMatchState = "none" | "full" | "truncated-prefix";
+  const scanEndTagAt = (text: string, start: number, endExclusive: number): EndTagMatchState => {
+    if (start >= endExclusive) return "none";
+    if (text[start] !== endTag[0]) return "none";
+    let offset = 0;
+    while (offset < endTag.length) {
+      const pos = start + offset;
+      if (pos >= endExclusive) return "truncated-prefix";
+      if (text[pos] !== endTag[offset]) return "none";
+      offset++;
+    }
+    return "full";
+  };
+
   const tryPushInlineShorthandChild = (
     frame: ParseFrame,
     tagStartI: number,
@@ -559,7 +573,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     // Guard ambiguity like `=bold<bold<>=`:
     // if shorthand arg starts exactly at parent's inline close token (`endTag`),
     // this `name<` is text and the following close belongs to parent.
-    if (frame.inlineCloseToken === endTag && frame.text.startsWith(endTag, info.argStart)) {
+    if (frame.inlineCloseToken === endTag && scanEndTagAt(frame.text, info.argStart, frame.textEnd) === "full") {
       return false;
     }
 
@@ -591,7 +605,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
           }
           if (frame.text.startsWith(tagClose, probe)) {
             boundary = probe;
-            reject = frame.text.startsWith(endTag, probe);
+            reject = scanEndTagAt(frame.text, probe, frame.textEnd) === "full";
             break;
           }
           probe++;
@@ -686,6 +700,19 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
 
       if (frame.inlineCloseToken === tagClose) {
         if (frameText.startsWith(tagClose, i)) {
+          if (frame.implicitInlineShorthand) {
+            const parent = stack[frame.parentIndex];
+            if (
+              parent &&
+              parent.inlineCloseToken === endTag &&
+              scanEndTagAt(frameText, i, frame.textEnd) === "full"
+            ) {
+              stack.pop();
+              appendBuf(parent, frame.tagStartI, frame.argStartI);
+              parent.i = frame.argStartI;
+              continue;
+            }
+          }
           flushBuffer(frame);
           frame.inlineCloseWidth = tagClose.length;
           stack.pop();
@@ -695,7 +722,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       } else if (frameText.startsWith(tagClose, i)) {
         // ) 系列判定（完整 DSL inline 参数区）
 
-        if (frameText.startsWith(endTag, i)) {
+        if (scanEndTagAt(frameText, i, frame.textEnd) === "full") {
           // )$$ → inline close
           flushBuffer(frame);
           frame.inlineCloseWidth = endTag.length;
@@ -848,7 +875,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     }
 
     // ── 非 inline 帧的意外 endTag ──
-    if (frameText.startsWith(endTag, i)) {
+    if (scanEndTagAt(frameText, i, frame.textEnd) === "full") {
       emitError(tracker, onError, "UNEXPECTED_CLOSE", frameText, i, endTag.length, emittedErrorKeys);
       appendBuf(frame, i, i + endTag.length);
       frame.i += endTag.length;
