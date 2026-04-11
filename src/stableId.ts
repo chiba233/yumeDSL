@@ -40,6 +40,13 @@ export interface EasyStableIdOptions {
    * ```
    */
   fingerprint?: (token: TokenDraft) => string;
+  /**
+   * Disambiguation counter scope.
+   *
+   * - `"parse"` (default): reset duplicate counters at each parse boundary.
+   * - `"lifetime"`: keep counters across multiple parses that share one generator.
+   */
+  disambiguationScope?: "parse" | "lifetime";
 }
 
 /**
@@ -112,17 +119,14 @@ const hashDraft = (root: TokenDraft, arrayCache: WeakMap<TextToken[], number>): 
 };
 
 /**
- * Create a **parse-session scoped, stateful** {@link CreateId} generator
- * that produces content-based stable IDs.
+ * Create a content-based {@link CreateId} generator.
  *
  * Each call returns a fresh closure with its own disambiguation counter.
- * The counter tracks how many times each fingerprint hash has been seen
- * *within this generator's lifetime*, so the scope of uniqueness is
- * determined by how you wire it:
+ * Counter scope is controlled by `disambiguationScope`:
  *
- * - **One generator per parse** → IDs are independent across documents.
- * - **One generator shared across parses** → IDs are unique across all
- *   documents that share the generator, but the counter carries over.
+ * - `"parse"` (default): one shared generator can be reused safely; each parse
+ *   starts from a clean duplicate counter.
+ * - `"lifetime"`: duplicate counters carry across parses on the same generator.
  *
  * Unlike the default sequential counter (`rt-0`, `rt-1`, …), stable IDs
  * are derived from the token's fingerprint rather than stream position.
@@ -141,11 +145,11 @@ const hashDraft = (root: TokenDraft, arrayCache: WeakMap<TextToken[], number>): 
  *
  * @example
  * ```ts
- * // Per-parse scope (recommended for most cases)
+ * // Parse-scoped deduplication (default)
  * parseRichText(text, { createId: createEasyStableId() });
  *
- * // Shared scope across multiple parses
- * const stableId = createEasyStableId();
+ * // Lifetime-scoped deduplication
+ * const stableId = createEasyStableId({ disambiguationScope: "lifetime" });
  * const dsl = createParser({ handlers, createId: stableId });
  * dsl.parse(text1); // counter starts at 0
  * dsl.parse(text2); // counter continues
@@ -154,19 +158,51 @@ const hashDraft = (root: TokenDraft, arrayCache: WeakMap<TextToken[], number>): 
 export const createEasyStableId = (options?: EasyStableIdOptions): CreateId => {
   const prefix = options?.prefix ?? "s";
   const fingerprint = options?.fingerprint;
-  const seen = new Map<string, number>();
-  // 子数组哈希缓存：createToken 自底向上调用 createId，
-  // 子 token 的 value 数组引用被 `{ ...draft, id }` 共享，
-  // 所以父 token 处理时子数组一定已缓存，hashDraft 降为 O(1)。
-  const arrayCache = new WeakMap<TextToken[], number>();
+  const disambiguationScope = options?.disambiguationScope ?? "parse";
 
-  return (token: TokenDraft): string => {
-    const h = fingerprint ? fnv1a(fingerprint(token)) : hashDraft(token, arrayCache);
+  interface StableIdState {
+    seen: Map<string, number>;
+    arrayCache: WeakMap<TextToken[], number>;
+  }
+
+  const createState = (): StableIdState => ({
+    seen: new Map<string, number>(),
+    // 子数组哈希缓存：createToken 自底向上调用 createId，
+    // 子 token 的 value 数组引用被 `{ ...draft, id }` 共享，
+    // 所以父 token 处理时子数组一定已缓存，hashDraft 降为 O(1)。
+    arrayCache: new WeakMap<TextToken[], number>(),
+  });
+
+  // lifetime 作用域下使用 baseState；
+  // parse 作用域下解析期间使用 parseStateStack 栈顶，实现可重入安全。
+  const baseState = createState();
+  const parseStateStack: StableIdState[] = [];
+
+  const activeState = (): StableIdState =>
+    parseStateStack.length > 0 ? parseStateStack[parseStateStack.length - 1]! : baseState;
+
+  const createId = ((token: TokenDraft): string => {
+    const state = activeState();
+    const h = fingerprint ? fnv1a(fingerprint(token)) : hashDraft(token, state.arrayCache);
     const key = `${prefix}-${h.toString(36)}`;
 
-    const count = seen.get(key) ?? 0;
-    seen.set(key, count + 1);
+    const count = state.seen.get(key) ?? 0;
+    state.seen.set(key, count + 1);
 
     return count === 0 ? key : `${key}-${count}`;
+  }) as CreateId & {
+    __yumeBeginParse?: () => void;
+    __yumeEndParse?: () => void;
   };
+
+  if (disambiguationScope === "parse") {
+    createId.__yumeBeginParse = () => {
+      parseStateStack.push(createState());
+    };
+    createId.__yumeEndParse = () => {
+      if (parseStateStack.length > 0) parseStateStack.pop();
+    };
+  }
+
+  return createId;
 };

@@ -2,6 +2,17 @@
 
 # 更新日志
 
+### 1.3.5
+
+- **`createEasyStableId`：新增 `disambiguationScope` 选项**
+  - 新选项 `disambiguationScope?: "parse" | "lifetime"`，控制消歧计数器的重置时机。
+  - `"parse"`（新默认值）：每次 `parseRichText` 调用时通过内部 parse-lifecycle hook 自动清空计数器和 `arrayCache`。共享同一个 generator 时，相同输入在不同 parse 中产生相同 ID。重入 parse（handler 内部再次调用 `parseRichText`）栈安全——内层 parse 状态不会污染外层。
+  - `"lifetime"`：计数器在 generator 生命周期内累积不重置——等同于此前行为。
+- **行为变更（默认作用域）**
+  - 此前，同一个 `createEasyStableId()` generator 跨多次 `parseRichText` 调用时，消歧后缀会累积，导致相同输入在后续 parse 中产生不同 ID。
+  - 现在默认 `"parse"` 作用域会在每次 parse 前重置，相同输入始终产生相同 ID。依赖跨 parse 唯一性的用户需改用 `disambiguationScope: "lifetime"`。
+- 无其他公共 API 变化
+
 ### 1.3.4
 
 - **重构：inline 状态机路径收敛为单入口**

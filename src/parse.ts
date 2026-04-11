@@ -132,6 +132,24 @@ interface ParsePipelineBase {
   resolved: BaseResolvedConfig;
 }
 
+interface CreateIdParseLifecycle {
+  __yumeBeginParse?: () => void;
+  __yumeEndParse?: () => void;
+}
+
+const withCreateIdParseLifecycle = <T>(
+  createId: import("./types.js").CreateId,
+  fn: () => T,
+): T => {
+  const lifecycle = createId as import("./types.js").CreateId & CreateIdParseLifecycle;
+  lifecycle.__yumeBeginParse?.();
+  try {
+    return fn();
+  } finally {
+    lifecycle.__yumeEndParse?.();
+  }
+};
+
 const resolveParsePipelineBase = (text: string, options: ParseOptions): ParsePipelineBase => {
   const gating = buildGatingContext(
     options.handlers ?? {},
@@ -187,11 +205,13 @@ export const parseRichText = (text: string, options: ParseOptions = {}): TextTok
   // with* wrappers kept for backward compatibility: user handlers may call
   // public utilities (parsePipeArgs, createToken, unescapeInline, etc.) that
   // fall back to module-level state when no explicit config is passed.
-  return withLegacyAmbientState(base.resolved.syntax, base.resolved.tagName, createId, () =>
-    renderNodes(
-      parseStructuralWithResolved(text, base.resolved, base.gating, options.onError),
-      renderCtx,
-      "root",
+  return withCreateIdParseLifecycle(createId, () =>
+    withLegacyAmbientState(base.resolved.syntax, base.resolved.tagName, createId, () =>
+      renderNodes(
+        parseStructuralWithResolved(text, base.resolved, base.gating, options.onError),
+        renderCtx,
+        "root",
+      ),
     ),
   );
 };

@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { createEasyStableId, createParser } from "../src/index.ts";
+import { createEasyStableId, createParser, type TagHandler } from "../src/index.ts";
 import type { TokenDraft } from "../src/index.ts";
-import type { TextToken } from "../src/types.ts";
+import type { DslContext, TextToken } from "../src/types.ts";
 import { testHandlers } from "./handlers.ts";
 import type { GoldenCase } from "./testHarness.ts";
 import { runGoldenCases } from "./testHarness.ts";
+
 
 const textDraft = (value: string, id: string): TextToken => ({ type: "text", value, id });
 const branchDraft = (type: string, value: TextToken[], id: string): TextToken => ({ type, value, id });
@@ -24,9 +25,52 @@ const cases: GoldenCase[] = [
     },
   },
   {
-    name: "[StableId/Stateful] 共享 generator 时重复 fingerprint 应跨 parse 继续追加后缀",
+    name: "[StableId/ParseScopeDefault] 共享 generator 时每次 parse 应重置重复计数",
     run() {
       const createId = createEasyStableId();
+      const dsl = createParser({ handlers: testHandlers, createId });
+
+      const first = dsl.parse("$$bold(hi)$$");
+      const second = dsl.parse("$$bold(hi)$$");
+
+      assert.equal(first[0].id, second[0].id);
+    },
+  },
+  {
+    name: "[StableId/ParseScopeDefault] 重入 parse 不应污染外层消歧状态",
+    run() {
+      const baselineDsl = createParser({ handlers: testHandlers, createId: createEasyStableId() });
+      const baseline = baselineDsl
+        .parse("$$bold(hi)$$ $$bold(hi)$$")
+        .filter((token) => token.type === "bold")
+        .map((token) => token.id);
+
+      const sharedCreateId = createEasyStableId();
+      const innerDsl = createParser({ handlers: testHandlers, createId: sharedCreateId });
+      const boldBase = testHandlers.bold as TagHandler;
+      const reentrantHandlers = {
+        ...testHandlers,
+        bold: {
+          inline: (tokens: TextToken[], ctx?: DslContext) => {
+            innerDsl.parse("$$bold(hi)$$");
+            return boldBase.inline!(tokens, ctx);
+          },
+        },
+      };
+      const outerDsl = createParser({ handlers: reentrantHandlers, createId: sharedCreateId });
+
+      const reentrant = outerDsl
+        .parse("$$bold(hi)$$ $$bold(hi)$$")
+        .filter((token) => token.type === "bold")
+        .map((token) => token.id);
+
+      assert.deepEqual(reentrant, baseline);
+    },
+  },
+  {
+    name: "[StableId/LifetimeScope] 配置 lifetime 时共享 generator 应跨 parse 继续追加后缀",
+    run() {
+      const createId = createEasyStableId({ disambiguationScope: "lifetime" });
       const dsl = createParser({ handlers: testHandlers, createId });
 
       const first = dsl.parse("$$bold(hi)$$");

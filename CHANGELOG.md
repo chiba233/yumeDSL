@@ -2,6 +2,17 @@
 
 # Changelog
 
+### 1.3.5
+
+- **`createEasyStableId`: new `disambiguationScope` option**
+  - New option `disambiguationScope?: "parse" | "lifetime"` controls when the disambiguation counter resets.
+  - `"parse"` (new default): counter and `arrayCache` are automatically cleared at the start of each `parseRichText` call via an internal parse-lifecycle hook. A shared generator now produces identical IDs for identical inputs across parses. Reentrant parses (handler calls `parseRichText` internally) are stack-safe — inner parse state does not pollute the outer parse.
+  - `"lifetime"`: counter carries across parses — equivalent to the previous behavior.
+- **Breaking behavior change (default scope)**
+  - Previously, sharing a single `createEasyStableId()` generator across multiple `parseRichText` calls caused disambiguation suffixes to accumulate. The same input in a later parse would get a different ID.
+  - Now, the default `"parse"` scope resets per parse, so the same input always produces the same ID. Users who relied on cross-parse uniqueness should switch to `disambiguationScope: "lifetime"`.
+- No other public API changes
+
 ### 1.3.4
 
 - **Refactor: single-entry inline state machine paths**
