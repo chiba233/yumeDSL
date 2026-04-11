@@ -565,21 +565,31 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     return "full";
   };
 
-  const tryPushInlineShorthandChild = (
-    frame: ParseFrame,
-    tagStartI: number,
-    info: ShorthandStartInfo,
-  ): boolean => {
-    // Guard ambiguity like `=bold<bold<>=`:
-    // if shorthand arg starts exactly at parent's inline close token (`endTag`),
-    // this `name<` is text and the following close belongs to parent.
-    if (frame.inlineCloseToken === endTag && scanEndTagAt(frame.text, info.argStart, frame.textEnd) === "full") {
-      return false;
-    }
+  type ShorthandOwnershipPhase = "push" | "close" | "eof";
+  type ShorthandOwnershipDecision = "allow" | "defer-parent";
+  interface ShorthandOwnershipInput {
+    phase: ShorthandOwnershipPhase;
+    frame: ParseFrame;
+    parent: ParseFrame | null;
+    info?: ShorthandStartInfo;
+    at?: number;
+  }
+  const resolveShorthandOwnership = (input: ShorthandOwnershipInput): ShorthandOwnershipDecision => {
+    if (input.phase === "push") {
+      const info = input.info;
+      if (!info) return "allow";
+      const frame = input.frame;
 
-    // Guard ambiguity where shorthand would consume the `tagClose` that is
-    // actually the start of parent's `endTag` (e.g. `=bold<bold<<>=`).
-    if (frame.inlineCloseToken === endTag) {
+      // `name<` 的 argStart 与父级 endTag 完全重叠时，优先父级闭合。
+      if (
+        frame.inlineCloseToken === endTag &&
+        scanEndTagAt(frame.text, info.argStart, frame.textEnd) === "full"
+      ) {
+        return "defer-parent";
+      }
+
+      if (frame.inlineCloseToken !== endTag) return "allow";
+
       const canReuseProbe =
         frame.shorthandProbeStartI >= 0 &&
         frame.shorthandProbeBoundaryI >= 0 &&
@@ -596,8 +606,6 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
             probe = nextEsc;
             continue;
           }
-          // Full DSL structure has priority over shorthand:
-          // once a full tag starts, shorthand child would end before it.
           if (readTagStartInfo(frame.text, probe, syntax, tagName)) {
             boundary = probe;
             reject = false;
@@ -616,9 +624,38 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         frame.shorthandProbeReject = reject;
       }
 
-      if (frame.shorthandProbeReject) {
-        return false;
-      }
+      return frame.shorthandProbeReject ? "defer-parent" : "allow";
+    }
+
+    if (input.phase === "close") {
+      const at = input.at;
+      if (at === undefined) return "allow";
+      const frame = input.frame;
+      const parent = input.parent;
+      if (!frame.implicitInlineShorthand) return "allow";
+      if (!parent || parent.inlineCloseToken !== endTag) return "allow";
+      if (scanEndTagAt(frame.text, at, frame.textEnd) !== "full") return "allow";
+      return "defer-parent";
+    }
+
+    // EOF 恢复统一交给父帧继续决议（历史语义：回到 argStart 重扫）。
+    return "defer-parent";
+  };
+
+  const tryPushInlineShorthandChild = (
+    frame: ParseFrame,
+    tagStartI: number,
+    info: ShorthandStartInfo,
+  ): boolean => {
+    if (
+      resolveShorthandOwnership({
+        phase: "push",
+        frame,
+        parent: null,
+        info,
+      }) === "defer-parent"
+    ) {
+      return false;
     }
 
     if (frame.depth >= depthLimit) {
@@ -664,6 +701,16 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         );
         stack.pop();
         const parent = stack[frame.parentIndex];
+        const eofOwnership = resolveShorthandOwnership({
+          phase: "eof",
+          frame,
+          parent: parent ?? null,
+        });
+        if (eofOwnership === "defer-parent") {
+          appendBuf(parent, frame.tagStartI, frame.argStartI);
+          parent.i = frame.argStartI;
+          continue;
+        }
         appendBuf(parent, frame.tagStartI, frame.argStartI);
         parent.i = frame.argStartI;
         continue;
@@ -700,18 +747,22 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
 
       if (frame.inlineCloseToken === tagClose) {
         if (frameText.startsWith(tagClose, i)) {
-          if (frame.implicitInlineShorthand) {
-            const parent = stack[frame.parentIndex];
-            if (
-              parent &&
-              parent.inlineCloseToken === endTag &&
-              scanEndTagAt(frameText, i, frame.textEnd) === "full"
-            ) {
-              stack.pop();
-              appendBuf(parent, frame.tagStartI, frame.argStartI);
-              parent.i = frame.argStartI;
+          const parent = frame.parentIndex >= 0 ? stack[frame.parentIndex] : null;
+          if (
+            resolveShorthandOwnership({
+              phase: "close",
+              frame,
+              parent,
+              at: i,
+            }) === "defer-parent"
+          ) {
+            stack.pop();
+            if (!parent) {
               continue;
             }
+            appendBuf(parent, frame.tagStartI, frame.argStartI);
+            parent.i = frame.argStartI;
+            continue;
           }
           flushBuffer(frame);
           frame.inlineCloseWidth = tagClose.length;

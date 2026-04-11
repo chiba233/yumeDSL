@@ -4,17 +4,17 @@
 
 ### 1.3.4
 
-- **修复：shorthand / full-form 闭合冲突时，优先保留 full-form 闭合归属**
-  - 在 inline 参数上下文中，当 shorthand 的闭合符（`tagClose`）与父级 full-form 闭合（`endTag`）发生重叠时，现优先保 full-form 闭合归属。
-  - 修复了 `=bold<bold<=bold<>=>=` 及其自定义语法嵌套变体中的冲突归属问题，同时避免引入宽泛回退副作用。
-- **解析模型收敛：移除“向前找救济”的长距前瞻**
-  - 删除依赖“继续向后扫描是否还有 `endTag`”的救济分支。
-  - 冲突判定改为当前位置、基于栈顶 frame 的局部决策，行为更确定，符合步进状态机语义。
-- **修复：endTag 延迟确认 + 截断安全匹配**
-  - 新增 endTag 匹配状态（`full` / `truncated-prefix` / `none`）。
-  - 当仅命中 endTag 前缀但被截断时，立即解除延迟并继续按文本扫描；仅 `full` 命中才视为闭合 token。
-- **性能：减少 shorthand 歧义路径中的重复开销**
-  - 保留 shorthand 前探复用，并将重叠判定收敛为当前位置有界匹配，降低冲突密集输入下的重复扫描成本。
+- **重构：统一闭合归属判定**
+  - 新增统一的归属仲裁函数，集中处理 shorthand / full-form 的闭合竞争。
+  - shorthand 的 push、close、fallback 恢复路径改为复用同一套规则。
+- **修复：full-form close 与 shorthand continuation 竞争时，优先 full-form**
+  - 当 `tagClose` 与父级 `endTag` 在同一游标重叠时，优先保留父级 full-form 闭合归属。
+  - 避免 shorthand 抢占父级闭合，覆盖 `=bold<bold<=bold<>=>=` 及等价自定义分隔符场景。
+- **修复：endTag 延迟确认显式化，且对截断安全**
+  - endTag 探测结果细分为 `full` / `truncated-prefix` / `none`。
+  - 仅 `full` 视为可消费闭合；命中截断前缀时立即解除延迟并恢复常规扫描。
+- **模型一致性**
+  - 移除分支内各自猜测式判优，收敛为单一、确定的归属规则。
 - 无公共 API 变化
 
 ### 1.3.3
