@@ -164,6 +164,18 @@ const createRenderContextFromBase = (
   };
 };
 
+/**
+ * Parse DSL source into render-ready rich-text tokens.
+ *
+ * This is the primary public entry for runtime rendering.
+ *
+ * @example
+ * ```ts
+ * const tokens = parseRichText("=bold<hello>=", {
+ *   handlers: { bold: { inline: (tokens) => ({ type: "bold", value: tokens }) } },
+ * });
+ * ```
+ */
 export const parseRichText = (text: string, options: ParseOptions = {}): TextToken[] => {
   if (!text) return [];
 
@@ -184,19 +196,45 @@ export const parseRichText = (text: string, options: ParseOptions = {}): TextTok
   );
 };
 
+/**
+ * Parse then extract plain text from the resulting token tree.
+ *
+ * Equivalent to `extractText(parseRichText(text, options))`.
+ *
+ * @example
+ * ```ts
+ * const plain = stripRichText("=bold<hello>=");
+ * // "hello"
+ * ```
+ */
 export const stripRichText = (text: string, options: ParseOptions = {}): string => {
   if (!text) return "";
   const tokens = parseRichText(text, options);
   return extractText(tokens);
 };
 
+/** Convenience parser facade with reusable default options. */
 export interface Parser {
+  /** Parse source into rich-text tokens. */
   parse: (text: string, overrides?: ParseOptions) => TextToken[];
+  /** Parse source and return plain text only. */
   strip: (text: string, overrides?: ParseOptions) => string;
+  /** Parse source into structural nodes (form-preserving AST). */
   structural: (text: string, overrides?: StructuralParseOptions) => StructuralNode[];
+  /** Serialize structural nodes back to DSL source. */
   print: (nodes: StructuralNode[], overrides?: import("./print.js").PrintOptions) => string;
 }
 
+/**
+ * Create a reusable parser facade bound to `defaults`.
+ *
+ * @example
+ * ```ts
+ * const parser = createParser({ handlers });
+ * const ast = parser.structural("=bold<hello>=");
+ * const text = parser.strip("=bold<hello>=");
+ * ```
+ */
 export const createParser = (defaults: ParseOptions): Parser => {
   const merge = <T extends ParserBaseOptions>(overrides: T): ParseOptions & T => {
     const merged: ParseOptions & T = { ...defaults, ...overrides };

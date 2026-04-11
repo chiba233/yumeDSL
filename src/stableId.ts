@@ -1,6 +1,17 @@
 import type { CreateId, TextToken, TokenDraft } from "./types.js";
 import { fnv1a, fnvFeedString, fnvFeedU32, fnvInit } from "./hash.js";
 
+/**
+ * Options for `createEasyStableId`.
+ *
+ * @example
+ * ```ts
+ * const createId = createEasyStableId({
+ *   prefix: "node",
+ *   fingerprint: (t) => `${t.type}:${typeof t.value === "string" ? t.value : "nested"}`,
+ * });
+ * ```
+ */
 export interface EasyStableIdOptions {
   /** Prefix prepended to every generated ID. Default: `"s"`. */
   prefix?: string;

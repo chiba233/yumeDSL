@@ -2,11 +2,27 @@ import type { DslContext, NarrowToken, TextToken } from "./types.js";
 import { readEscapedSequence, resolveSyntax, unescapeInline } from "./escape.js";
 import { createToken } from "./createToken.js";
 
-/** 创建一个最基础的 text token；id / 兼容 createId 逻辑仍然走 `createToken(...)`。 */
+/**
+ * 创建一个最基础的 text token；id / 兼容 createId 逻辑仍然走 `createToken(...)`。
+ *
+ * @example
+ * ```ts
+ * const ctx = { syntax: createSyntax(), createId: () => "t1" };
+ * const token = createTextToken("hello", ctx);
+ * ```
+ */
 export const createTextToken = (value: string, ctx?: DslContext): TextToken =>
   createToken({ type: "text", value }, undefined, ctx);
 
-/** 递归提取 token 树里的纯文本内容，不做 unescape，也不保留结构信息。 */
+/**
+ * 递归提取 token 树里的纯文本内容，不做 unescape，也不保留结构信息。
+ *
+ * @example
+ * ```ts
+ * const text = extractText([{ type: "text", value: "a", id: "1" }]);
+ * // "a"
+ * ```
+ */
 export const extractText = (tokens?: TextToken[]): string => {
   if (!tokens?.length) return "";
   const parts: string[] = [];
@@ -33,6 +49,15 @@ export const extractText = (tokens?: TextToken[]): string => {
  * Subtrees that have already been materialized (returned by a previous call)
  * are recognized via an internal WeakSet and skipped, avoiding O(n²)
  * re-traversal in deeply nested handler chains.
+ *
+ * @example
+ * ```ts
+ * const ctx = { syntax: createSyntax() };
+ * const out = materializeTextTokens(
+ *   [{ type: "text", value: "\\|", id: "1" }],
+ *   ctx,
+ * );
+ * ```
  */
 // 注意：materializedArrays 是性能缓存，不是语义状态。
 // materializeTextTokens 的返回数组被加入 WeakSet；
@@ -103,11 +128,30 @@ export const materializeTextTokens = (tokens: TextToken[], ctx?: DslContext): Te
   return [];
 };
 
+/**
+ * Parsed pipe-argument helper object.
+ *
+ * `parsePipeArgs`/`parsePipeTextArgs` return this object so handlers can read
+ * arguments in either raw-token or normalized-text form.
+ *
+ * @example
+ * ```ts
+ * const ctx = { syntax: createSyntax() };
+ * const args = parsePipeTextArgs("lang|title|body", ctx);
+ * args.text(0); // "lang"
+ * args.has(2);  // true
+ * ```
+ */
 export interface PipeArgs {
+  /** Raw split segments (token-preserving). */
   parts: TextToken[][];
+  /** Whether the segment at `index` exists. */
   has: (index: number) => boolean;
+  /** Read segment text with unescape+trim, or return `fallback`. */
   text: (index: number, fallback?: string) => string;
+  /** Read one segment as materialized tokens, or return `fallback`. */
   materializedTokens: (index: number, fallback?: TextToken[]) => TextToken[];
+  /** Merge tail segments from `startIndex` then materialize, or return `fallback`. */
   materializedTailTokens: (startIndex: number, fallback?: TextToken[]) => TextToken[];
 }
 
@@ -119,6 +163,16 @@ export interface PipeArgs {
  * - 非 text token 会原样落到当前分段
  * - 这里识别到被转义的 divider 时，会把它按“普通文本”留在当前段里，不会切段
  * - 这里不会做最终 unescape；那是 `parsePipeArgs().text()` / `materializedTokens()` 的职责
+ *
+ * @example
+ * ```ts
+ * const ctx = { syntax: createSyntax() };
+ * const parts = splitTokensByPipe(
+ *   [{ type: "text", value: "a|b", id: "1" }],
+ *   ctx,
+ * );
+ * // parts.length === 2
+ * ```
  */
 export const splitTokensByPipe = (tokens: TextToken[], ctx?: DslContext): TextToken[][] => {
   const s = resolveSyntax(ctx);
@@ -195,6 +249,16 @@ export const splitTokensByPipe = (tokens: TextToken[], ctx?: DslContext): TextTo
  *
  * 注意：`splitTokensByPipe(...)` 和 `text(...)` 不是同一层语义。
  * 前者负责“按 divider 切段”，后者才负责“把段变成最终字符串”。
+ *
+ * @example
+ * ```ts
+ * const ctx = { syntax: createSyntax() };
+ * const args = parsePipeArgs(
+ *   [{ type: "text", value: "lang|title|body", id: "1" }],
+ *   ctx,
+ * );
+ * args.text(0); // "lang"
+ * ```
  */
 export const parsePipeArgs = (tokens: TextToken[], ctx?: DslContext): PipeArgs => {
   const s = resolveSyntax(ctx);
@@ -222,7 +286,15 @@ export const parsePipeArgs = (tokens: TextToken[], ctx?: DslContext): PipeArgs =
   };
 };
 
-/** 纯文本快捷入口：先包成一个 text token，再复用 `parsePipeArgs(...)`。 */
+/**
+ * 纯文本快捷入口：先包成一个 text token，再复用 `parsePipeArgs(...)`。
+ *
+ * @example
+ * ```ts
+ * const ctx = { syntax: createSyntax() };
+ * const args = parsePipeTextArgs("a|b", ctx);
+ * ```
+ */
 export const parsePipeTextArgs = (text: string, ctx?: DslContext): PipeArgs =>
   parsePipeArgs([createTextToken(text, ctx)], ctx);
 
@@ -232,7 +304,7 @@ export const parsePipeTextArgs = (text: string, ctx?: DslContext): PipeArgs =>
  * mapping every part back to a trimmed string.
  *
  * @example
- * parsePipeTextList("ts | Demo | Label")  // → ["ts", "Demo", "Label"]
+ * parsePipeTextList("ts | Demo | Label", { syntax: createSyntax() })  // → ["ts", "Demo", "Label"]
  */
 export const parsePipeTextList = (text: string, ctx?: DslContext): string[] => {
   const parsed = parsePipeTextArgs(text, ctx);

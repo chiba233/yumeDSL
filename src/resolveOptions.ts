@@ -21,6 +21,18 @@ export interface GatingContext {
   inlineShorthandTags: ReadonlySet<string> | null;
 }
 
+/**
+ * Filter handlers by allowed forms while preserving passthrough semantics.
+ *
+ * @example
+ * ```ts
+ * const filtered = filterHandlersByForms(
+ *   { bold: { inline: () => ({ type: "bold", value: [] }) }, code: { raw: () => ({ type: "code", value: "" }) } },
+ *   new Set(["inline"]),
+ * );
+ * // filtered contains bold only
+ * ```
+ */
 export const filterHandlersByForms = (
   handlers: Record<string, TagHandler>,
   forms: ReadonlySet<TagForm>,
@@ -68,6 +80,12 @@ export const filterHandlersByForms = (
  *
  * This function is the inline-form rules centre.
  * Changes here affect every tag in every parse mode — add tests, not shortcuts.
+ *
+ * @example
+ * ```ts
+ * supportsInlineForm(undefined, true, false); // true: unknown tag passthrough
+ * supportsInlineForm({ raw: () => ({ type: "raw", value: "" }) }, true, true); // false
+ * ```
  */
 export const supportsInlineForm = (
   handler: TagHandler | undefined,
@@ -80,6 +98,15 @@ export const supportsInlineForm = (
   return !handler.raw && !handler.block;
 };
 
+/**
+ * Build a normalized gating context used by parse/structural scanners.
+ *
+ * @example
+ * ```ts
+ * const gating = buildGatingContext(handlers, ["inline", "raw"], true);
+ * // gating.inlineShorthandEnabled === true
+ * ```
+ */
 export const buildGatingContext = (
   handlers: Record<string, TagHandler>,
   allowForms: readonly TagForm[] | undefined,
@@ -130,6 +157,12 @@ export interface BaseResolvedConfig {
  * `parseRichText` and `parseStructural` intentionally resolve final spans in
  * different layers because normalized render truth and raw structural truth are
  * both valid, but not interchangeable.
+ *
+ * @example
+ * ```ts
+ * const resolved = resolveBaseOptions("=bold<hello>=", { trackPositions: true });
+ * const pos = resolved.tracker?.resolve(0);
+ * ```
  */
 export const resolveBaseOptions = (
   text: string,

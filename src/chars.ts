@@ -10,11 +10,30 @@ const defaultIsTagChar = (c: string) =>
   c === "_" ||
   c === "-";
 
+/**
+ * Default tag-name character rules.
+ *
+ * @example
+ * ```ts
+ * DEFAULT_TAG_NAME.isTagStartChar("a"); // true
+ * DEFAULT_TAG_NAME.isTagStartChar("1"); // false
+ * ```
+ */
 export const DEFAULT_TAG_NAME: TagNameConfig = {
   isTagStartChar: defaultIsTagStartChar,
   isTagChar: defaultIsTagChar,
 };
 
+/**
+ * Build tag-name rules by shallow-merging overrides onto `DEFAULT_TAG_NAME`.
+ *
+ * @example
+ * ```ts
+ * const tagName = createTagNameConfig({
+ *   isTagStartChar: (c) => /[a-z0-9]/i.test(c),
+ * });
+ * ```
+ */
 export const createTagNameConfig = (overrides?: Partial<TagNameConfig>): TagNameConfig =>
   overrides ? { ...DEFAULT_TAG_NAME, ...overrides } : DEFAULT_TAG_NAME;
 

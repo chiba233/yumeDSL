@@ -146,9 +146,26 @@ export const createSimpleRawHandlers = <const T extends readonly string[]>(
   return result;
 };
 
+/**
+ * Per-tag pipe-form handler definition used by `createPipeHandlers`.
+ *
+ * Each callback receives parsed `PipeArgs` first, then form-specific content.
+ *
+ * @example
+ * ```ts
+ * const defs: Record<string, PipeHandlerDefinition> = {
+ *   link: {
+ *     inline: (args) => ({ type: "link", url: args.text(0), value: args.materializedTailTokens(1) }),
+ *   },
+ * };
+ * ```
+ */
 export interface PipeHandlerDefinition {
+  /** Inline form handler (`tag(arg)`-style tokens already parsed as `PipeArgs`). */
   inline?: (args: PipeArgs, ctx?: DslContext) => TokenDraft;
+  /** Raw form handler with original raw arg preserved in `rawArg`. */
   raw?: (args: PipeArgs, content: string, ctx?: DslContext, rawArg?: string) => TokenDraft;
+  /** Block form handler with parsed block children and original arg in `rawArg`. */
   block?: (args: PipeArgs, content: TextToken[], ctx?: DslContext, rawArg?: string) => TokenDraft;
 }
 

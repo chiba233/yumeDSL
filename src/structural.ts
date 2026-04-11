@@ -1225,6 +1225,17 @@ const parsePublicNodes = (
 
 // ── Public API ──
 
+/**
+ * Parse with already-resolved syntax/tag-name config and optional gating context.
+ *
+ * Used by render/incremental paths to avoid resolving options repeatedly.
+ *
+ * @example
+ * ```ts
+ * const resolved = resolveBaseOptions("=bold<hello>=");
+ * const nodes = parseStructuralWithResolved("=bold<hello>=", resolved, null);
+ * ```
+ */
 export const parseStructuralWithResolved = (
   text: string,
   resolved: BaseResolvedConfig,
@@ -1265,6 +1276,11 @@ export const parseStructuralWithResolved = (
  * When `syntax` / `tagName` are omitted, defaults to {@link DEFAULT_SYNTAX} /
  * {@link DEFAULT_TAG_NAME}. Legacy `withSyntax` / `withTagNameConfig` ambient
  * wrapping is detected and used as a fallback with a deprecation warning.
+ *
+ * @example
+ * ```ts
+ * const nodes = parseStructural("=bold<hello>=");
+ * ```
  */
 export const parseStructural = (
   text: string,

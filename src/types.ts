@@ -104,7 +104,20 @@ export type NarrowTokenUnion<TMap extends Record<string, Record<string, unknown>
   [K in keyof TMap & string]: NarrowToken<K, TMap[K]>;
 }[keyof TMap & string];
 
-/** Custom token-id generator used by parse/build helpers. */
+/**
+ * Token id generator used by parse/build helpers.
+ *
+ * Contract:
+ * - Input is the token draft before `id` is attached.
+ * - Must return a string id for every call.
+ * - Prefer deterministic output for stable rendering/diff behavior.
+ *
+ * @example
+ * ```ts
+ * const createId: CreateId = (token) =>
+ *   token.type === "text" ? `txt:${String(token.value)}` : `tok:${token.type}`;
+ * ```
+ */
 export type CreateId = (token: TokenDraft) => string;
 
 /** Public parse error codes reported via `onError`. */
@@ -120,17 +133,25 @@ export type ErrorCode =
 
 /** Structured parse error payload passed to `onError`. */
 export interface ParseError {
+  /** Machine-readable error code. */
   code: ErrorCode;
+  /** Human-readable summary. */
   message: string;
+  /** 1-based line number. */
   line: number;
+  /** 1-based column number. */
   column: number;
+  /** Best-effort source snippet around the failing cursor. */
   snippet: string;
 }
 
 /** Runtime handlers for each supported tag form. */
 export interface TagHandler {
+  /** Inline-form handler (`$$tag(args)$$`). */
   inline?: (tokens: TextToken[], ctx?: DslContext) => TokenDraft;
+  /** Raw-form handler (`$$tag(args)% ... %end$$`). */
   raw?: (arg: string | undefined, content: string, ctx?: DslContext) => TokenDraft;
+  /** Block-form handler (`$$tag(args)* ... *end$$`). */
   block?: (arg: string | undefined, content: TextToken[], ctx?: DslContext) => TokenDraft;
 }
 
@@ -174,7 +195,9 @@ export interface TagNameConfig {
  * to prepare for the migration.
  */
 export interface DslContext {
+  /** Effective syntax in current parse/build context. */
   syntax: SyntaxConfig;
+  /** Optional id generator override for token creation. */
   createId?: CreateId;
 }
 
@@ -207,6 +230,7 @@ export type BlockTagInput = string | { tag: string; forms?: readonly MultilineFo
  * normalization for a given multiline form.
  */
 export interface BlockTagLookup {
+  /** Returns whether the given `tag` should normalize line breaks for `form`. */
   has(tag: string, form: MultilineForm): boolean;
 }
 
@@ -337,6 +361,7 @@ export interface StructuralParseOptions extends ParserBaseOptions {
  * Build with `buildPositionTracker(text)`.
  */
 export interface PositionTracker {
+  /** Resolve a string offset to absolute line/column coordinates. */
   resolve(offset: number): SourcePosition;
 }
 
@@ -379,8 +404,11 @@ export type IncrementalParseOptions = Omit<
  * Offsets are based on the old source (`doc.source`) and `oldEndOffset` is exclusive.
  */
 export interface IncrementalEdit {
+  /** Start offset in the old source (inclusive). */
   startOffset: number;
+  /** End offset in the old source (exclusive). */
   oldEndOffset: number;
+  /** Replacement text inserted at `[startOffset, oldEndOffset)`. */
   newText: string;
 }
 
@@ -388,8 +416,11 @@ export interface IncrementalEdit {
  * Cached document snapshot for incremental structural updates.
  */
 export interface IncrementalDocument {
+  /** Full source snapshot for this incremental state. */
   source: string;
+  /** Top-level zones used for bounded reparsing. */
   zones: Zone[];
+  /** Full structural tree of `source`. */
   tree: StructuralNode[];
   /** Optional parser config carried forward across updates. */
   parseOptions?: IncrementalParseOptions;
@@ -404,6 +435,7 @@ export type IncrementalUpdateErrorCode =
 
 /** Error object used by low-level incremental update APIs. */
 export interface IncrementalUpdateError extends Error {
+  /** Stable machine-readable failure code. */
   code: IncrementalUpdateErrorCode;
 }
 
@@ -434,12 +466,19 @@ export type IncrementalSessionFallbackReason =
  * All numeric fields are optional safeguards/thresholds for adaptive fallback.
  */
 export interface IncrementalSessionOptions {
+  /** Session strategy selector. */
   strategy?: IncrementalSessionStrategy;
+  /** Number of recent samples used by adaptive strategy. */
   sampleWindowSize?: number;
+  /** Minimum samples before adaptive switching is evaluated. */
   minSamplesForAdaptation?: number;
+  /** Allowed fallback ratio in `auto` mode before entering cooldown. */
   maxFallbackRate?: number;
+  /** Threshold multiplier for preferring full rebuild over incremental path. */
   switchToFullMultiplier?: number;
+  /** Cooldown edit count when `auto` mode temporarily prefers full rebuild. */
   fullPreferenceCooldownEdits?: number;
+  /** Maximum single-edit size ratio still eligible for incremental update. */
   maxEditRatioForIncremental?: number;
   /**
    * Maximum number of non-breaker nodes per soft zone.
@@ -461,8 +500,11 @@ export interface IncrementalSessionOptions {
  * - `mode: "full-fallback"` means the session rebuilt from `newSource`.
  */
 export interface IncrementalSessionApplyResult {
+  /** Updated document snapshot after this operation. */
   doc: IncrementalDocument;
+  /** Whether this call used incremental path or full fallback. */
   mode: IncrementalSessionApplyMode;
+  /** Populated only when `mode === "full-fallback"`. */
   fallbackReason?: IncrementalSessionFallbackReason;
 }
 
@@ -474,12 +516,15 @@ export interface IncrementalSessionApplyResult {
  * - Fall back to full rebuild when validation or update fails.
  */
 export interface IncrementalSession {
+  /** Return current in-memory incremental document snapshot. */
   getDocument: () => IncrementalDocument;
+  /** Apply one edit and return updated snapshot with selected mode. */
   applyEdit: (
     edit: IncrementalEdit,
     newSource: string,
     options?: IncrementalParseOptions,
   ) => IncrementalSessionApplyResult;
+  /** Force a full rebuild from `newSource`. */
   rebuild: (newSource: string, options?: IncrementalParseOptions) => IncrementalDocument;
 }
 
@@ -487,23 +532,34 @@ export interface IncrementalSession {
 
 /** Buffered text/segment state while scanning structural frames. */
 export interface BufferState {
+  /** Buffered range start in frame-local source. */
   start: number;
+  /** Buffered range end in frame-local source. */
   end: number;
+  /** Optional escaped-segment boundaries inside buffer. */
   segments: number[] | null;
 }
 
 /** Parsed result for a complete tag start token at cursor. */
 export interface TagStartInfo {
+  /** Parsed tag name. */
   tag: string;
+  /** Cursor position of tag-open token. */
   tagOpenPos: number;
+  /** End cursor of parsed tag-name span. */
   tagNameEnd: number;
+  /** Start cursor of argument content. */
   argStart: number;
 }
 
 /** Minimal tag head info used by scanner helpers. */
 export interface TagHead {
+  /** Parsed tag name. */
   tag: string;
+  /** Cursor position where tag starts. */
   tagStart: number;
+  /** End cursor of parsed tag-name span. */
   tagNameEnd: number;
+  /** Start cursor of argument content. */
   argStart: number;
 }

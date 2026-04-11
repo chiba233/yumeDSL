@@ -1,15 +1,44 @@
 import type { TextToken } from "./types.js";
 
+/**
+ * Traversal context passed to walk/map visitors.
+ *
+ * @example
+ * ```ts
+ * const show = (ctx: TokenVisitContext) => `${ctx.depth}:${ctx.index}`;
+ * ```
+ */
 export interface TokenVisitContext {
   parent: TextToken | null;
   depth: number;
   index: number;
 }
 
+/**
+ * Visitor type for `walkTokens`.
+ *
+ * @example
+ * ```ts
+ * const byType: WalkVisitor = {
+ *   link: (token, ctx) => console.log(token.type, ctx.depth),
+ * };
+ * ```
+ */
 export type WalkVisitor =
   | ((token: TextToken, ctx: TokenVisitContext) => void)
   | Record<string, (token: TextToken, ctx: TokenVisitContext) => void>;
 
+/**
+ * Mapper callback type for `mapTokens`.
+ *
+ * @example
+ * ```ts
+ * const mapper: MapVisitor = (token) =>
+ *   token.type === "text" && typeof token.value === "string"
+ *     ? { ...token, value: token.value.toUpperCase() }
+ *     : token;
+ * ```
+ */
 export type MapVisitor = (
   token: TextToken,
   ctx: TokenVisitContext,

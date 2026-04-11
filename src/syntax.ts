@@ -1,6 +1,14 @@
 import type { SyntaxConfig, SyntaxInput } from "./types.js";
 import { warnDeprecated } from "./deprecations.js";
 
+/**
+ * Default DSL syntax protocol (`$$name(...)$$` family).
+ *
+ * @example
+ * ```ts
+ * const end = DEFAULT_SYNTAX.endTag; // ")$$"
+ * ```
+ */
 export const DEFAULT_SYNTAX: SyntaxInput = {
   tagPrefix: "$$",
   tagOpen: "(",
@@ -114,6 +122,12 @@ const deriveEasySyntaxCompounds = (
  * ```
  *
  * Explicit compound overrides still take precedence over derivation.
+ *
+ * @example
+ * ```ts
+ * const syntax = createEasySyntax({ tagPrefix: "=", tagOpen: "<", tagClose: ">" });
+ * // syntax.endTag === ">="
+ * ```
  */
 export const createEasySyntax = (overrides?: Partial<SyntaxInput>): SyntaxConfig => {
   const base = resolveEasySyntaxBase(overrides);
@@ -124,7 +138,14 @@ export const createEasySyntax = (overrides?: Partial<SyntaxInput>): SyntaxConfig
   });
 };
 
-/** Build a `SyntaxConfig` from explicit overrides (plain shallow merge, no derivation). */
+/**
+ * Build a `SyntaxConfig` from explicit overrides (plain shallow merge, no derivation).
+ *
+ * @example
+ * ```ts
+ * const syntax = createSyntax({ endTag: ">=", tagOpen: "<", tagClose: ">" });
+ * ```
+ */
 export const createSyntax = (overrides?: Partial<SyntaxInput>): SyntaxConfig => {
   const s: SyntaxInput = overrides ? { ...DEFAULT_SYNTAX, ...overrides } : DEFAULT_SYNTAX;
   return {

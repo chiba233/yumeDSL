@@ -995,6 +995,17 @@ const parseIncrementalInternal = (
   return doc;
 };
 
+/**
+ * Build an incremental document snapshot from full source.
+ *
+ * Use this as the initial state for low-level incremental updates.
+ *
+ * @example
+ * ```ts
+ * const doc = parseIncremental("=bold<hello>=");
+ * // doc.tree / doc.zones / doc.parseOptions are ready for reuse
+ * ```
+ */
 export const parseIncremental = (
   source: string,
   options?: IncrementalParseOptions,
@@ -1225,6 +1236,21 @@ export const tryUpdateIncremental = (
 // 所有采样数组大小被 sampleWindowSize 钳住（默认 24），
 // 所以 session 每次编辑的额外开销是 O(1)，不随文档大小增长。
 
+/**
+ * Create a stateful incremental parsing session with automatic fallback strategy.
+ *
+ * This is the recommended production entrypoint for incremental parsing.
+ *
+ * @example
+ * ```ts
+ * const session = createIncrementalSession("=bold<hello>=");
+ * const next = session.applyEdit({
+ *   startOffset: 6,
+ *   oldEndOffset: 11,
+ *   newText: "world",
+ * });
+ * ```
+ */
 export const createIncrementalSession = (
   source: string,
   options?: IncrementalParseOptions,

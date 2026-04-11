@@ -10,6 +10,16 @@ const resolveCreateId = (ctx?: DslContext | CreateId): CreateId | null => {
   return typeof ctx === "function" ? ctx : (ctx.createId ?? activeCreateId);
 };
 
+/**
+ * Build a runtime token and assign an id via `ctx.createId` (or legacy ambient fallback).
+ *
+ * @example
+ * ```ts
+ * const ctx = { syntax: createSyntax(), createId: () => "tok-1" };
+ * const token = createToken({ type: "text", value: "hello" }, undefined, ctx);
+ * // => { type: "text", value: "hello", id: "tok-1" }
+ * ```
+ */
 export const createToken = (
   token: TokenDraft,
   position?: SourceSpan,
@@ -22,6 +32,15 @@ export const createToken = (
   return result;
 };
 
+/**
+ * Reset the legacy module-level incremental id seed (`rt-0`, `rt-1`, ...).
+ *
+ * @example
+ * ```ts
+ * resetTokenIdSeed();
+ * const a = createToken({ type: "text", value: "x" }); // id: rt-0
+ * ```
+ */
 export const resetTokenIdSeed = () => {
   warnDeprecated(
     "resetTokenIdSeed",
@@ -30,6 +49,21 @@ export const resetTokenIdSeed = () => {
   tokenIdSeed = 0;
 };
 
+/**
+ * Temporarily install a legacy ambient `createId` for compatibility wrappers.
+ *
+ * @example
+ * ```ts
+ * const out = withCreateId((t) => `id:${t.type}`, () =>
+ *   createToken(
+ *     { type: "text", value: "ok" },
+ *     undefined,
+ *     { syntax: createSyntax() },
+ *   ),
+ * );
+ * // out.id === "id:text"
+ * ```
+ */
 export const withCreateId = <T>(
   createId: CreateId,
   fn: () => T,

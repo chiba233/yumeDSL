@@ -2,6 +2,15 @@ import type { SyntaxConfig, TagHead, TagNameConfig, TagStartInfo } from "./types
 import { getLineEnd, isWholeLineToken } from "./chars.js";
 import { readEscapedSequence } from "./escape.js";
 
+/**
+ * Find the matching argument-close position for a tag argument region.
+ *
+ * @example
+ * ```ts
+ * const i = findTagArgClose("x(y(z))", 2, syntax);
+ * // points to the last ")"
+ * ```
+ */
 export const findTagArgClose = (text: string, start: number, syntax: SyntaxConfig): number => {
   const { tagOpen, tagClose } = syntax;
   let pos = start;
@@ -278,6 +287,15 @@ const classifyCloserByArgClose = (
   return { closer: endTag, argClose };
 };
 
+/**
+ * Classify the closer type (inline/raw/block) for a parsed tag head.
+ *
+ * @example
+ * ```ts
+ * const info = getTagCloserType("=bold<ok>=", 6, syntax);
+ * // info?.closer === syntax.endTag
+ * ```
+ */
 export const getTagCloserType = (
   text: string,
   tagOpenIndex: number,
@@ -291,6 +309,14 @@ export const getTagCloserType = (
   return classifyCloserByArgClose(text, argClose, syntax);
 };
 
+/**
+ * Find inline close start (`endTag`) from `start`; returns `-1` when unclosed.
+ *
+ * @example
+ * ```ts
+ * const close = findInlineClose("=bold<ok>=", 6, syntax, tagName);
+ * ```
+ */
 export const findInlineClose = (
   text: string,
   start: number,
@@ -306,6 +332,14 @@ export const findInlineClose = (
   );
 };
 
+/**
+ * Find block close token start for a block region; returns `-1` when unclosed.
+ *
+ * @example
+ * ```ts
+ * const close = findBlockClose("=x<>=*\\nbody\\n*=\\n", 4, syntax, tagName);
+ * ```
+ */
 export const findBlockClose = (
   text: string,
   start: number,
@@ -382,6 +416,14 @@ export const findBlockClose = (
   return -1;
 };
 
+/**
+ * Find raw close token start for a raw region; returns `-1` when unclosed.
+ *
+ * @example
+ * ```ts
+ * const close = findRawClose("line1\\n%\\n", 0, syntax);
+ * ```
+ */
 export const findRawClose = (text: string, start: number, syntax: SyntaxConfig): number => {
   const { rawClose } = syntax;
   let pos = start;
@@ -399,6 +441,14 @@ export const findRawClose = (text: string, start: number, syntax: SyntaxConfig):
   return -1;
 };
 
+/**
+ * Find malformed whole-line closer candidates for diagnostic reporting.
+ *
+ * @example
+ * ```ts
+ * const malformed = findMalformedWholeLineTokenCandidate("  *=x\\n", 0, "*=");
+ * ```
+ */
 export const findMalformedWholeLineTokenCandidate = (
   text: string,
   start: number,
@@ -427,6 +477,14 @@ export const findMalformedWholeLineTokenCandidate = (
   return null;
 };
 
+/**
+ * Skip degraded inline content when inline close is missing.
+ *
+ * @example
+ * ```ts
+ * const next = skipDegradedInline("=bold<oops", 6, syntax, tagName);
+ * ```
+ */
 export const skipDegradedInline = (
   text: string,
   start: number,
@@ -479,6 +537,15 @@ export const skipTagBoundary = (
   return closeStart === -1 ? contentStart : closeStart + blockClose.length;
 };
 
+/**
+ * Read minimal tag-start info at cursor for downstream parsing.
+ *
+ * @example
+ * ```ts
+ * const info = readTagStartInfo("=bold<ok>=", 0, syntax, tagName);
+ * // info?.tag === "bold"
+ * ```
+ */
 export const readTagStartInfo = (
   text: string,
   i: number,
