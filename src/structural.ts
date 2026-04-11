@@ -258,8 +258,8 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
 
     // ── shorthand 前探缓存（仅父 inline endTag 模式使用） ──
     shorthandProbeStartI: number; // 最近一次前探起点
-    shorthandProbeFirstCloseI: number; // 最近一次前探命中的首个 tagClose；-1 表示未找到
-    shorthandProbeFirstCloseIsEndTag: boolean; // 首个 tagClose 是否就是 endTag 起点
+    shorthandProbeBoundaryI: number; // 最近一次前探命中的首个边界位置（tagClose / full tag start / EOF）
+    shorthandProbeReject: boolean; // 该边界是否表示“会误吃父级 endTag，需拒绝 shorthand”
   }
 
   const makeFrame = (
@@ -293,8 +293,8 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     contentStartI: 0,
     contentEndI: 0,
     shorthandProbeStartI: -1,
-    shorthandProbeFirstCloseI: -1,
-    shorthandProbeFirstCloseIsEndTag: false,
+    shorthandProbeBoundaryI: -1,
+    shorthandProbeReject: false,
   });
 
   // ── 缓冲区 ──
@@ -568,11 +568,13 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     if (frame.inlineCloseToken === endTag) {
       const canReuseProbe =
         frame.shorthandProbeStartI >= 0 &&
+        frame.shorthandProbeBoundaryI >= 0 &&
         info.argStart >= frame.shorthandProbeStartI &&
-        (frame.shorthandProbeFirstCloseI === -1 || info.argStart <= frame.shorthandProbeFirstCloseI);
+        info.argStart <= frame.shorthandProbeBoundaryI;
 
       if (!canReuseProbe) {
-        let firstClose = -1;
+        let boundary = frame.text.length;
+        let reject = false;
         let probe = info.argStart;
         while (probe < frame.text.length) {
           const [escaped, nextEsc] = readEscapedSequence(frame.text, probe, syntax);
@@ -580,20 +582,27 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
             probe = nextEsc;
             continue;
           }
+          // Full DSL structure has priority over shorthand:
+          // once a full tag starts, shorthand child would end before it.
+          if (readTagStartInfo(frame.text, probe, syntax, tagName)) {
+            boundary = probe;
+            reject = false;
+            break;
+          }
           if (frame.text.startsWith(tagClose, probe)) {
-            firstClose = probe;
+            boundary = probe;
+            reject = frame.text.startsWith(endTag, probe);
             break;
           }
           probe++;
         }
 
         frame.shorthandProbeStartI = info.argStart;
-        frame.shorthandProbeFirstCloseI = firstClose;
-        frame.shorthandProbeFirstCloseIsEndTag =
-          firstClose !== -1 && frame.text.startsWith(endTag, firstClose);
+        frame.shorthandProbeBoundaryI = boundary;
+        frame.shorthandProbeReject = reject;
       }
 
-      if (frame.shorthandProbeFirstCloseIsEndTag) {
+      if (frame.shorthandProbeReject) {
         return false;
       }
     }
@@ -898,16 +907,6 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     // 注意：仍需检查 gating。如果标签的 inline form 不被支持，
     // 应该当普通字符处理，而不是盲目 push 子帧。
     if (frame.inlineCloseToken !== null) {
-      // shorthand 状态不跨完整 DSL 继承：
-      // 一旦命中完整结构起点，立刻结束 shorthand 子帧，把完整结构交给外层继续解析。
-      if (frame.implicitInlineShorthand) {
-        flushBuffer(frame);
-        frame.inlineCloseWidth = 0;
-        stack.pop();
-        completeChild(frame);
-        continue;
-      }
-
       if (!tryPushInlineChild(frame, i, info)) {
         // 完整 DSL 结构优先于文本：即使当前 tag 不支持 inline form，
         // 也要整段降级为文本，避免把内层 )$$ 误判成当前层关闭。

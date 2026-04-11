@@ -2,6 +2,18 @@
 
 # Changelog
 
+### 1.3.3
+
+- **Fix: restore data correctness for shorthand + full DSL nesting**
+  - A previous shorthand ambiguity guard could prematurely terminate shorthand context when full DSL tags appeared inside shorthand content, causing structural mis-grouping in inputs such as:
+    - `=bold<天気がbold<い=italic<い>=>から>=散歩しましょう`
+  - The parser now keeps shorthand frames open across nested full DSL tags and only closes shorthand on its own close token (`tagClose`), preserving intended tree structure.
+- **Fix: ambiguity guards remain without stealing parent close**
+  - Retains the parent-close safety fixes for patterns like `=bold<bold<>=` and `=bold<bold<<>=`, while avoiding the previous over-rejection behavior.
+- **Behavior note**
+  - In inline-arg context, shorthand and full DSL can now coexist correctly in one subtree (`bold<...=italic<...>=...>`), with deterministic close ownership.
+- No public API changes
+
 ### 1.3.2
 
 - **Fix: shorthand no longer steals parent close on immediate boundary (`=bold<bold<>=`)**
