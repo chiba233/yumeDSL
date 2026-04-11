@@ -1,6 +1,17 @@
 import type { CreateId, TextToken, TokenDraft } from "./types.js";
 import { fnv1a, fnvFeedString, fnvFeedU32, fnvInit } from "./hash.js";
 
+/** @internal parse-lifecycle hooks — not part of public API. */
+export const BEGIN_PARSE: unique symbol = Symbol("yumeBeginParse");
+/** @internal */
+export const END_PARSE: unique symbol = Symbol("yumeEndParse");
+
+/** @internal */
+export interface CreateIdWithLifecycle extends CreateId {
+  [BEGIN_PARSE]?: () => void;
+  [END_PARSE]?: () => void;
+}
+
 /**
  * Options for `createEasyStableId`.
  *
@@ -190,16 +201,13 @@ export const createEasyStableId = (options?: EasyStableIdOptions): CreateId => {
     state.seen.set(key, count + 1);
 
     return count === 0 ? key : `${key}-${count}`;
-  }) as CreateId & {
-    __yumeBeginParse?: () => void;
-    __yumeEndParse?: () => void;
-  };
+  }) as CreateIdWithLifecycle;
 
   if (disambiguationScope === "parse") {
-    createId.__yumeBeginParse = () => {
+    createId[BEGIN_PARSE] = () => {
       parseStateStack.push(createState());
     };
-    createId.__yumeEndParse = () => {
+    createId[END_PARSE] = () => {
       if (parseStateStack.length > 0) parseStateStack.pop();
     };
   }

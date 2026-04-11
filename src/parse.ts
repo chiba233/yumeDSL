@@ -132,21 +132,19 @@ interface ParsePipelineBase {
   resolved: BaseResolvedConfig;
 }
 
-interface CreateIdParseLifecycle {
-  __yumeBeginParse?: () => void;
-  __yumeEndParse?: () => void;
-}
+import type { CreateIdWithLifecycle } from "./stableId.js";
+import { BEGIN_PARSE, END_PARSE } from "./stableId.js";
 
 const withCreateIdParseLifecycle = <T>(
   createId: import("./types.js").CreateId,
   fn: () => T,
 ): T => {
-  const lifecycle = createId as import("./types.js").CreateId & CreateIdParseLifecycle;
-  lifecycle.__yumeBeginParse?.();
+  const lifecycle = createId as CreateIdWithLifecycle;
+  lifecycle[BEGIN_PARSE]?.();
   try {
     return fn();
   } finally {
-    lifecycle.__yumeEndParse?.();
+    lifecycle[END_PARSE]?.();
   }
 };
 
