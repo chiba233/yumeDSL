@@ -1,16 +1,19 @@
 // ── Public types ──
 
+/** Absolute source position used by `trackPositions` outputs. */
 export interface SourcePosition {
   offset: number;
   line: number;
   column: number;
 }
 
+/** Half-open source span (`start` inclusive, `end` exclusive). */
 export interface SourceSpan {
   start: SourcePosition;
   end: SourcePosition;
 }
 
+/** Render token shape returned by `parseRichText`. */
 export interface TextToken {
   type: string;
   value: string | TextToken[];
@@ -19,6 +22,7 @@ export interface TextToken {
   [key: string]: unknown;
 }
 
+/** Token draft shape expected from handlers before `id` assignment. */
 export interface TokenDraft {
   type: string;
   value: string | TextToken[];
@@ -100,8 +104,10 @@ export type NarrowTokenUnion<TMap extends Record<string, Record<string, unknown>
   [K in keyof TMap & string]: NarrowToken<K, TMap[K]>;
 }[keyof TMap & string];
 
+/** Custom token-id generator used by parse/build helpers. */
 export type CreateId = (token: TokenDraft) => string;
 
+/** Public parse error codes reported via `onError`. */
 export type ErrorCode =
   | "DEPTH_LIMIT"
   | "UNEXPECTED_CLOSE"
@@ -112,6 +118,7 @@ export type ErrorCode =
   | "RAW_NOT_CLOSED"
   | "RAW_CLOSE_MALFORMED";
 
+/** Structured parse error payload passed to `onError`. */
 export interface ParseError {
   code: ErrorCode;
   message: string;
@@ -120,12 +127,14 @@ export interface ParseError {
   snippet: string;
 }
 
+/** Runtime handlers for each supported tag form. */
 export interface TagHandler {
   inline?: (tokens: TextToken[], ctx?: DslContext) => TokenDraft;
   raw?: (arg: string | undefined, content: string, ctx?: DslContext) => TokenDraft;
   block?: (arg: string | undefined, content: TextToken[], ctx?: DslContext) => TokenDraft;
 }
 
+/** Full syntax token set accepted by `createSyntax`. */
 export interface SyntaxInput {
   tagPrefix: string;
   tagOpen: string;
@@ -169,7 +178,9 @@ export interface DslContext {
   createId?: CreateId;
 }
 
+/** Supported structural tag forms. */
 export type TagForm = "inline" | "raw" | "block";
+/** Controls implicit inline shorthand parsing in inline arg context. */
 export type InlineShorthandOption = boolean | readonly string[];
 
 /** @internal Alias — same union, used for line-break normalization context. */
@@ -384,16 +395,19 @@ export interface IncrementalDocument {
   parseOptions?: IncrementalParseOptions;
 }
 
+/** Error codes returned by low-level incremental update APIs. */
 export type IncrementalUpdateErrorCode =
   | "INVALID_EDIT_RANGE"
   | "NEW_SOURCE_LENGTH_MISMATCH"
   | "EDIT_TEXT_MISMATCH"
   | "UNKNOWN";
 
+/** Error object used by low-level incremental update APIs. */
 export interface IncrementalUpdateError extends Error {
   code: IncrementalUpdateErrorCode;
 }
 
+/** Discriminated result of one low-level incremental update attempt. */
 export type IncrementalUpdateResult =
   | { ok: true; value: IncrementalDocument }
   | { ok: false; error: IncrementalUpdateError };
@@ -403,8 +417,10 @@ export type IncrementalUpdateResult =
  */
 export type IncrementalSessionApplyMode = "incremental" | "full-fallback";
 
+/** Strategy for high-level incremental sessions. */
 export type IncrementalSessionStrategy = "auto" | "incremental-only" | "full-only";
 
+/** Reasons recorded when session falls back to a full rebuild. */
 export type IncrementalSessionFallbackReason =
   | IncrementalUpdateErrorCode
   | "INTERNAL_FULL_REBUILD"
@@ -412,6 +428,11 @@ export type IncrementalSessionFallbackReason =
   | "AUTO_COOLDOWN"
   | "AUTO_LARGE_EDIT";
 
+/**
+ * High-level session behavior tuning options.
+ *
+ * All numeric fields are optional safeguards/thresholds for adaptive fallback.
+ */
 export interface IncrementalSessionOptions {
   strategy?: IncrementalSessionStrategy;
   sampleWindowSize?: number;
@@ -464,14 +485,14 @@ export interface IncrementalSession {
 
 // ── Internal types (not re-exported from index) ──
 
-
+/** Buffered text/segment state while scanning structural frames. */
 export interface BufferState {
   start: number;
   end: number;
   segments: number[] | null;
 }
 
-
+/** Parsed result for a complete tag start token at cursor. */
 export interface TagStartInfo {
   tag: string;
   tagOpenPos: number;
@@ -479,7 +500,7 @@ export interface TagStartInfo {
   argStart: number;
 }
 
-
+/** Minimal tag head info used by scanner helpers. */
 export interface TagHead {
   tag: string;
   tagStart: number;
