@@ -62,6 +62,11 @@ const matrixCases: MatrixCase[] = [
     expectedOff: "天気がbold<いlink<baidu.com|い>から>=散歩しましょう",
     expectedOn: "天気がbold<いlink<baidu.com|い>から>=散歩しましょう",
   },
+  {
+    input: "=bold<bold<=italic<1>=>>=Q",
+    expectedOff: "bold<1>Q",
+    expectedOn: "1Q",
+  },
 ];
 
 const runModeText = (input: string, shorthand: boolean): string => {

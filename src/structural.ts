@@ -257,6 +257,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     contentEndI: number; // block/raw content 结束位置
 
     // ── shorthand 前探缓存（仅父 inline endTag 模式使用） ──
+    shorthandProbeTextEnd: number; // 缓存建立时的 frame.textEnd 版本
     shorthandProbeStartI: number; // 最近一次前探起点
     shorthandProbeBoundaryI: number; // 最近一次前探命中的首个边界位置（tagClose / full tag start / EOF）
     shorthandProbeReject: boolean; // 该边界是否表示“会误吃父级 endTag，需拒绝 shorthand”
@@ -292,6 +293,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     pendingArgs: null,
     contentStartI: 0,
     contentEndI: 0,
+    shorthandProbeTextEnd: -1,
     shorthandProbeStartI: -1,
     shorthandProbeBoundaryI: -1,
     shorthandProbeReject: false,
@@ -312,7 +314,8 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       if (segLen === 2) {
         value = frame.text.slice(segments[0], segments[1]);
       } else if (segLen === 4) {
-        value = frame.text.slice(segments[0], segments[1]) + frame.text.slice(segments[2], segments[3]);
+        value =
+          frame.text.slice(segments[0], segments[1]) + frame.text.slice(segments[2], segments[3]);
       } else {
         let result = "";
         for (let index = 0; index < segLen; index += 2) {
@@ -574,7 +577,9 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     info?: ShorthandStartInfo;
     at?: number;
   }
-  const resolveShorthandOwnership = (input: ShorthandOwnershipInput): ShorthandOwnershipDecision => {
+  const resolveShorthandOwnership = (
+    input: ShorthandOwnershipInput,
+  ): ShorthandOwnershipDecision => {
     if (input.phase === "push") {
       const info = input.info;
       if (!info) return "allow";
@@ -591,6 +596,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       if (frame.inlineCloseToken !== endTag) return "allow";
 
       const canReuseProbe =
+        frame.shorthandProbeTextEnd === frame.textEnd &&
         frame.shorthandProbeStartI >= 0 &&
         frame.shorthandProbeBoundaryI >= 0 &&
         info.argStart >= frame.shorthandProbeStartI &&
@@ -619,6 +625,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
           probe++;
         }
 
+        frame.shorthandProbeTextEnd = frame.textEnd;
         frame.shorthandProbeStartI = info.argStart;
         frame.shorthandProbeBoundaryI = boundary;
         frame.shorthandProbeReject = reject;
@@ -680,13 +687,36 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
   // ── 主循环 ──
 
   const stack: ParseFrame[] = [makeFrame(text, depth, insideArgs, baseOffset)];
-  const tryConsumeInlineCloseAtCursor = (frame: ParseFrame, frameText: string, i: number): boolean => {
+  const tryConsumeInlineCloseAtCursor = (
+    frame: ParseFrame,
+    frameText: string,
+    i: number,
+  ): boolean => {
     if (frame.inlineCloseToken === null) return false;
     const { tagClose, rawOpen, blockOpen, blockClose } = syntax;
 
     if (frame.inlineCloseToken === tagClose) {
-      if (!frameText.startsWith(tagClose, i)) return false;
       const parent = frame.parentIndex >= 0 ? stack[frame.parentIndex] : null;
+      // full-form close 与 shorthand close 竞争时，先让 full-form close 拥有 token。
+      if (
+        scanEndTagAt(frameText, i, frame.textEnd) === "full" &&
+        resolveShorthandOwnership({
+          phase: "close",
+          frame,
+          parent,
+          at: i,
+        }) === "defer-parent"
+      ) {
+        stack.pop();
+        if (!parent) {
+          return true;
+        }
+        appendBuf(parent, frame.tagStartI, frame.argStartI);
+        parent.i = frame.argStartI;
+        return true;
+      }
+
+      if (!frameText.startsWith(tagClose, i)) return false;
       if (
         resolveShorthandOwnership({
           phase: "close",
@@ -793,11 +823,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       const tagStartI = frame.tagStartI;
 
       if (closeStart === -1) {
-        const malformed = findMalformedWholeLineTokenCandidate(
-          frameText,
-          contentStart,
-          blockClose,
-        );
+        const malformed = findMalformedWholeLineTokenCandidate(frameText, contentStart, blockClose);
         emitError(
           tracker,
           onError,
@@ -863,7 +889,11 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     frame.i += tagClose.length;
     return true;
   };
-  const tryConsumeTagOrTextAtCursor = (frame: ParseFrame, frameText: string, i: number): boolean => {
+  const tryConsumeTagOrTextAtCursor = (
+    frame: ParseFrame,
+    frameText: string,
+    i: number,
+  ): boolean => {
     // ── 标签头识别 ──
     const info = readTagStartInfo(frameText, i, syntax, tagName);
     if (!info) {
@@ -1127,7 +1157,15 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
 
     // ── 非 inline 帧的意外 endTag ──
     if (scanEndTagAt(frameText, i, frame.textEnd) === "full") {
-      emitError(tracker, onError, "UNEXPECTED_CLOSE", frameText, i, endTag.length, emittedErrorKeys);
+      emitError(
+        tracker,
+        onError,
+        "UNEXPECTED_CLOSE",
+        frameText,
+        i,
+        endTag.length,
+        emittedErrorKeys,
+      );
       appendBuf(frame, i, i + endTag.length);
       frame.i += endTag.length;
       continue;
@@ -1148,6 +1186,10 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     if (tryConsumeTagOrTextAtCursor(frame, frameText, i)) {
       continue;
     }
+
+    // 防御性兜底：避免未来重构导致该分支返回 false 时卡住游标。
+    appendBuf(frame, i, i + 1);
+    frame.i++;
   }
 
   return [];
