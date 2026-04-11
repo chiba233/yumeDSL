@@ -597,10 +597,10 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         info.argStart <= frame.shorthandProbeBoundaryI;
 
       if (!canReuseProbe) {
-        let boundary = frame.text.length;
+        let boundary = frame.textEnd;
         let reject = false;
         let probe = info.argStart;
-        while (probe < frame.text.length) {
+        while (probe < frame.textEnd) {
           const [escaped, nextEsc] = readEscapedSequence(frame.text, probe, syntax);
           if (escaped !== null) {
             probe = nextEsc;
