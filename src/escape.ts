@@ -21,7 +21,23 @@ export const readEscapedSequence = (
   i: number,
   ctx?: DslContext | SyntaxConfig,
 ): [string | null, number] => {
-  const { escapeChar, escapableTokens } = resolveSyntax(ctx);
+  const { escapableTokens } = resolveSyntax(ctx);
+  return readEscapedSequenceWithTokens(text, i, ctx, escapableTokens);
+};
+
+/**
+ * 与 `readEscapedSequence` 相同，但允许调用方显式传入可转义 token 集合。
+ *
+ * 适用于需要“按上下文收紧转义范围”的扫描场景（如 root/raw/block content）。
+ */
+export const readEscapedSequenceWithTokens = (
+  text: string,
+  i: number,
+  ctx: DslContext | SyntaxConfig | undefined,
+  escapableTokens: readonly string[],
+): [string | null, number] => {
+  const { escapeChar } = resolveSyntax(ctx);
+  if (escapableTokens.length === 0) return [null, i];
   if (!text.startsWith(escapeChar, i)) {
     return [null, i];
   }

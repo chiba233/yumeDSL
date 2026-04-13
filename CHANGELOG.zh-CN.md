@@ -2,6 +2,19 @@
 
 # 更新日志
 
+### 1.3.6
+
+- **按解析区域收紧 escape 作用域**
+  - `root` 仅识别 `tagOpen`、`tagClose`、`endTag` 的转义。
+  - `arg` 不再消费 `rawClose` / `blockClose` 的转义（例如 `\\%end$$`、`\\*end$$` 在参数区保持字面）。
+  - `block` content 支持 root 边界 token + `blockClose` 的转义（被转义的 block end 不再误闭合）。
+  - `raw` content 继续保持渲染阶段的闭合符转义还原行为（`escapeChar + rawClose`）。
+- **修复：block close 对被转义闭合符的误判**
+  - block 结束扫描现在会把被转义的 `blockClose` 视为正文内容，而不是实际闭合边界。
+- **内部：统一 token 作用域 escape 匹配实现**
+  - 抽取共享 helper，消除 scanner 与 structural 中重复实现，避免后续语义漂移。
+- 无公共 API 变化
+
 ### 1.3.5
 
 - **`createEasyStableId`：新增 `disambiguationScope` 选项**

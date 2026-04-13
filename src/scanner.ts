@@ -1,6 +1,6 @@
 import type { SyntaxConfig, TagHead, TagNameConfig, TagStartInfo } from "./types.js";
 import { getLineEnd, isWholeLineToken } from "./chars.js";
-import { readEscapedSequence } from "./escape.js";
+import { readEscapedSequence, readEscapedSequenceWithTokens } from "./escape.js";
 
 /**
  * Find the matching argument-close position for a tag argument region.
@@ -13,11 +13,14 @@ import { readEscapedSequence } from "./escape.js";
  */
 export const findTagArgClose = (text: string, start: number, syntax: SyntaxConfig): number => {
   const { tagOpen, tagClose } = syntax;
+  const argEscapableTokens = syntax.escapableTokens.filter(
+    token => token !== syntax.rawClose && token !== syntax.blockClose,
+  );
   let pos = start;
   let depth = 1;
 
   while (pos < text.length) {
-    const [escaped, next] = readEscapedSequence(text, pos, syntax);
+    const [escaped, next] = readEscapedSequenceWithTokens(text, pos, syntax, argEscapableTokens);
     if (escaped !== null) {
       pos = next;
       continue;
@@ -52,11 +55,14 @@ const fillTagArgCloseCacheFrom = (
   if (cached !== undefined) return;
 
   const { tagOpen, tagClose } = syntax;
+  const argEscapableTokens = syntax.escapableTokens.filter(
+    token => token !== syntax.rawClose && token !== syntax.blockClose,
+  );
   let pos = start;
   const openStack: number[] = [start];
 
   while (pos < text.length) {
-    const [escaped, next] = readEscapedSequence(text, pos, syntax);
+    const [escaped, next] = readEscapedSequenceWithTokens(text, pos, syntax, argEscapableTokens);
     if (escaped !== null) {
       pos = next;
       continue;
@@ -350,13 +356,21 @@ export const findBlockClose = (
   // 它既要识别整行 close，又要跨过内层 raw/block/inline，而且三者的跳过策略还不一样。
   // 这里任何一个分支少吃或多吃字符，外层 depth 和最终 close 位置都会一起漂。
   const { blockClose, rawClose, rawOpen, blockOpen, endTag } = syntax;
+  const blockContentEscapableTokens = [
+    ...new Set([syntax.endTag, syntax.tagOpen, syntax.tagClose, blockClose]),
+  ].sort((a, b) => b.length - a.length);
   let pos = start;
   let depth = 1;
   let tagArgCloseCache: Map<number, number> | null = null;
   let inlineCloseCache: Map<number, number> | null = null;
 
   while (pos < text.length) {
-    const [escaped, next] = readEscapedSequence(text, pos, syntax);
+    const [escaped, next] = readEscapedSequenceWithTokens(
+      text,
+      pos,
+      syntax,
+      blockContentEscapableTokens,
+    );
     if (escaped !== null) {
       pos = next;
       continue;

@@ -51,7 +51,7 @@ import type {
 import { getDefaultSyntaxInstance, getSyntax } from "./syntax.js";
 import { DEFAULT_TAG_NAME, getTagNameConfig } from "./chars.js";
 import { warnDeprecated } from "./deprecations.js";
-import { readEscapedSequence } from "./escape.js";
+import { readEscapedSequence, readEscapedSequenceWithTokens } from "./escape.js";
 import {
   type BaseResolvedConfig,
   buildGatingContext,
@@ -204,8 +204,44 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
   //
   // 两条路径共用这一个扫描主循环，避免维护两套 form 判定规则。
   const { depthLimit, gating, tracker, syntax, tagName, onError } = ctx;
-  const { tagClose, tagDivider, tagOpen, endTag, rawClose } = syntax;
+  const { tagClose, tagDivider, tagOpen, endTag, rawClose, blockClose } = syntax;
+  const argEscapableTokens = syntax.escapableTokens.filter(
+    token => token !== syntax.rawClose && token !== syntax.blockClose,
+  );
   const emittedErrorKeys = new Set<string>();
+  const rootEscapableTokens = [...new Set([endTag, tagOpen, tagClose])].sort(
+    (a, b) => b.length - a.length,
+  );
+  const blockContentEscapableTokens = [...new Set([...rootEscapableTokens, blockClose])].sort(
+    (a, b) => b.length - a.length,
+  );
+
+  const readEscapedForFrame = (
+    frameText: string,
+    index: number,
+    frame: ParseFrame,
+  ): [string | null, number] => {
+    if (frame.insideArgs) {
+      return readEscapedSequenceWithTokens(frameText, index, syntax, argEscapableTokens);
+    }
+    if (frame.returnKind === "blockContent") {
+      return readEscapedSequenceWithTokens(
+        frameText,
+        index,
+        syntax,
+        blockContentEscapableTokens,
+      );
+    }
+    const isRootFrame =
+      frame.parentIndex < 0 &&
+      frame.returnKind === null &&
+      frame.inlineCloseToken === null &&
+      !frame.insideArgs;
+    if (isRootFrame) {
+      return readEscapedSequenceWithTokens(frameText, index, syntax, rootEscapableTokens);
+    }
+    return [null, index];
+  };
 
   if (!endTag.startsWith(tagClose)) {
     throw new Error(
@@ -1135,7 +1171,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     const i = frame.i;
 
     // ── 转义序列 ──
-    const [escaped, next] = readEscapedSequence(frameText, i, syntax);
+    const [escaped, next] = readEscapedForFrame(frameText, i, frame);
     if (escaped !== null) {
       flushBuffer(frame);
       pushNode(

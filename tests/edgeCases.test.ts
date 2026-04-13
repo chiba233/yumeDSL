@@ -39,6 +39,16 @@ const cases: GoldenCase[] = [
       assert.equal(tokens[0].position!.end.offset, 4);
     },
   },
+  {
+    name: "[Edge/Escape] root 不应转义 tagDivider -> 应保留字面",
+    run() {
+      const tokens = parse("\\|");
+      assert.equal(tokens.length, 1);
+      assert.equal(tokens[0].type, "text");
+      assert.equal(tokens[0].value, "\\|");
+      assert.equal(tokens[0].position!.end.offset, 2);
+    },
+  },
 
   // ── Unclosed tag degradation ──
   {
@@ -73,12 +83,11 @@ const cases: GoldenCase[] = [
   {
     name: "[Edge/Minimal] 仅转义字符 -> 单个文本 token",
     run() {
-      // "\\" → escaped backslash, output "\" (1 char), source = 2 chars
+      // root 仅允许转义 tagOpen/tagClose/endTag；"\\" 在 root 保留字面
       const tokens = parse("\\\\");
       assert.equal(tokens.length, 1);
       assert.equal(tokens[0].type, "text");
-      assert.equal(tokens[0].value, "\\");
-      // source is 2 chars, output is 1 char
+      assert.equal(tokens[0].value, "\\\\");
       assert.equal(tokens[0].position!.end.offset, 2);
     },
   },
@@ -117,6 +126,28 @@ const cases: GoldenCase[] = [
       assert.equal(nodes[0].type, "text");
       // AI might expect value to be ["hello", "world"] or similar
       assert.equal((nodes[0] as { value: string }).value, "hello world");
+    },
+  },
+  {
+    name: "[Edge/Structural] args 不应转义 rawClose/blockClose -> 应保留字面反斜杠",
+    run() {
+      const rawEndNodes = parseStructural("$$bold(a\\%end$$b)$$");
+      assert.equal(rawEndNodes.length, 1);
+      assert.equal(rawEndNodes[0].type, "inline");
+      const rawEndChild = rawEndNodes[0].children[0];
+      assert.equal(rawEndChild.type, "text");
+      if (rawEndChild.type === "text") {
+        assert.equal(rawEndChild.value, "a\\%end$$b");
+      }
+
+      const blockEndNodes = parseStructural("$$bold(a\\*end$$b)$$");
+      assert.equal(blockEndNodes.length, 1);
+      assert.equal(blockEndNodes[0].type, "inline");
+      const blockEndChild = blockEndNodes[0].children[0];
+      assert.equal(blockEndChild.type, "text");
+      if (blockEndChild.type === "text") {
+        assert.equal(blockEndChild.value, "a\\*end$$b");
+      }
     },
   },
 

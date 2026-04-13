@@ -2,6 +2,19 @@
 
 # Changelog
 
+### 1.3.6
+
+- **Escape scope tightened by parse region**
+  - `root` now only recognizes escapes for `tagOpen`, `tagClose`, and `endTag`.
+  - `arg` no longer consumes escapes for `rawClose` / `blockClose` (for example, `\\%end$$`, `\\*end$$` stay literal in args).
+  - `block` content supports escapes for root-level boundary tokens plus `blockClose` (so escaped block-end markers no longer close the block).
+  - `raw` content keeps close-marker escaping behavior on the render path (`escapeChar + rawClose`).
+- **Fix: block close false-positive on escaped marker**
+  - Block close scanning now treats escaped `blockClose` as content, not as a real close boundary.
+- **Internal: shared escaped-sequence matcher**
+  - Consolidated duplicated token-scoped escape matcher logic into a shared helper to keep scanner and structural behavior aligned.
+- No public API changes
+
 ### 1.3.5
 
 - **`createEasyStableId`: new `disambiguationScope` option**
