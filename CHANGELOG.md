@@ -4,13 +4,13 @@
 
 ### 1.3.6
 
-- **Escape behavior is now strictly scoped by parse region**
-  - `root` only accepts escapes for `tagOpen`, `tagClose`, and `endTag`.
-  - `arg` no longer treats `rawClose` / `blockClose` as escapable tokens.
-  - `block` content supports escaped `blockClose` and no longer closes early on escaped block-end markers.
-  - `raw` close-marker escaping behavior remains preserved on the render path.
-- **Stability fixes for escape + boundary interactions**
-  - Improved consistency for escape handling around block/raw closing boundaries and argument scanning.
+- **Compared with 1.3.5: escape rules are now context-aware**
+  - In 1.3.5, escape handling followed one global token set.
+  - In 1.3.6, escape behavior is scoped by parsing context (`root` / inline arguments / raw content / block content), matching how each region actually parses.
+- **Compared with 1.3.5: fewer accidental closes in mixed content**
+  - Escaped boundary markers inside raw/block content are handled more predictably.
+  - Mixed inline/raw/block inputs now have more stable close-boundary behavior.
+- No public API changes
 
 ### 1.3.5
 
