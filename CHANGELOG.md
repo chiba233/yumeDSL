@@ -2,6 +2,14 @@
 
 # Changelog
 
+### 1.3.7
+
+- **Fix: `endTag` no longer swallows `tagPrefix` of an immediately following tag**
+  - When `)` appeared directly before `$$tagname(`, the scanner greedily matched `)$$` as `endTag`, consuming the `$$` that should serve as the next tag's prefix. Inputs like `)$$bold(hello)$$` degraded entirely to plain text.
+  - The scanner now consumes only `tagClose` (`)`) in non-inline frames, leaving `tagPrefix` (`$$`) for the next iteration to recognize as a tag start.
+  - `UNEXPECTED_CLOSE` error is suppressed when the remaining `tagPrefix` forms a valid tag head, avoiding false-positive diagnostics.
+- No public API changes
+
 ### 1.3.6
 
 - **Compared with 1.3.5: escape rules are now context-aware**

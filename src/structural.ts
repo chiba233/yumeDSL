@@ -1191,22 +1191,6 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       continue;
     }
 
-    // ── 非 inline 帧的意外 endTag ──
-    if (scanEndTagAt(frameText, i, frame.textEnd) === "full") {
-      emitError(
-        tracker,
-        onError,
-        "UNEXPECTED_CLOSE",
-        frameText,
-        i,
-        endTag.length,
-        emittedErrorKeys,
-      );
-      appendBuf(frame, i, i + endTag.length);
-      frame.i += endTag.length;
-      continue;
-    }
-
     // ── 管道分隔符（仅参数区内） ──
     if (frame.insideArgs && frameText.startsWith(tagDivider, i)) {
       flushBuffer(frame);
