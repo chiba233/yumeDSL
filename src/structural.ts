@@ -1191,6 +1191,26 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       continue;
     }
 
+    // ── 非 inline 帧的意外 endTag ──
+    // 非 inline 帧不存在合法 endTag 闭合；只消费 tagClose，把 tagPrefix 留给下一轮 tag 识别。
+    if (scanEndTagAt(frameText, i, frame.textEnd) === "full") {
+      const nextIsTag = readTagStartInfo(frameText, i + tagClose.length, syntax, tagName);
+      if (!nextIsTag) {
+        emitError(
+          tracker,
+          onError,
+          "UNEXPECTED_CLOSE",
+          frameText,
+          i,
+          tagClose.length,
+          emittedErrorKeys,
+        );
+      }
+      appendBuf(frame, i, i + tagClose.length);
+      frame.i += tagClose.length;
+      continue;
+    }
+
     // ── 管道分隔符（仅参数区内） ──
     if (frame.insideArgs && frameText.startsWith(tagDivider, i)) {
       flushBuffer(frame);
