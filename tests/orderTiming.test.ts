@@ -73,6 +73,34 @@ const cases: GoldenCase[] = [
     },
   },
   {
+    name: "[Order/onError] 非 inline 帧的 )$$ 紧邻合法标签头 -> 不应上报 UNEXPECTED_CLOSE",
+    run() {
+      const codes: string[] = [];
+      const result = parseRichText(")$$bold(ok)$$", {
+        handlers: createSimpleInlineHandlers(["bold"]),
+        onError: (error) => codes.push(error.code),
+      });
+
+      assert.deepEqual(codes, []);
+      const flat = materializeTextTokens(result);
+      assert.equal(flat.length, 2);
+      assert.equal(flat[0]?.type, "text");
+      assert.equal(flat[0]?.value, ")");
+      assert.equal(flat[1]?.type, "bold");
+    },
+  },
+  {
+    name: "[Order/onError] 非 inline 帧的 )$$ 后无合法标签头 -> 仍应上报 UNEXPECTED_CLOSE",
+    run() {
+      const codes: string[] = [];
+      parseRichText(")$$ ", {
+        onError: (error) => codes.push(error.code),
+      });
+
+      assert.deepEqual(codes, ["UNEXPECTED_CLOSE"]);
+    },
+  },
+  {
     name: "[Order/onError] parseRichText raw 未闭合 -> 应保持 1.1.3 的错误基线",
     run() {
       const codes: string[] = [];

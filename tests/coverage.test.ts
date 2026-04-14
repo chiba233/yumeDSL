@@ -216,6 +216,44 @@ const cases: GoldenCase[] = [
       );
     },
   },
+  {
+    name: "[Coverage/Structural] shorthand ownership probe should skip escaped sequence before boundary",
+    run() {
+      const handlers: Record<string, TagHandler> = {
+        bold: { inline: (tokens) => ({ type: "bold", value: tokens }) },
+        link: { inline: (tokens) => ({ type: "link", value: tokens }) },
+      };
+      // outer full-form inline frame + inner shorthand link(...)
+      // probe starts at link argStart and must skip escaped "\\)" first.
+      const input = "$$bold(link(\\)x)z)$$";
+      const nodes = parseStructural(input, {
+        handlers,
+        implicitInlineShorthand: true,
+      });
+
+      assert.equal(nodes.length, 1);
+      const outer = nodes[0] as Extract<StructuralNode, { type: "inline" }>;
+      assert.equal(outer.type, "inline");
+      assert.equal(outer.tag, "bold");
+      assert.equal(outer.children.length, 2);
+      const link = outer.children[0] as Extract<StructuralNode, { type: "inline" }>;
+      assert.equal(link.type, "inline");
+      assert.equal(link.tag, "link");
+      assert.equal(link.children.length, 2);
+      assert.equal(link.children[0]?.type, "escape");
+      if (link.children[0]?.type === "escape") {
+        assert.equal(link.children[0].raw, "\\)");
+      }
+      assert.equal(link.children[1]?.type, "text");
+      if (link.children[1]?.type === "text") {
+        assert.equal(link.children[1].value, "x");
+      }
+      assert.equal(outer.children[1]?.type, "text");
+      if (outer.children[1]?.type === "text") {
+        assert.equal(outer.children[1].value, "z");
+      }
+    },
+  },
 
   // ═══════════════════════════════════════════════════════════
   // structural.ts — raw unclosed inside inline frame (lines 565-583)
