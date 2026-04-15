@@ -45,5 +45,8 @@ await import("./zones.test.ts");
 console.log("=== Incremental ===");
 await import("./incremental.test.ts");
 
+console.log("=== Custom Syntax ===");
+await import("./customSyntax.test.ts");
+
 console.log("=== Coverage Supplement ===");
 await import("./coverage.test.ts");
