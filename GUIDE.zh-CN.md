@@ -32,7 +32,7 @@
   `yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker) 的 `parseSlice`，跳到任意区域拿到带完整位置的
   `TextToken[]`，不用重新解析整个文档
 
-### **[▶ 在线体验——输入 DSL，即时查看 token 树](https://demo.qwwq.org/)**
+### **[▶ 在线体验——输入 DSL，即时查看 token 树](https://chiba233.github.io/richTextDemo/)**
 
 **实时编辑标签、开关 handler、边打字边看 token 树更新。**
 

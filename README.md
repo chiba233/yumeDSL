@@ -37,7 +37,7 @@ Text in, token tree out — tag semantics, rendering, framework: all yours to de
   `yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker)'s `parseSlice`, you jump to any region and
   get fully positioned `TextToken[]` without re-parsing the whole document
 
-### **[▶ Try the live playground — type DSL, see tokens instantly](https://demo.qwwq.org/)**
+### **[▶ Try the live playground — type DSL, see tokens instantly](https://chiba233.github.io/richTextDemo/)**
 
 **Edit tags in real time, toggle handlers on/off, watch the token tree update as you type.**
 
