@@ -52,10 +52,9 @@
 > 大规模深嵌套基准使用放宽后的堆预算；具体条件见性能页。
 >
 > 配合 [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker) 的 `parseSlice`——只重解析被修改的区域。
-> 如需跨 edit 做增量 structural 缓存（避免每次全量 `parseStructural`
-> ），见：[增量解析](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%A2%9E%E9%87%8F%E8%A7%A3%E6%9E%90)（默认入口是
-> `createIncrementalSession(...)`）。
-> 增量 API 属于实验能力，小版本可能出现 breaking change；生产接入请固定版本并按 wiki 的版本用法说明升级。
+> `createIncrementalSession(...)` 把“编辑器级”的结构缓存能力直接带进连续编辑场景，让解析器在高频改动下也不用每次从头重建。
+> `parseIncremental(...)` 则把同一套增量模型打包成一份可继续复用的首帧快照，适合从单次解析自然接入增量管线。
+> 完整 session 生命周期、精确签名、`applyEditWithDiff(...)` 字段展开请看 [增量解析 wiki](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%A2%9E%E9%87%8F%E8%A7%A3%E6%9E%90)。
 > [完整性能数据](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E6%80%A7%E8%83%BD)
 
 **适用场景：**
@@ -124,8 +123,8 @@ const RichText: FC<{ tokens: TextToken[] }> = ({tokens}) => (
 
 **从这里开始：** [安装](#安装) · [快速开始](#快速开始) · [DSL 语法](#dsl-语法) · [API](#api)
 
-**深入了解：
-** [自定义语法](#自定义语法) · [处理器辅助函数](#处理器辅助函数) · [ParseOptions](#parseoptions) · [稳定 Token ID](#稳定-token-id) · [源码位置追踪](#源码位置追踪) · [错误处理](#错误处理) · [导出一览](#导出一览) · [增量解析](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%A2%9E%E9%87%8F%E8%A7%A3%E6%9E%90) · [待弃用 API](#待弃用-api) · [兼容性](#兼容性说明)
+**深入了解：**
+[自定义语法](#自定义语法) · [处理器辅助函数](#处理器辅助函数) · [ParseOptions](#parseoptions) · [稳定 Token ID](#稳定-token-id) · [源码位置追踪](#源码位置追踪) · [错误处理](#错误处理) · [导出一览](#导出一览) · [增量解析](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%A2%9E%E9%87%8F%E8%A7%A3%E6%9E%90) · [待弃用 API](#待弃用-api) · [兼容性](#兼容性说明)
 
 ---
 
@@ -358,28 +357,13 @@ dsl.parse(text, {onError: (e) => console.warn(e)});
 **不用 `createParser` 的话**，每次调用都需要传入完整选项：
 
 ```ts
-// 重复 — 必须到处传 handlers
-parseRichText(text1, {handlers});
-parseRichText(text2, {handlers});
-stripRichText(text3, {handlers});
-parseStructural(text4, {handlers});
+parseRichText(text, {handlers});
+stripRichText(text, {handlers});
 
-// 用 createParser — 绑定一次，到处使用
+// 用 createParser
 const dsl = createParser({handlers});
-dsl.parse(text1);
-dsl.parse(text2);
-dsl.strip(text3);
-dsl.structural(text4);
-dsl.print(tree);
-```
-
-```ts
-interface Parser {
-    parse: (text: string, overrides?: ParseOptions) => TextToken[];
-    strip: (text: string, overrides?: ParseOptions) => string;
-    structural: (text: string, overrides?: StructuralParseOptions) => StructuralNode[];
-    print: (nodes: StructuralNode[], overrides?: PrintOptions) => string;
-}
+dsl.parse(text);
+dsl.strip(text);
 ```
 
 **方法一览：**
@@ -424,6 +408,20 @@ const tree = parseStructural("$$bold(hello)$$ and $$code(ts)%\nconst x = 1;\n%en
 
 详见 [API 参考 wiki 页面](https://github.com/chiba233/yumeDSL/wiki/zh-CN-API-%E5%8F%82%E8%80%83#parsestructuraltext-options----%E7%BB%93%E6%9E%84%E5%8C%96%E8%A7%A3%E6%9E%90)：
 `StructuralNode` 变体、`StructuralParseOptions`、与 `parseRichText` 的差异、`printStructural`。
+
+### `parseIncremental` / `createIncrementalSession` — 增量结构缓存
+
+这两个 API 用在“不是只解析一次，而是文档会被持续编辑”的场景。
+
+- `parseIncremental(source, options?)` —— 建好并返回第一份增量快照（`IncrementalDocument`）
+- `createIncrementalSession(source, options?, sessionOptions?)` —— 建一个长期存活的 session，后面反复吃 edit
+
+简单记：
+
+- 只要第一份快照 → `parseIncremental(...)`
+- 编辑器 / 实时预览 / 连续更新 → `createIncrementalSession(...)`
+
+README / GUIDE 里这里只放最短说明。`getDocument`、`applyEdit`、`applyEditWithDiff`、`rebuild` 分别怎么用、为什么这么设计、返回字段是什么，统一看 [增量解析 wiki 页面](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%A2%9E%E9%87%8F%E8%A7%A3%E6%9E%90)。
 
 ---
 
@@ -531,50 +529,23 @@ const dsl = createParser({
 
 ### `declareMultilineTags(names)` — 块级换行规范化
 
-具有**块级/容器渲染语义**的标签——对话框、代码块、信息面板、居中标题——需要剥掉首尾边界换行。
-否则，DSL 自然的多行写法：
+当标签渲染成块级 / 容器元素时，用它避免边界换行混进内容。它**不**创建处理器，只负责换行规范化。
+如果你想按标签、按 form 做细粒度控制，它也支持 `{ tag, forms }` 对象形式，不只支持字符串数组。
 
-```text
-$$speaker(Alice)*
-Hello!
-*end$$
-```
-
-……会让内容变成 `"\nHello!\n"` 而不是 `"Hello!"`，渲染时**凭空多出空行**——一种极其隐蔽且难以排查的视觉 bug。
-
-`declareMultilineTags` 告诉解析器哪些标签需要规范化。**不**创建处理器——配合上面的辅助函数一起使用。
-
-**各形式的规范化行为：**
-
-| 形式              | 剥离什么                                                | 适用场景                                          |
-|-----------------|-----------------------------------------------------|-----------------------------------------------|
-| `raw` / `block` | `)*` / `)%` 后的前导 `\n`，`*end$$` / `%end$$` 前的尾随 `\n` | 多行 block/raw 标签                               |
-| `inline`        | inline close `$$` 后紧跟的 `\n`                         | 虽然用 inline 语法但渲染为块级元素的标签（如 `$$center(...)$$`） |
-
-**用法：**
+**最短用法：**
 
 ```ts
-// 传字符串——三种形式全部规范化（raw + block + inline）
 blockTags: declareMultilineTags(["info", "warning", "center"])
-
-// 传对象——精细控制到特定形式
-blockTags: declareMultilineTags([
-    "info",                                // 字符串：三种形式全部规范化
-    {tag: "code", forms: ["raw"]},       // 仅 raw 形式
-    {tag: "center", forms: ["inline"]},  // 仅 inline 形式
-])
 ```
-
-**自动推导：** 解析器始终从 handler 方法自动推导 raw/block 规范化（有 `raw` → raw 形式，有 `block` → block 形式）。
-传 `blockTags` 时，覆盖是**按标签的**：你列出的标签完全替换该标签的自动推导，没列出的标签保留自动推导。
-**inline 规范化永远不会自动推导**——解析器无法知道一个 inline 标签是否渲染为块级元素，必须显式声明。
 
 **经验法则：** 如果你的标签渲染为块级元素，确保它出现在 `blockTags` 中。否则边界换行会混入内容，渲染时产生多余空行。
 
-详见 [处理器辅助函数 wiki 页面](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%A4%84%E7%90%86%E5%99%A8%E8%BE%85%E5%8A%A9%E5%87%BD%E6%95%B0)
-：完整 API 签名、`PipeHandlerDefinition` 接口、各形态回调细节。
+详见 [处理器辅助函数 wiki 页面](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%A4%84%E7%90%86%E5%99%A8%E8%BE%85%E5%8A%A9%E5%87%BD%E6%95%B0#declaremultilinetagsnames)
+：完整 API 签名、各形态规则、`PipeHandlerDefinition` 接口细节。
 
 ## ParseOptions
+
+这里先只保留最短概览。完整字段说明、示例、边界行为，统一看 [ParseOptions wiki 页面](https://github.com/chiba233/yumeDSL/wiki/zh-CN-ParseOptions-%E9%80%89%E9%A1%B9)。
 
 `ParseOptions` 和 `StructuralParseOptions` 均继承自 `ParserBaseOptions`：
 
@@ -603,167 +574,44 @@ interface StructuralParseOptions extends ParserBaseOptions {
 }
 ```
 
-### 共享字段（`ParserBaseOptions`）
+### 你通常只需要记住这些字段
 
-- `handlers`：标签名 → 处理器定义
-- `allowForms`：限制解析器接受的标签形式（默认：全部启用）
-- `implicitInlineShorthand`：控制 inline 参数区内的 `name(...)`
-  简写（默认：关闭）。详见 [implicitInlineShorthand](#implicitinlineshorthand)。_1.3 起_
-- `depthLimit`：最大嵌套深度，默认 `50`
-- `syntax`：覆盖默认语法符号
-- `tagName`：覆盖标签名字符规则
-- `baseOffset`：子串解析时偏移所有 `offset`（默认 `0`）。
-  详见 [源码位置追踪 wiki](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E6%BA%90%E7%A0%81%E4%BD%8D%E7%BD%AE%E8%BF%BD%E8%B8%AA#%E8%A7%A3%E6%9E%90%E5%AD%90%E5%AD%97%E7%AC%A6%E4%B8%B2baseoffset-%E5%92%8C-tracker)
-- `tracker`：基于原始完整文档预构建的 `PositionTracker`，同时保证 `line`/`column` 正确。
-  详见 [源码位置追踪 wiki](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E6%BA%90%E7%A0%81%E4%BD%8D%E7%BD%AE%E8%BF%BD%E8%B8%AA#%E8%A7%A3%E6%9E%90%E5%AD%90%E5%AD%97%E7%AC%A6%E4%B8%B2baseoffset-%E5%92%8C-tracker)
+- `handlers`：你的标签定义
+- `syntax` / `tagName`：改语法符号或标签名规则
+- `allowForms`：全局限制只接受哪些标签形式
+- `implicitInlineShorthand`：在 inline 参数区启用 `name(...)` 简写
+- `depthLimit`：嵌套上限
+- `trackPositions`、`baseOffset`、`tracker`：源码位置映射
+- `blockTags`：块级换行规范化
+- `onError`：收集解析错误
+- `createId`：自定义本次解析的 token id
 
-### `ParseOptions` 专属字段
-
-- `createId`：覆盖本次解析的 token id 生成策略
-- `blockTags`：块级换行规范化——纯字符串启用全部形式（raw + block + inline），`{ tag, forms }` 限定到特定形式。详见 [
-  `declareMultilineTags`](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%A4%84%E7%90%86%E5%99%A8%E8%BE%85%E5%8A%A9%E5%87%BD%E6%95%B0#declaremultilinetagsnames)
-- `mode`：已弃用——详见[待弃用 API](#待弃用-api)
-- `onError`：解析错误回调
-- `trackPositions`：为每个 `TextToken` 附加源码位置信息 `position`（默认 `false`）。详见[源码位置追踪](#源码位置追踪)
+`StructuralParseOptions` 是偏结构解析的轻量子集；`ParseOptions` 在它之上再加 `createId`、`blockTags`、`onError` 这类渲染侧字段。
 
 ### allowForms
 
-控制解析器接受哪些标签形式。未列出的形式按处理器不支持处理 — 解析器优雅降级。
+这个字段适合“评论区只允许 inline”这类全局门控场景。没列出的形式不会报错，而是优雅降级成普通文本。
 
-实际效果上，被禁用的形式会按普通文本保留，而且这个规则也适用于未注册标签。例如禁用 `"inline"` 后，
-`$$unknown(...)$$` 会整体按原文保留，而不是去壳。
-
-```ts
-// 只允许 inline 标签 — block 和 raw 语法被忽略
-const dsl = createParser({
-    handlers,
-    allowForms: ["inline"],
-});
-
-// 允许 inline 和 block，但不允许 raw
-const dsl2 = createParser({
-    handlers,
-    allowForms: ["inline", "block"],
-});
-```
-
-适用于用户生成内容（评论、聊天消息），希望允许简单的 inline 格式但禁止多行 block 或 raw 标签的场景。
-
-省略时启用全部形式。
+完整示例和行为细节见：[ParseOptions wiki — `allowForms`](https://github.com/chiba233/yumeDSL/wiki/zh-CN-ParseOptions-%E9%80%89%E9%A1%B9)。
 
 ### implicitInlineShorthand
 
 > _1.3 起_
 
-在 inline 参数上下文中，`implicitInlineShorthand` 启用更轻量的 `name(...)` 简写语法，省去完整的 `$$name(...)$$` 包裹。
-仅在 inline 参数区内生效——顶层文本不受影响。
+这个字段让 inline 参数区支持更轻量的 `name(...)` 简写；它只影响 inline 参数区，不影响顶层文本。可取 `false`、`true` 或标签白名单。
 
-```ts
-implicitInlineShorthand?: boolean | readonly string[]
-```
-
-- `false`（默认）：关闭简写——仅识别完整 `$$tag(...)$$` 语法。
-- `true`：对所有已注册且支持 inline form 的标签启用。
-- `string[]`：仅对白名单中的标签启用。
-
-**示例：**
-
-```ts
-const dsl = createParser({
-    handlers: {
-        ...createSimpleInlineHandlers(["bold", "italic"]),
-    },
-    implicitInlineShorthand: true,
-});
-
-// 不用简写（始终可用）：
-dsl.parse("$$bold(Hello $$italic(world)$$)$$");
-
-// 启用简写后——结果等价：
-dsl.parse("$$bold(Hello italic(world))$$");
-```
-
-**白名单模式** — 只对部分标签启用简写：
-
-```ts
-const dsl = createParser({
-    handlers: {
-        ...createSimpleInlineHandlers(["bold", "italic", "code"]),
-    },
-    implicitInlineShorthand: ["bold", "italic"],
-    // code(...) 简写不会被识别；bold(...) 和 italic(...) 可以
-});
-```
-
-**解析优先级：** 完整 DSL 结构（`$$tag(...)$$`、`$$tag(...)%`、`$$tag(...)*`）始终优先匹配。
-仅当无完整结构匹配时才尝试简写。简写参数中的字面括号需要用 `\)` / `\(` 转义。
+完整示例、白名单行为和解析优先级见：[ParseOptions wiki — `implicitInlineShorthand`](https://github.com/chiba233/yumeDSL/wiki/zh-CN-ParseOptions-%E9%80%89%E9%A1%B9#implicitinlineshorthand)。
 
 ---
 
 ## Token 结构
 
-```ts
-interface TextToken {
-    type: string;
-    value: string | TextToken[];
-    id: string;
-    position?: SourceSpan;
-
-    [key: string]: unknown;
-}
-```
-
-`TextToken` 是解析器的输出类型。`type` 和 `value` 字段使用宽松类型（`string`），以便解析器可以在不了解你的 schema
-的情况下表示任意标签。
-
-可选的 `position` 字段在启用 [`trackPositions`](#源码位置追踪) 时出现，记录产出该 token 的源码范围（偏移量、行号、列号）。
-
-处理器返回的额外字段（如 `url`、`lang`、`title`）会保留在结果 `TextToken` 上，类型为 `unknown`。你可以直接读取，只需在使用前收窄类型：
-
-```ts
-const token = tokens[0];
-if (token.type === "link" && typeof token.url === "string") {
-    console.log(token.url); // 可用，无需类型断言
-}
-```
-
-处理器返回 `TokenDraft`，具有相同的开放结构：
-
-```ts
-interface TokenDraft {
-    type: string;
-    value: string | TextToken[];
-
-    [key: string]: unknown;
-}
-```
+`TextToken` 是解析器的输出形状：有 `type`、`value`、`id`、可选 `position`，以及你在 handler 里附加的额外字段。
+它刻意保持开放结构，这样解析器不需要预先知道你的业务 schema。
 
 ### 强类型
 
-用 `NarrowToken` + `createTokenGuard` 零样板收窄类型：
-
-```ts
-import {createTokenGuard, type NarrowDraft} from "yume-dsl-rich-text";
-
-// 1. 定义 token map
-interface MyTokenMap {
-    bold: {};
-    link: { url: string };
-    code: { lang: string };
-}
-
-// 2. 创建守卫
-const is = createTokenGuard<MyTokenMap>();
-
-// 3. 在 if 分支里自动收窄
-if (is(token, "link")) {
-    token.url;  // string ✓
-    token.type; // "link" ✓
-}
-
-// 4. handler 侧：NarrowDraft 在编译期捕获漏写字段
-type LinkDraft = NarrowDraft<"link", { url: string }>;
-```
+如果你想要更强的编译期收窄，可以用 `NarrowToken`、`NarrowDraft`、`createTokenGuard`。
 
 详见 [强类型 wiki 章节](https://github.com/chiba233/yumeDSL/wiki/zh-CN-Token-%E7%BB%93%E6%9E%84#%E5%BC%BA%E7%B1%BB%E5%9E%8B)
 ：完整 render 示例、`NarrowTokenUnion`、以及手写判别联合替代方案。
@@ -792,30 +640,13 @@ const tokens = parseRichText("Hello $$bold(world)$$", {
 [`createSimple*` 辅助函数](#处理器辅助函数)就够了。只有当辅助函数无法表达你的逻辑时——
 例如条件字段映射、内容转换、动态类型选择——才需要手写 `TagHandler`。
 
-### TagHandler 接口
+即使暂时不用，也建议在手写 handler 里把 `ctx` 参数写上，这样更符合后续 ctx-first 方向，也能避免并发环境下的模块级状态问题。
 
-```ts
-interface TagHandler {
-    inline?: (tokens: TextToken[], ctx?: DslContext) => TokenDraft;
-    raw?: (arg: string | undefined, content: string, ctx?: DslContext) => TokenDraft;
-    block?: (arg: string | undefined, content: TextToken[], ctx?: DslContext) => TokenDraft;
-}
-```
-
-只实现标签支持的形式即可，不支持的形式会优雅降级。
-
-回调里的 `ctx` 是解析器传给你的上下文对象，不需要知道它是什么，写上就行。建议在所有回调中都声明 ctx——没有额外开销，兼容未来
-ctx 必填的大版本，并避免并发环境（如 SSR）下的模块级状态问题。
-
-### 示例
+**最短示例：**
 
 ```ts
 const dsl = createParser({
     handlers: {
-        // 大多数标签 — 用辅助函数
-        ...createSimpleInlineHandlers(["bold", "italic"]),
-
-        // 手写处理器：只在需要自定义逻辑时
         code: {
             raw: (arg, content, ctx) => ({
                 type: "code-block",
@@ -831,8 +662,8 @@ const dsl = createParser({
 
 ## 导出一览
 
-> ⚠️ 增量解析导出属于实验接口，小版本可能发生 breaking change。
-> 升级前请先对照 wiki 的签名与版本差异说明。
+> 增量解析这组 API 的表面积比核心解析更大。
+> 如果你要接 session 或 diff，请先对照 wiki 里的精确签名和版本说明。
 
 | 分类           | 导出                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 |--------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -843,7 +674,7 @@ const dsl = createParser({
 | **处理器工具函数**  | `parsePipeArgs`、`parsePipeTextArgs`、`parsePipeTextList`、`extractText`、`createTextToken`、`splitTokensByPipe`、`materializeTextTokens`、`unescapeInline`、`readEscapedSequence`、`createToken`                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | **Token 遍历** | `walkTokens`、`mapTokens`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | **位置追踪**     | `buildPositionTracker`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| **类型**       | `TextToken`、`TokenDraft`、`CreateId`、`DslContext`、`TagHandler`、`TagForm`、`InlineShorthandOption`、`ParseOptions`、`ParserBaseOptions`、`StructuralParseOptions`、`Parser`、`SyntaxInput`、`SyntaxConfig`、`TagNameConfig`、`BlockTagInput`、`MultilineForm`、`ErrorCode`、`ParseError`、`StructuralNode`、`SourcePosition`、`SourceSpan`、`PositionTracker`、`PipeArgs`、`PipeHandlerDefinition`、`EasyStableIdOptions`、`PrintOptions`、`TokenVisitContext`、`WalkVisitor`、`MapVisitor`、`Zone`、`IncrementalDocument`、`IncrementalEdit`、`IncrementalParseOptions`、`IncrementalSessionOptions`、`NarrowToken`、`NarrowDraft`、`NarrowTokenUnion` |
+| **类型**       | `TextToken`、`TokenDraft`、`CreateId`、`DslContext`、`TagHandler`、`TagForm`、`InlineShorthandOption`、`ParseOptions`、`ParserBaseOptions`、`StructuralParseOptions`、`Parser`、`SyntaxInput`、`SyntaxConfig`、`TagNameConfig`、`BlockTagInput`、`MultilineForm`、`ErrorCode`、`ParseError`、`StructuralNode`、`SourcePosition`、`SourceSpan`、`PositionTracker`、`PipeArgs`、`PipeHandlerDefinition`、`EasyStableIdOptions`、`PrintOptions`、`TokenVisitContext`、`WalkVisitor`、`MapVisitor`、`Zone`、`IncrementalDocument`、`IncrementalEdit`、`IncrementalParseOptions`、`IncrementalSessionOptions`、`TokenDiffResult`、`IncrementalSessionApplyResult`、`IncrementalSessionApplyWithDiffResult`、`NarrowToken`、`NarrowDraft`、`NarrowTokenUnion` |
 
 详见 [导出一览 wiki 页面](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%AF%BC%E5%87%BA%E4%B8%80%E8%A7%88)
 ：完整签名及详细文档。
@@ -877,11 +708,7 @@ parseRichText("$$bold(unclosed", {
 // errors[0].code === "INLINE_NOT_CLOSED"
 ```
 
-错误码：`DEPTH_LIMIT`、`UNEXPECTED_CLOSE`、`INLINE_NOT_CLOSED`、`SHORTHAND_NOT_CLOSED`、`BLOCK_NOT_CLOSED`、
-`BLOCK_CLOSE_MALFORMED`、`RAW_NOT_CLOSED`、`RAW_CLOSE_MALFORMED`。
-
-**优雅降级：** 解析器永远不会抛出异常。未注册标签 → 纯文本，不支持的形式 → 回退文本，`allowForms` 限制 → 形式被剥离，
-未闭合标签 → 部分文本恢复，括号不配平 → 强制 inline fallback（仅最内层受影响）。
+解析器默认优雅降级而不是抛异常：未知标签、不支持的形式、以及不合法输入都会尽量回到文本形态。
 
 > **⚠️ 常见陷阱：** raw / block 标签嵌套在 inline 参数区内时，handler 必须同时声明 `inline`。
 > 否则解析器无法进入子帧，整个嵌套标签会降级为纯文本。
@@ -889,7 +716,7 @@ parseRichText("$$bold(unclosed", {
 > [DSL 语法 — 优雅降级规则](https://github.com/chiba233/yumeDSL/wiki/zh-CN-DSL-%E8%AF%AD%E6%B3%95#%E4%BC%98%E9%9B%85%E9%99%8D%E7%BA%A7%E8%A7%84%E5%88%99) wiki 页面。
 
 详见 [错误处理 wiki 页面](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E9%94%99%E8%AF%AF%E5%A4%84%E7%90%86)
-：所有错误码及触发场景、详细降级示例。
+：错误码、触发场景、详细降级示例。
 
 ## 待弃用 API
 

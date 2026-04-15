@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import {
+  type StructuralNode,
   type TagHandler,
   type TextToken,
+  type TokenDiffResult,
   createSimpleBlockHandlers,
   createIncrementalSession,
   createSimpleInlineHandlers,
@@ -13,6 +15,8 @@ import {
 import { __setIncrementalDebugSink, tryUpdateIncremental, updateIncremental } from "../src/incremental.ts";
 import { runGoldenCases, type GoldenCase } from "./testHarness.ts";
 
+type StructuralDiffOp = TokenDiffResult["ops"][number];
+
 const parseFull = (source: string, options?: Parameters<typeof parseStructural>[1]) => {
   const tree = parseStructural(source, { ...options, trackPositions: true });
   const zones = buildZones(tree);
@@ -21,6 +25,171 @@ const parseFull = (source: string, options?: Parameters<typeof parseStructural>[
 
 const applyEdit = (source: string, start: number, end: number, newText: string): string =>
   source.slice(0, start) + newText + source.slice(end);
+
+const makeNestedInline = (depth: number): string => {
+  let text = "x";
+  for (let i = 0; i < depth; i++) {
+    text = `$$bold(${text})$$`;
+  }
+  return text;
+};
+
+const stripNodePositions = (node: StructuralNode): StructuralNode => {
+  if (node.type === "text") {
+    return { type: "text", value: node.value };
+  }
+  if (node.type === "escape") {
+    return { type: "escape", raw: node.raw };
+  }
+  if (node.type === "separator") {
+    return { type: "separator" };
+  }
+  if (node.type === "inline") {
+    return {
+      type: "inline",
+      tag: node.tag,
+      children: node.children.map(stripNodePositions),
+      implicitInlineShorthand: node.implicitInlineShorthand,
+    };
+  }
+  if (node.type === "raw") {
+    return {
+      type: "raw",
+      tag: node.tag,
+      args: node.args.map(stripNodePositions),
+      content: node.content,
+    };
+  }
+  return {
+    type: "block",
+    tag: node.tag,
+    args: node.args.map(stripNodePositions),
+    children: node.children.map(stripNodePositions),
+  };
+};
+
+const stripTreePositions = (nodes: readonly StructuralNode[]): StructuralNode[] => nodes.map(stripNodePositions);
+
+const resolveNodeAtPath = (
+  nodes: StructuralNode[],
+  path: ReadonlyArray<{ field: "root" | "children" | "args"; index: number }>,
+): StructuralNode => {
+  let currentNode: StructuralNode | undefined;
+  for (const segment of path) {
+    let container: StructuralNode[];
+    if (segment.field === "root") {
+      container = nodes;
+    } else if (segment.field === "children") {
+      assert.ok(currentNode);
+      assert.ok(currentNode.type === "inline" || currentNode.type === "block");
+      container = currentNode.children;
+    } else {
+      assert.ok(currentNode);
+      assert.ok(currentNode.type === "raw" || currentNode.type === "block");
+      container = currentNode.args;
+    }
+    currentNode = container[segment.index];
+    assert.ok(currentNode);
+  }
+  assert.ok(currentNode);
+  return currentNode;
+};
+
+const resolveContainerForSplice = (
+  nodes: StructuralNode[],
+  op: Extract<StructuralDiffOp, { kind: "splice" }>,
+): StructuralNode[] => {
+  if (op.field === "root") {
+    assert.equal(op.path.length, 0);
+    return nodes;
+  }
+  const owner = resolveNodeAtPath(nodes, op.path);
+  if (op.field === "children") {
+    assert.ok(owner.type === "inline" || owner.type === "block");
+    return owner.children;
+  }
+  assert.ok(owner.type === "raw" || owner.type === "block");
+  return owner.args;
+};
+
+const applyStructuralDiffOps = (
+  previous: readonly StructuralNode[],
+  ops: readonly StructuralDiffOp[],
+): StructuralNode[] => {
+  const draft = stripTreePositions(previous);
+  for (const op of ops) {
+    if (op.kind === "splice") {
+      const container = resolveContainerForSplice(draft, op);
+      container.splice(op.oldRange.start, op.oldRange.end - op.oldRange.start, ...stripTreePositions(op.newNodes));
+      continue;
+    }
+    const node = resolveNodeAtPath(draft, op.path);
+    if (op.kind === "set-text") {
+      assert.equal(node.type, "text");
+      node.value = op.newValue;
+      continue;
+    }
+    if (op.kind === "set-escape") {
+      assert.equal(node.type, "escape");
+      node.raw = op.newValue;
+      continue;
+    }
+    if (op.kind === "set-raw-content") {
+      assert.equal(node.type, "raw");
+      node.content = op.newValue;
+      continue;
+    }
+    assert.equal(op.kind, "set-implicit-inline-shorthand");
+    assert.equal(node.type, "inline");
+    if (op.newValue) {
+      node.implicitInlineShorthand = true;
+    } else {
+      delete node.implicitInlineShorthand;
+    }
+  }
+  return draft;
+};
+
+const assertDiffRebuildsNextTree = (
+  previous: readonly StructuralNode[],
+  next: readonly StructuralNode[],
+  diff: {
+    patches: Array<{ oldRange: { start: number; end: number }; newRange: { start: number; end: number } }>;
+    unchangedRanges: Array<{ oldRange: { start: number; end: number }; newRange: { start: number; end: number } }>;
+    ops: StructuralDiffOp[];
+  },
+): void => {
+  const segments = [...diff.unchangedRanges, ...diff.patches].sort(
+    (a, b) => a.newRange.start - b.newRange.start || a.oldRange.start - b.oldRange.start,
+  );
+  const rebuilt: StructuralNode[] = [];
+  let oldCursor = 0;
+  let newCursor = 0;
+
+  for (const segment of segments) {
+    assert.equal(segment.oldRange.start, oldCursor);
+    assert.equal(segment.newRange.start, newCursor);
+
+    const previousSlice = previous.slice(segment.oldRange.start, segment.oldRange.end);
+    const nextSlice = next.slice(segment.newRange.start, segment.newRange.end);
+    if (
+      segment.oldRange.end > segment.oldRange.start &&
+      segment.newRange.end > segment.newRange.start &&
+      diff.unchangedRanges.includes(segment)
+    ) {
+      assert.deepEqual(previousSlice.map(stripNodePositions), nextSlice.map(stripNodePositions));
+    }
+
+    rebuilt.push(...nextSlice);
+    oldCursor = segment.oldRange.end;
+    newCursor = segment.newRange.end;
+  }
+
+  assert.equal(oldCursor, previous.length);
+  assert.equal(newCursor, next.length);
+  assert.deepEqual(rebuilt, next);
+  assert.deepEqual(applyStructuralDiffOps(previous, diff.ops), stripTreePositions(next));
+};
 
 const captureIncrementalDebug = (run: () => void) => {
   let captured:
@@ -737,6 +906,182 @@ const cases: GoldenCase[] = [
       assert.throws(() => {
         void next.tree;
       }, /unexpected node type|unsupported frame source type/);
+    },
+  },
+  {
+    name: "[Incremental/SessionDiff] applyEditWithDiff should return reconstructable patch set",
+    run: () => {
+      const handlers = {
+        ...createSimpleInlineHandlers(["bold"]),
+        ...createSimpleRawHandlers(["code"]),
+      };
+      const source = "head\n$$code(ts)%\nA\n%end$$\n$$bold(x)$$";
+      const session = createIncrementalSession(source, { handlers });
+      const before = session.getDocument();
+      const editAt = source.indexOf("x");
+      const newSource = applyEdit(source, editAt, editAt + 1, "y");
+
+      const result = session.applyEditWithDiff(
+        { startOffset: editAt, oldEndOffset: editAt + 1, newText: "y" },
+        newSource,
+      );
+
+      assert.equal(result.doc.source, newSource);
+      assert.ok(result.diff.patches.length > 0);
+      assert.ok(result.diff.dirtySpanOld.startOffset <= editAt);
+      assert.ok(result.diff.dirtySpanOld.endOffset >= editAt + 1);
+      assertDiffRebuildsNextTree(before.tree, result.doc.tree, result.diff);
+    },
+  },
+  {
+    name: "[Incremental/SessionDiff] applyEditWithDiff should emit multiple root patches around a stable island",
+    run: () => {
+      const handlers = {
+        ...createSimpleInlineHandlers(["bold"]),
+      };
+      const source = "$$bold(a)$$$$bold(mid)$$$$bold(c)$$";
+      const session = createIncrementalSession(source, { handlers });
+      const before = session.getDocument();
+      const editStart = source.indexOf("a");
+      const editEnd = source.lastIndexOf("c") + 1;
+      const newSource = applyEdit(source, editStart, editEnd, "x)$$$$bold(mid)$$$$bold(y");
+
+      const result = session.applyEditWithDiff(
+        { startOffset: editStart, oldEndOffset: editEnd, newText: "x)$$$$bold(mid)$$$$bold(y" },
+        newSource,
+      );
+
+      assert.equal(result.diff.patches.length, 2);
+      assert.deepEqual(result.diff.unchangedRanges, [
+        {
+          oldRange: { start: 1, end: 2 },
+          newRange: { start: 1, end: 2 },
+        },
+      ]);
+      assert.deepEqual(
+        result.diff.ops.map((op) => op.kind),
+        ["set-text", "set-text"],
+      );
+      assertDiffRebuildsNextTree(before.tree, result.doc.tree, result.diff);
+    },
+  },
+  {
+    name: "[Incremental/SessionDiff] applyEditWithDiff should emit nested child splice ops",
+    run: () => {
+      const handlers = {
+        ...createSimpleInlineHandlers(["bold"]),
+      };
+      const source = "$$bold(a)$$";
+      const session = createIncrementalSession(source, { handlers });
+      const before = session.getDocument();
+      const editAt = source.indexOf("a");
+      const newText = "a $$bold(x)$$";
+      const newSource = applyEdit(source, editAt, editAt + 1, newText);
+
+      const result = session.applyEditWithDiff(
+        { startOffset: editAt, oldEndOffset: editAt + 1, newText },
+        newSource,
+      );
+      const childSplice = result.diff.ops.find(
+        (op) => op.kind === "splice" && op.field === "children" && op.path.length === 1,
+      );
+
+      assert.ok(childSplice);
+      assert.deepEqual(childSplice.path, [{ field: "root", index: 0 }]);
+      assertDiffRebuildsNextTree(before.tree, result.doc.tree, result.diff);
+    },
+  },
+  {
+    name: "[Incremental/SessionDiff] applyEditWithDiff should preserve suffix ranges across offset shifts",
+    run: () => {
+      const handlers = {
+        ...createSimpleInlineHandlers(["bold"]),
+        ...createSimpleRawHandlers(["code"]),
+      };
+      const source = "$$bold(x)$$ tail $$code(ts)%\nA\n%end$$";
+      const session = createIncrementalSession(source, { handlers });
+      const before = session.getDocument();
+      const editAt = source.indexOf("x");
+      const newSource = applyEdit(source, editAt, editAt + 1, "long");
+
+      const result = session.applyEditWithDiff(
+        { startOffset: editAt, oldEndOffset: editAt + 1, newText: "long" },
+        newSource,
+      );
+      const oldSuffixNode = before.tree[before.tree.length - 1];
+      const newSuffixNode = result.doc.tree[result.doc.tree.length - 1];
+
+      assert.equal(result.doc.source, newSource);
+      assert.ok(oldSuffixNode?.position);
+      assert.ok(newSuffixNode?.position);
+      assert.notEqual(oldSuffixNode?.position?.start.offset, newSuffixNode?.position?.start.offset);
+      assertDiffRebuildsNextTree(before.tree, result.doc.tree, result.diff);
+    },
+  },
+  {
+    name: "[Incremental/SessionDiff] applyEditWithDiff should work in full-only fallback mode",
+    run: () => {
+      const source = "abc";
+      const session = createIncrementalSession(source, undefined, { strategy: "full-only" });
+      const before = session.getDocument();
+      const newSource = "abXc";
+      const result = session.applyEditWithDiff(
+        { startOffset: 2, oldEndOffset: 2, newText: "X" },
+        newSource,
+      );
+
+      assert.equal(result.mode, "full-fallback");
+      assert.equal(result.fallbackReason, "FULL_ONLY_STRATEGY");
+      assert.equal(result.doc.source, newSource);
+      assertDiffRebuildsNextTree(before.tree, result.doc.tree, result.diff);
+    },
+  },
+  {
+    name: "[Incremental/SessionDiff] applyEditWithDiff should stay stack-safe for deeply nested inline trees",
+    run: () => {
+      const handlers = createSimpleInlineHandlers(["bold"]);
+      const source = makeNestedInline(12_000);
+      const session = createIncrementalSession(source, { handlers, depthLimit: 12_100 });
+      const editAt = source.indexOf("x");
+      const newSource = applyEdit(source, editAt, editAt + 1, "y");
+
+      const result = session.applyEditWithDiff(
+        { startOffset: editAt, oldEndOffset: editAt + 1, newText: "y" },
+        newSource,
+      );
+
+      assert.equal(result.doc.source, newSource);
+      assert.ok(result.diff.patches.length > 0 || result.diff.ops.length > 0);
+    },
+  },
+  {
+    name: "[Incremental/SessionDiff] applyEditWithDiff should conservatively fallback when diff refinement throws",
+    run: () => {
+      const source = "abc";
+      const session = createIncrementalSession(source, undefined, { strategy: "full-only" });
+      const before = session.getDocument();
+      Object.defineProperty(before.tree, "0", {
+        value: { type: "unexpected-node-type" },
+        configurable: true,
+        writable: true,
+      });
+
+      const newSource = "abXc";
+      const result = session.applyEditWithDiff(
+        { startOffset: 2, oldEndOffset: 2, newText: "X" },
+        newSource,
+      );
+
+      assert.equal(result.doc.source, newSource);
+      assert.deepEqual(result.diff.unchangedRanges, []);
+      assert.equal(result.diff.patches.length, 1);
+      assert.equal(result.diff.patches[0]?.kind, "replace");
+      assert.equal(result.diff.ops.length, 1);
+      assert.equal(result.diff.ops[0]?.kind, "splice");
+      assert.equal(result.diff.dirtySpanOld.startOffset, 0);
+      assert.equal(result.diff.dirtySpanOld.endOffset, source.length);
+      assert.equal(result.diff.dirtySpanNew.startOffset, 0);
+      assert.equal(result.diff.dirtySpanNew.endOffset, newSource.length);
     },
   },
   {

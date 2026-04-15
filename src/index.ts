@@ -99,6 +99,9 @@ export type {
   IncrementalEdit,
   IncrementalDocument,
   IncrementalSessionOptions,
+  TokenDiffResult,
+  IncrementalSessionApplyResult,
+  IncrementalSessionApplyWithDiffResult,
 } from "./types.js";
 
 export type { PipeArgs } from "./builders.js";

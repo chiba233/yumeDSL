@@ -508,6 +508,125 @@ export interface IncrementalSessionApplyResult {
   fallbackReason?: IncrementalSessionFallbackReason;
 }
 
+/** Token-index patch emitted by incremental token diff. */
+export interface TokenDiffPatch {
+  /** Patch kind over token-index ranges. */
+  kind: "insert" | "remove" | "replace";
+  /** Half-open range in previous token array. */
+  oldRange: { start: number; end: number };
+  /** Half-open range in next token array. */
+  newRange: { start: number; end: number };
+}
+
+/** Matched unchanged token-index range pair (`old` ↔ `new`). */
+export interface TokenDiffUnchangedRange {
+  /** Half-open range in previous token array. */
+  oldRange: { start: number; end: number };
+  /** Half-open range in next token array. */
+  newRange: { start: number; end: number };
+}
+
+/** Container kinds addressable by structural diff operations. */
+export type StructuralDiffContainerField = "root" | "children" | "args";
+
+/** One path step in a structural diff, identifying a node inside a container. */
+export interface StructuralDiffPathSegment {
+  /** Container traversed at this step. */
+  field: StructuralDiffContainerField;
+  /** Node index inside that container. */
+  index: number;
+}
+
+/** Path from the root structural node array to a specific node. */
+export type StructuralDiffPath = StructuralDiffPathSegment[];
+
+/** Array splice inside the root tree or a node's `children` / `args`. */
+export interface StructuralDiffSpliceOp {
+  kind: "splice";
+  /** Path to the owning node. Empty path means the root token array. */
+  path: StructuralDiffPath;
+  /** Which array container under `path` is being modified. */
+  field: StructuralDiffContainerField;
+  /** Half-open range in the previous container. */
+  oldRange: { start: number; end: number };
+  /** Half-open range in the next container. */
+  newRange: { start: number; end: number };
+  /** Previous nodes covered by the splice. */
+  oldNodes: StructuralNode[];
+  /** Next nodes covered by the splice. */
+  newNodes: StructuralNode[];
+}
+
+/** Scalar text update on a `text` node. */
+export interface StructuralDiffTextOp {
+  kind: "set-text";
+  /** Path to the target `text` node. */
+  path: StructuralDiffPath;
+  oldValue: string;
+  newValue: string;
+}
+
+/** Scalar raw update on an `escape` node. */
+export interface StructuralDiffEscapeOp {
+  kind: "set-escape";
+  /** Path to the target `escape` node. */
+  path: StructuralDiffPath;
+  oldValue: string;
+  newValue: string;
+}
+
+/** Scalar content update on a `raw` node. */
+export interface StructuralDiffRawContentOp {
+  kind: "set-raw-content";
+  /** Path to the target `raw` node. */
+  path: StructuralDiffPath;
+  oldValue: string;
+  newValue: string;
+}
+
+/** Flag update on an `inline` node. */
+export interface StructuralDiffInlineFlagOp {
+  kind: "set-implicit-inline-shorthand";
+  /** Path to the target `inline` node. */
+  path: StructuralDiffPath;
+  oldValue?: boolean;
+  newValue?: boolean;
+}
+
+/** Path-aware structural operations emitted alongside range-based token diff. */
+export type StructuralDiffOp =
+  | StructuralDiffSpliceOp
+  | StructuralDiffTextOp
+  | StructuralDiffEscapeOp
+  | StructuralDiffRawContentOp
+  | StructuralDiffInlineFlagOp;
+
+/** Diff summary for one edit between previous and next structural token trees. */
+export interface TokenDiffResult {
+  /** Minimal token-index patches needed to transform old tokens to new tokens. */
+  patches: TokenDiffPatch[];
+  /** Unchanged token-index ranges reused across this edit. */
+  unchangedRanges: TokenDiffUnchangedRange[];
+  /**
+   * Path-aware structural operations for nested updates and container edits.
+   *
+   * Returned in descending path/index order (with same-path splices first), so
+   * consumers can apply `ops` in array order without later splice targets being
+   * invalidated by earlier index shifts.
+   */
+  ops: StructuralDiffOp[];
+  /** Best-effort dirty span in previous source coordinates. */
+  dirtySpanOld: { startOffset: number; endOffset: number };
+  /** Best-effort dirty span in next source coordinates. */
+  dirtySpanNew: { startOffset: number; endOffset: number };
+}
+
+/** Session apply result extended with token diff payload. */
+export interface IncrementalSessionApplyWithDiffResult extends IncrementalSessionApplyResult {
+  /** Token diff payload for this edit. */
+  diff: TokenDiffResult;
+}
+
 /**
  * High-level incremental parsing session.
  *
@@ -524,6 +643,12 @@ export interface IncrementalSession {
     newSource: string,
     options?: IncrementalParseOptions,
   ) => IncrementalSessionApplyResult;
+  /** Apply one edit and return updated snapshot with structural token diff payload. */
+  applyEditWithDiff: (
+    edit: IncrementalEdit,
+    newSource: string,
+    options?: IncrementalParseOptions,
+  ) => IncrementalSessionApplyWithDiffResult;
   /** Force a full rebuild from `newSource`. */
   rebuild: (newSource: string, options?: IncrementalParseOptions) => IncrementalDocument;
 }

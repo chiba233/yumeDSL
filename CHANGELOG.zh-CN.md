@@ -2,6 +2,24 @@
 
 # 更新日志
 
+### 1.3.8
+
+- **增量 diff：从基础 range 升级为可组合的结构化结果**
+  - `applyEditWithDiff(...)` 现在除了根级 `patches` / `unchangedRanges`，还会返回有序的 path-aware `ops`，用于表达嵌套 args / children / text / raw-content 更新。
+  - diff 匹配升级为基于 anchor 的多稳定岛检测，并用精确结构相等做最终确认；签名只负责找候选，不会单独决定复用。
+- **增量 diff：恢复 session-safe fallback 语义**
+  - 当结构化 diff 精化过程失败时，`applyEditWithDiff(...)` 会回退为保守的整树 diff，而不是中断整个 session 更新流程。
+  - 这样公开 session API 仍然保持“正确性优先”的语义。
+- **增量 diff：进一步收紧栈安全**
+  - 深层 children / args diff 处理已经迭代化，避免超深树下的 JS 调用栈增长。
+  - anchor 分段范围遍历也不再依赖原生自递归，改为显式 work stack，与整个解析器“迭代优先”的风格保持一致。
+- **diff 契约补充说明**
+  - `TokenDiffResult.ops` 现在在注释中明确声明了降序 path/index 排序保证，下游消费方可以知道按返回顺序 apply 是安全的。
+- **文档更新**
+  - `1.3.8` 的增量解析文档已扩展：包括 session 心智模型、闭包方法逐个说明、结果字段显式展开，以及 README / GUIDE 到 wiki 的衔接。
+  - README / GUIDE 也做了收口：保留宣传级与入口级说明，把完整签名和边界行为交给 wiki。
+- 无破坏性公共 API 变化
+
 ### 1.3.7
 
 - **修复：`endTag` 不再吞掉紧随其后标签的 `tagPrefix`**

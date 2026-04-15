@@ -2,6 +2,24 @@
 
 # Changelog
 
+### 1.3.8
+
+- **Incremental diff: structural payload upgraded from basic ranges to composable tree-aware results**
+  - `applyEditWithDiff(...)` now returns not only root `patches` / `unchangedRanges`, but also ordered path-aware `ops` for nested args/children/text/raw-content updates.
+  - Diff matching now uses anchor-based multi-island detection plus exact structural equality checks, so signatures only help find candidates and do not by themselves finalize reuse.
+- **Incremental diff: session-safe fallback semantics restored**
+  - If structural diff refinement fails, `applyEditWithDiff(...)` now falls back to a conservative whole-tree diff instead of interrupting the session update path.
+  - This keeps the public session API correctness-first even when diff refinement cannot complete.
+- **Incremental diff: stack safety tightened**
+  - Nested child/arg diff processing is now iterative, avoiding JS call-stack growth on extremely deep trees.
+  - Anchor-partition range walking also moved off native self-recursion and now uses an explicit work stack, matching the parser's broader iterative-first design.
+- **Diff contract clarified**
+  - `TokenDiffResult.ops` now documents its descending path/index ordering guarantee so downstream consumers know the payload is safe to apply in array order.
+- **Docs updated**
+  - Incremental parsing docs were expanded for `1.3.8`, including session mental model, closure-method walkthroughs, explicit result field expansions, and README/GUIDE handoff links.
+  - README / GUIDE were streamlined to keep pitch-level guidance short while pushing full signatures and edge cases to the wiki.
+- No breaking public API changes
+
 ### 1.3.7
 
 - **Fix: `endTag` no longer swallows `tagPrefix` of an immediately following tag**
