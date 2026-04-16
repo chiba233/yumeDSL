@@ -1438,6 +1438,7 @@ const buildConservativeTokenDiff = (
     });
   }
   return {
+    isNoop: previousCount === 0 && nextCount === 0,
     patches,
     unchangedRanges: [],
     ops:
@@ -1534,6 +1535,7 @@ const computeTokenDiff = (
   );
 
   return {
+    isNoop: patches.length === 0 && ops.length === 0,
     patches,
     unchangedRanges,
     ops,

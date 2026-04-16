@@ -2,6 +2,18 @@
 
 # Changelog
 
+### 1.3.9
+
+- **Incremental diff: added explicit no-op signal**
+  - `TokenDiffResult` now includes `isNoop`, so callers can directly distinguish "edit happened but structural result is unchanged" from ordinary non-empty diff payloads.
+  - `isNoop` semantics are explicit: it is `true` only when no structural token change exists (`patches` and `ops` are both empty).
+- **Conservative diff contract clarification**
+  - Whole-tree conservative fallback now uses an explicit no-op condition for the empty-tree case, avoiding ambiguous interpretation in downstream integrations.
+- **Docs updated (EN / zh-CN incremental parsing wiki)**
+  - Added `isNoop` field to `TokenDiffResult` examples and field-level explanations.
+  - Added integration note for batched/frame-coalesced editor pipelines: avoid "keep only the last diff in one frame" overwrite behavior, which can hide meaningful earlier diffs behind a later `isNoop` result.
+- No breaking public API changes
+
 ### 1.3.8
 
 - **Incremental diff: structural payload upgraded from basic ranges to composable tree-aware results**

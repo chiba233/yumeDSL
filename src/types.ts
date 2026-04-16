@@ -603,6 +603,8 @@ export type StructuralDiffOp =
 
 /** Diff summary for one edit between previous and next structural token trees. */
 export interface TokenDiffResult {
+  /** True when this edit produced no structural token changes (`patches` and `ops` are both empty). */
+  isNoop: boolean;
   /** Minimal token-index patches needed to transform old tokens to new tokens. */
   patches: TokenDiffPatch[];
   /** Unchanged token-index ranges reused across this edit. */
