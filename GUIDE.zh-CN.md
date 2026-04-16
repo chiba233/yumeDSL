@@ -9,7 +9,7 @@
 [![CI](https://github.com/chiba233/yumeDSL/actions/workflows/publish-dsl.yml/badge.svg)](https://github.com/chiba233/yumeDSL/actions/workflows/publish-dsl.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Wiki](https://img.shields.io/badge/Wiki-文档-6A57D5?logo=gitbook&logoColor=white)](https://github.com/chiba233/yumeDSL/wiki/)
-[![Demo](https://img.shields.io/badge/Demo-在线演示-ff6b6b?logo=vue.js&logoColor=white)](https://demo.qwwq.org/)
+[![Demo](https://img.shields.io/badge/Demo-在线演示-ff6b6b?logo=vue.js&logoColor=white)](https://chiba233.github.io/richTextDemo/)
 [![Contributing](https://img.shields.io/badge/贡献指南-guide-blue.svg)](./CONTRIBUTING.zh-CN.md)
 [![Security](https://img.shields.io/badge/安全策略-policy-red.svg)](./SECURITY.md)
 
