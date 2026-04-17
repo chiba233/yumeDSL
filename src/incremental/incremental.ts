@@ -521,15 +521,21 @@ export const createIncrementalSession = (
   };
   const resolveDiffRefinementOptions = (override?: IncrementalDiffRefinementOptions) => {
     if (!override) return defaultDiffRefinementOptions;
-    const effective = override ? { ...sessionDiffOptions, ...override } : sessionDiffOptions;
     return {
-      refinementDepthCap: normalizeDiffRefinementDepthCap(effective?.refinementDepthCap),
+      refinementDepthCap:
+        override.refinementDepthCap === undefined
+          ? defaultDiffRefinementOptions.refinementDepthCap
+          : normalizeDiffRefinementDepthCap(override.refinementDepthCap),
       budgetOptions: {
-        maxComparedNodes: effective?.maxComparedNodes ?? DEFAULT_DIFF_MAX_COMPARED_NODES,
-        maxAnchorCandidates: effective?.maxAnchorCandidates ?? DEFAULT_DIFF_MAX_ANCHOR_CANDIDATES,
-        maxOps: effective?.maxOps ?? DEFAULT_DIFF_MAX_OPS,
-        maxSubtreeNodes: effective?.maxSubtreeNodes ?? DEFAULT_DIFF_MAX_SUBTREE_NODES,
-        maxMilliseconds: effective?.maxMilliseconds ?? DEFAULT_DIFF_MAX_MILLISECONDS,
+        maxComparedNodes:
+          override.maxComparedNodes ?? defaultDiffRefinementOptions.budgetOptions.maxComparedNodes,
+        maxAnchorCandidates:
+          override.maxAnchorCandidates ?? defaultDiffRefinementOptions.budgetOptions.maxAnchorCandidates,
+        maxOps: override.maxOps ?? defaultDiffRefinementOptions.budgetOptions.maxOps,
+        maxSubtreeNodes:
+          override.maxSubtreeNodes ?? defaultDiffRefinementOptions.budgetOptions.maxSubtreeNodes,
+        maxMilliseconds:
+          override.maxMilliseconds ?? defaultDiffRefinementOptions.budgetOptions.maxMilliseconds,
       },
     };
   };

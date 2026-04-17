@@ -35,9 +35,9 @@ export interface IncrementalDocument {
   /** Full source snapshot for this incremental state. */
   source: string;
   /** Top-level zones used for bounded reparsing. */
-  zones: Zone[];
+  zones: readonly Zone[];
   /** Full structural tree of `source`. */
-  tree: StructuralNode[];
+  tree: readonly StructuralNode[];
   /** Optional parser config carried forward across updates. */
   parseOptions?: IncrementalParseOptions;
 }

@@ -184,6 +184,11 @@ const hasDiffBudgetExceeded = (budgetState: DiffBudgetState | undefined): boolea
 
 const consumeComparedNodes = (budgetState: DiffBudgetState | undefined, count = 1): boolean => {
   if (!budgetState) return true;
+  if (hasDiffBudgetExceeded(budgetState)) return false;
+  if (budgetState.comparedNodes + count > budgetState.maxComparedNodes) {
+    markDiffBudgetExceeded(budgetState);
+    return false;
+  }
   budgetState.comparedNodes += count;
   return !hasDiffBudgetExceeded(budgetState);
 };
@@ -1382,7 +1387,7 @@ const findRootTokenRangeForSourceWindow = (
     const nodeStart = position.start.offset;
     const nodeEnd = position.end.offset;
     const overlaps = isInsertionWindow
-      ? nodeStart < sourceWindow.startOffset && nodeEnd > sourceWindow.endOffset
+      ? nodeStart <= sourceWindow.startOffset && nodeEnd > sourceWindow.endOffset
       : nodeEnd > sourceWindow.startOffset && nodeStart < sourceWindow.endOffset;
     if (overlaps) {
       if (firstOverlap === -1) firstOverlap = i;
