@@ -758,6 +758,89 @@ const cases: Array<{ name: string; run: () => void }> = [
     },
   },
   {
+    name: "[Syntax/Easy] createEasySyntax -> closeMiddle 应参与 raw/block close 派生",
+    run: () => {
+      const easySyntax = createEasySyntax({
+        tagPrefix: "@@",
+        tagOpen: "<<",
+        tagClose: ">>",
+        tagDivider: "||",
+        escapeChar: "~",
+        closeMiddle: "fin",
+      });
+
+      assert.equal(easySyntax.endTag, ">>@@");
+      assert.equal(easySyntax.rawOpen, ">>%");
+      assert.equal(easySyntax.blockOpen, ">>*");
+      assert.equal(easySyntax.rawClose, "%fin@@");
+      assert.equal(easySyntax.blockClose, "*fin@@");
+
+      assert.deepEqual(
+        normalizeTokens(
+          parseRichText("@@code<<ts>>%\nconst x = 1;\n%fin@@", {
+            syntax: easySyntax,
+            handlers: {
+              code: {
+                raw: (arg, content) => ({
+                  type: "code",
+                  language: arg ?? "",
+                  value: content,
+                }),
+              },
+            },
+          }),
+        ),
+        [
+          {
+            type: "code",
+            language: "ts",
+            value: "const x = 1;",
+          },
+        ],
+      );
+
+      assert.deepEqual(
+        normalizeTokens(
+          parseRichText("@@quote<<speaker>>*\nhello\n*fin@@", {
+            syntax: easySyntax,
+            handlers: {
+              quote: {
+                block: (arg, content) => ({
+                  type: "quote",
+                  speaker: arg ?? "",
+                  value: content,
+                }),
+              },
+            },
+          }),
+        ),
+        [
+          {
+            type: "quote",
+            speaker: "speaker",
+            value: [{ type: "text", value: "hello" }],
+          },
+        ],
+      );
+    },
+  },
+  {
+    name: "[Syntax/Easy] createEasySyntax -> 显式 raw/block close override 应优先于 closeMiddle",
+    run: () => {
+      const easySyntax = createEasySyntax({
+        tagPrefix: "@@",
+        tagOpen: "<<",
+        tagClose: ">>",
+        closeMiddle: "fin",
+        rawClose: "%done@@",
+        blockClose: "*done@@",
+      });
+
+      assert.equal(easySyntax.rawClose, "%done@@");
+      assert.equal(easySyntax.blockClose, "*done@@");
+    },
+  },
+  {
     name: "[Structural/Pipe] 普通文本与 block 正文中的管道符 -> 不应误产生 separator 节点",
     run: () => {
       assert.deepEqual(normalizeStructuralNodes(parseStructural("a|b")), [

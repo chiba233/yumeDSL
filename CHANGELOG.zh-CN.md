@@ -13,6 +13,9 @@
   - `incremental.ts`：`createIncrementalEditError` 简化为 `Object.assign`；提取 `isIncrementalUpdateErrorCode` 类型谓词。
   - `document.ts` / `lazy.ts`：统一 `describeNodeType` 辅助函数用于错误消息，替代原始 `as` 强转。
   - `errors.ts` / `blockTagFormatting.ts`：规范化导入路径（`"../types/index.js"` → `"../types"`）。
+- **`createEasySyntax`：新增 `closeMiddle` 覆盖**
+  - 派生 `rawClose` / `blockClose` 时，raw/block 标记与 `tagPrefix` 之间的共享字面量现在可以覆盖（默认为 `"end"`）。
+  - `createEasySyntax({ tagPrefix: "@@", closeMiddle: "fin" })` 产出 `rawClose: "%fin@@"`、`blockClose: "*fin@@"`。
 - 无破坏性公共 API 变化
 
 ### 1.4.1

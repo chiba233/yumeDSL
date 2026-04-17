@@ -13,6 +13,9 @@
   - `incremental.ts`: simplified `createIncrementalEditError` to `Object.assign`; extracted `isIncrementalUpdateErrorCode` type predicate.
   - `document.ts` / `lazy.ts`: unified `describeNodeType` helper for error messages, replacing raw `as` casts.
   - `errors.ts` / `blockTagFormatting.ts`: normalized import paths (`"../types/index.js"` → `"../types"`).
+- **`createEasySyntax`: added `closeMiddle` override**
+  - The shared literal between the raw/block marker and `tagPrefix` in derived `rawClose` / `blockClose` tokens can now be overridden (defaults to `"end"`).
+  - `createEasySyntax({ tagPrefix: "@@", closeMiddle: "fin" })` produces `rawClose: "%fin@@"`, `blockClose: "*fin@@"`.
 - No breaking public API changes
 
 ### 1.4.1

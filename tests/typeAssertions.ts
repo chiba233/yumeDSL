@@ -13,6 +13,7 @@ import type {
 } from "../src/index.ts";
 import {
   buildZones,
+  createEasySyntax,
   createParser,
   createSyntax,
   createPassthroughTags,
@@ -118,6 +119,14 @@ const syntax: SyntaxConfig = createSyntax({
   blockClose: "*end@@",
   escapeChar: "~",
 });
+
+const easySyntaxWithCloseMiddle: SyntaxConfig = createEasySyntax({
+  tagPrefix: "@@",
+  tagOpen: "<<",
+  tagClose: ">>",
+  closeMiddle: "fin",
+});
+void easySyntaxWithCloseMiddle;
 
 const dslContext: DslContext = {
   syntax,

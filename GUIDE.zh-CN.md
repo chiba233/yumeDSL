@@ -451,6 +451,9 @@ import {createEasySyntax, parseRichText} from "yume-dsl-rich-text";
 const syntax = createEasySyntax({tagPrefix: "@@"});
 // endTag, rawClose, blockClose 自动推导：")@@", "%end@@", "*end@@"
 
+const finSyntax = createEasySyntax({tagPrefix: "@@", closeMiddle: "fin"});
+// rawClose, blockClose 也可以变成 "%fin@@"、"*fin@@"
+
 const tokens = parseRichText("@@bold(hello)@@", {
     syntax,
     handlers: {
@@ -462,7 +465,7 @@ const tokens = parseRichText("@@bold(hello)@@", {
 ```
 
 详见 [自定义语法 wiki 页面](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E8%87%AA%E5%AE%9A%E4%B9%89%E8%AF%AD%E6%B3%95)
-：默认符号参考、符号联动表、`createEasySyntax` 推导规则、`createSyntax` 底层 API。
+：默认符号参考、符号联动表、`createEasySyntax` 推导规则（含 `closeMiddle`）、`createSyntax` 底层 API。
 
 ## 自定义标签名字符规则
 

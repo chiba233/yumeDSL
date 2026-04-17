@@ -45,6 +45,14 @@ const syntax: SyntaxConfig = createEasySyntax({
   escapeChar: "~",
 });
 
+const syntaxWithCloseMiddle: SyntaxConfig = createEasySyntax({
+  tagPrefix: "@@",
+  tagOpen: "<<",
+  tagClose: ">>",
+  closeMiddle: "fin",
+});
+void syntaxWithCloseMiddle;
+
 const explicitSyntax = createSyntax({
   tagPrefix: "@@",
   tagOpen: "<<",

@@ -476,6 +476,9 @@ import {createEasySyntax, parseRichText} from "yume-dsl-rich-text";
 const syntax = createEasySyntax({tagPrefix: "@@"});
 // endTag, rawClose, blockClose are derived automatically: ")@@", "%end@@", "*end@@"
 
+const finSyntax = createEasySyntax({tagPrefix: "@@", closeMiddle: "fin"});
+// rawClose, blockClose can also become "%fin@@" and "*fin@@"
+
 const tokens = parseRichText("@@bold(hello)@@", {
     syntax,
     handlers: {
@@ -487,7 +490,8 @@ const tokens = parseRichText("@@bold(hello)@@", {
 ```
 
 See the [Custom Syntax wiki page](https://github.com/chiba233/yumeDSL/wiki/en-Custom-Syntax) for default token
-reference, token dependency table, `createEasySyntax` derivation rules, and `createSyntax` low-level API.
+reference, token dependency table, `createEasySyntax` derivation rules (including `closeMiddle`), and `createSyntax`
+low-level API.
 
 ## Custom Tag Name Characters
 

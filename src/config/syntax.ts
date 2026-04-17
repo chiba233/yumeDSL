@@ -33,7 +33,7 @@ const DEFAULT_DERIVATION_PARTS = {
   ),
 } as const;
 
-type EasySyntaxOverrides = Partial<SyntaxInput>;
+type EasySyntaxOverrides = Partial<SyntaxInput> & { closeMiddle?: string };
 
 interface EasySyntaxBase {
   tagPrefix: string;
@@ -41,6 +41,7 @@ interface EasySyntaxBase {
   tagClose: string;
   tagDivider: string;
   escapeChar: string;
+  closeMiddle: string;
 }
 
 type EasySyntaxDerivedKey = Exclude<keyof SyntaxInput, keyof EasySyntaxBase>;
@@ -72,8 +73,12 @@ const resolveSyntaxFields = <K extends keyof SyntaxInput>(
   return resolved;
 };
 
-const resolveEasySyntaxBase = (overrides?: EasySyntaxOverrides): EasySyntaxBase =>
-  resolveSyntaxFields(EASY_SYNTAX_BASE_KEYS, overrides);
+// `closeMiddle` belongs to the easy builder's base input model, but it is not a
+// `SyntaxInput` key, so it cannot flow through `resolveSyntaxFields(...)`.
+const resolveEasySyntaxBase = (overrides?: EasySyntaxOverrides): EasySyntaxBase => ({
+  ...resolveSyntaxFields(EASY_SYNTAX_BASE_KEYS, overrides),
+  closeMiddle: overrides?.closeMiddle ?? DEFAULT_DERIVATION_PARTS.closeMiddle,
+});
 
 // Derivation contract for the convenience syntax builder:
 // given the base tokens, these rules define the implied compound tokens.
@@ -83,13 +88,11 @@ const EASY_SYNTAX_DERIVATION_RULES: readonly EasySyntaxCompoundRule[] = [
   { key: "blockOpen", derive: (base) => base.tagClose + DEFAULT_DERIVATION_PARTS.blockMarker },
   {
     key: "rawClose",
-    derive: (base) =>
-      DEFAULT_DERIVATION_PARTS.rawMarker + DEFAULT_DERIVATION_PARTS.closeMiddle + base.tagPrefix,
+    derive: (base) => DEFAULT_DERIVATION_PARTS.rawMarker + base.closeMiddle + base.tagPrefix,
   },
   {
     key: "blockClose",
-    derive: (base) =>
-      DEFAULT_DERIVATION_PARTS.blockMarker + DEFAULT_DERIVATION_PARTS.closeMiddle + base.tagPrefix,
+    derive: (base) => DEFAULT_DERIVATION_PARTS.blockMarker + base.closeMiddle + base.tagPrefix,
   },
 ];
 
@@ -111,7 +114,8 @@ const deriveEasySyntaxCompounds = (
  *
  * Only the base tokens (`tagPrefix`, `tagOpen`, `tagClose`, `tagDivider`,
  * `escapeChar`) need to be provided — compound tokens (`endTag`, `rawOpen`,
- * `blockOpen`, `rawClose`, `blockClose`) are derived automatically:
+ * `blockOpen`, `rawClose`, `blockClose`) are derived automatically. You may
+ * also override the shared `closeMiddle` fragment used by easy derivation:
  *
  * ```
  * endTag     = tagClose + tagPrefix
@@ -125,11 +129,18 @@ const deriveEasySyntaxCompounds = (
  *
  * @example
  * ```ts
- * const syntax = createEasySyntax({ tagPrefix: "=", tagOpen: "<", tagClose: ">" });
- * // syntax.endTag === ">="
+ * const syntax = createEasySyntax({
+ *   tagPrefix: "@@",
+ *   tagOpen: "[",
+ *   tagClose: "]",
+ *   closeMiddle: "fin",
+ * });
+ * // syntax.rawClose === "%fin@@"
  * ```
  */
-export const createEasySyntax = (overrides?: Partial<SyntaxInput>): SyntaxConfig => {
+export const createEasySyntax = (
+  overrides?: Partial<SyntaxInput> & { closeMiddle?: string },
+): SyntaxConfig => {
   const base = resolveEasySyntaxBase(overrides);
 
   return createSyntax({
