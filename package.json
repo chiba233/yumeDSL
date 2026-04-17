@@ -29,7 +29,7 @@
     "test:coverage": "YUME_DSL_COVERAGE_SOURCEMAP=1 tsup --target esnext && c8 node --enable-source-maps --import tsx tests/run-dsl-tests.ts",
     "test:coverage:win": "set YUME_DSL_COVERAGE_SOURCEMAP=1&& tsup --target esnext && c8 node --enable-source-maps --import tsx tests/run-dsl-tests.ts",
     "prepublishOnly": "npm run build",
-    "run-coverage-front-end": "npx serve coverage"
+    "run-coverage-front-end": "node ./scripts/serve-coverage.mjs"
   },
   "keywords": [
     "rich-text",
