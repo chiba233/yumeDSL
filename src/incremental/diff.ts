@@ -132,19 +132,31 @@ const normalizePositiveMilliseconds = (value: number | undefined, fallback: numb
   return Math.max(0.1, value);
 };
 
-const createDiffBudgetState = (options: TokenDiffBudgetOptions | undefined): DiffBudgetState | undefined => {
+const createDiffBudgetState = (
+  options: TokenDiffBudgetOptions | undefined,
+): DiffBudgetState | undefined => {
   if (!options) return undefined;
   return {
-    maxComparedNodes: normalizePositiveInteger(options.maxComparedNodes, DEFAULT_DIFF_MAX_COMPARED_NODES),
+    maxComparedNodes: normalizePositiveInteger(
+      options.maxComparedNodes,
+      DEFAULT_DIFF_MAX_COMPARED_NODES,
+    ),
     comparedNodes: 0,
-    maxAnchorCandidates: normalizePositiveInteger(options.maxAnchorCandidates, DEFAULT_DIFF_MAX_ANCHOR_CANDIDATES),
+    maxAnchorCandidates: normalizePositiveInteger(
+      options.maxAnchorCandidates,
+      DEFAULT_DIFF_MAX_ANCHOR_CANDIDATES,
+    ),
     anchorCandidates: 0,
     maxOps: normalizePositiveInteger(options.maxOps, DEFAULT_DIFF_MAX_OPS),
-    maxSubtreeNodes: normalizePositiveInteger(options.maxSubtreeNodes, DEFAULT_DIFF_MAX_SUBTREE_NODES),
+    maxSubtreeNodes: normalizePositiveInteger(
+      options.maxSubtreeNodes,
+      DEFAULT_DIFF_MAX_SUBTREE_NODES,
+    ),
     deadline:
       options.maxMilliseconds === undefined
         ? undefined
-        : diffNow() + normalizePositiveMilliseconds(options.maxMilliseconds, DEFAULT_DIFF_MAX_MILLISECONDS),
+        : diffNow() +
+          normalizePositiveMilliseconds(options.maxMilliseconds, DEFAULT_DIFF_MAX_MILLISECONDS),
     exceeded: false,
   };
 };
@@ -237,7 +249,11 @@ const shouldCoarsenSubtreeDiff = (
   budgetState: DiffBudgetState | undefined,
 ): boolean => {
   if (!budgetState) return false;
-  if (previousNode.type !== "raw" && previousNode.type !== "inline" && previousNode.type !== "block") {
+  if (
+    previousNode.type !== "raw" &&
+    previousNode.type !== "inline" &&
+    previousNode.type !== "block"
+  ) {
     return false;
   }
   return (
@@ -378,17 +394,17 @@ const emitSpliceAndTrailingEquals = (
 ): boolean => {
   if (
     !emitSplice(
-    accumulator,
-    recordSegments,
-    path,
-    field,
-    previousNodes,
-    nextNodes,
-    spliceOldStart,
-    spliceOldEnd,
-    spliceNewStart,
-    spliceNewEnd,
-    budgetState,
+      accumulator,
+      recordSegments,
+      path,
+      field,
+      previousNodes,
+      nextNodes,
+      spliceOldStart,
+      spliceOldEnd,
+      spliceNewStart,
+      spliceNewEnd,
+      budgetState,
     )
   ) {
     return false;
@@ -455,7 +471,8 @@ const areNodesStructurallyEqual = (
     }
     if (currentPrevious.type === "inline" && currentNext.type === "inline") {
       if (currentPrevious.tag !== currentNext.tag) return false;
-      if (!!currentPrevious.implicitInlineShorthand !== !!currentNext.implicitInlineShorthand) return false;
+      if (!!currentPrevious.implicitInlineShorthand !== !!currentNext.implicitInlineShorthand)
+        return false;
       if (currentPrevious.children.length !== currentNext.children.length) return false;
       for (let i = currentPrevious.children.length - 1; i >= 0; i--) {
         pending.push({
@@ -502,7 +519,10 @@ const areNodesStructurallyEqual = (
 };
 
 // 只有"同形"节点才值得做递归 diff；否则直接退化为 splice 更稳妥。
-const canDiffNodesRecursively = (previousNode: StructuralNode, nextNode: StructuralNode): boolean => {
+const canDiffNodesRecursively = (
+  previousNode: StructuralNode,
+  nextNode: StructuralNode,
+): boolean => {
   // 这里故意不尝试"跨类型修补"。
   // 节点形状一旦变了，强行拆细只会让 op 语义更脆，直接 splice 更稳定。
   if (previousNode.type !== nextNode.type) return false;
@@ -565,7 +585,13 @@ const findAnchors = (
     const newEntry = newEntries.get(signature);
     if (!newEntry || newEntry.count !== 1) continue;
     if (!reserveAnchorCandidate(budgetState)) return undefined;
-    if (!areNodesStructurallyEqual(previousNodes[oldEntry.index], nextNodes[newEntry.index], budgetState)) {
+    if (
+      !areNodesStructurallyEqual(
+        previousNodes[oldEntry.index],
+        nextNodes[newEntry.index],
+        budgetState,
+      )
+    ) {
       if (hasDiffBudgetExceeded(budgetState)) return undefined;
       continue;
     }
@@ -573,7 +599,9 @@ const findAnchors = (
   }
   if (candidates.length <= 1) return candidates;
 
-  candidates.sort((left, right) => left.oldIndex - right.oldIndex || left.newIndex - right.newIndex);
+  candidates.sort(
+    (left, right) => left.oldIndex - right.oldIndex || left.newIndex - right.newIndex,
+  );
 
   const tails: number[] = [];
   const tailPositions: number[] = [];
@@ -614,20 +642,28 @@ const structuralDiffFieldRank = (field: StructuralDiffContainerField): number =>
   return 2;
 };
 
-const compareDiffPathsDescending = (leftPath: StructuralDiffPath, rightPath: StructuralDiffPath): number => {
+const compareDiffPathsDescending = (
+  leftPath: StructuralDiffPath,
+  rightPath: StructuralDiffPath,
+): number => {
   const limit = Math.min(leftPath.length, rightPath.length);
   for (let i = 0; i < limit; i++) {
     if (leftPath[i].index !== rightPath[i].index) {
       return rightPath[i].index - leftPath[i].index;
     }
     if (leftPath[i].field !== rightPath[i].field) {
-      return structuralDiffFieldRank(rightPath[i].field) - structuralDiffFieldRank(leftPath[i].field);
+      return (
+        structuralDiffFieldRank(rightPath[i].field) - structuralDiffFieldRank(leftPath[i].field)
+      );
     }
   }
   return rightPath.length - leftPath.length;
 };
 
-const compareStructuralDiffOpsDescending = (left: StructuralDiffOp, right: StructuralDiffOp): number => {
+const compareStructuralDiffOpsDescending = (
+  left: StructuralDiffOp,
+  right: StructuralDiffOp,
+): number => {
   const pathComparison = compareDiffPathsDescending(left.path, right.path);
   if (pathComparison !== 0) return pathComparison;
 
@@ -726,10 +762,21 @@ const diffNodeArrays = (
     while (
       oldCursor < suffixOldEnd &&
       newCursor < suffixNewEnd &&
-      areNodesStructurallyEqual(work.previousNodes[oldCursor], work.nextNodes[newCursor], budgetState)
+      areNodesStructurallyEqual(
+        work.previousNodes[oldCursor],
+        work.nextNodes[newCursor],
+        budgetState,
+      )
     ) {
       if (work.recordSegments) {
-        appendDiffSegment(accumulator.segments, "equal", oldCursor, oldCursor + 1, newCursor, newCursor + 1);
+        appendDiffSegment(
+          accumulator.segments,
+          "equal",
+          oldCursor,
+          oldCursor + 1,
+          newCursor,
+          newCursor + 1,
+        );
       }
       oldCursor += 1;
       newCursor += 1;
@@ -779,6 +826,7 @@ const diffNodeArrays = (
           work.oldEnd,
           suffixNewEnd,
           work.newEnd,
+          budgetState,
         )
       ) {
         return true;
@@ -880,8 +928,13 @@ const diffNodeArrays = (
           const nextPath = appendPathSegment(work.path, work.field, previousIndex);
           const refineNested = nextPath.depth <= diffRefinementDepthCap;
           const supportsNestedRefinement =
-            previousNode.type === "raw" || previousNode.type === "inline" || previousNode.type === "block";
-          if ((!refineNested && supportsNestedRefinement) || shouldCoarsenSubtreeDiff(previousNode, nextNode, budgetState)) {
+            previousNode.type === "raw" ||
+            previousNode.type === "inline" ||
+            previousNode.type === "block";
+          if (
+            (!refineNested && supportsNestedRefinement) ||
+            shouldCoarsenSubtreeDiff(previousNode, nextNode, budgetState)
+          ) {
             // 深度上限一到就立刻收手。
             // 不要继续往下追 set-text / set-raw-content，否则深树会把 diff 成本重新拉爆。
             if (
@@ -950,7 +1003,13 @@ const diffNodeArrays = (
                 return true;
               }
             }
-            queueNestedNodeArrayDiff(nestedTasks, previousNode.args, nextNode.args, nextPath, "args");
+            queueNestedNodeArrayDiff(
+              nestedTasks,
+              previousNode.args,
+              nextNode.args,
+              nextPath,
+              "args",
+            );
           } else if (previousNode.type === "inline" && nextNode.type === "inline") {
             if (!!previousNode.implicitInlineShorthand !== !!nextNode.implicitInlineShorthand) {
               if (
@@ -976,7 +1035,13 @@ const diffNodeArrays = (
               "children",
             );
           } else if (previousNode.type === "block" && nextNode.type === "block") {
-            queueNestedNodeArrayDiff(nestedTasks, previousNode.args, nextNode.args, nextPath, "args");
+            queueNestedNodeArrayDiff(
+              nestedTasks,
+              previousNode.args,
+              nextNode.args,
+              nextPath,
+              "args",
+            );
             queueNestedNodeArrayDiff(
               nestedTasks,
               previousNode.children,
@@ -1186,20 +1251,18 @@ const buildConservativeTreeTokenDiff = (
               newNodes: nextTree.slice(),
             },
           ],
-    dirtySpanOld:
-      fullDocumentSpans
-        ? { startOffset: 0, endOffset: fullDocumentSpans.oldEndOffset }
-        : resolveDirtySpan(previousTree, 0, previousTree.length, edit.startOffset, edit.oldEndOffset),
-    dirtySpanNew:
-      fullDocumentSpans
-        ? { startOffset: 0, endOffset: fullDocumentSpans.newEndOffset }
-        : resolveDirtySpan(
-            nextTree,
-            0,
-            nextTree.length,
-            edit.startOffset,
-            edit.startOffset + edit.newText.length,
-          ),
+    dirtySpanOld: fullDocumentSpans
+      ? { startOffset: 0, endOffset: fullDocumentSpans.oldEndOffset }
+      : resolveDirtySpan(previousTree, 0, previousTree.length, edit.startOffset, edit.oldEndOffset),
+    dirtySpanNew: fullDocumentSpans
+      ? { startOffset: 0, endOffset: fullDocumentSpans.newEndOffset }
+      : resolveDirtySpan(
+          nextTree,
+          0,
+          nextTree.length,
+          edit.startOffset,
+          edit.startOffset + edit.newText.length,
+        ),
   };
 };
 
@@ -1384,7 +1447,14 @@ const computeTokenDiffInRootRange = (
   }
 
   if (oldEnd < previousTree.length || newEnd < nextTree.length) {
-    appendDiffSegment(accumulator.segments, "equal", oldEnd, previousTree.length, newEnd, nextTree.length);
+    appendDiffSegment(
+      accumulator.segments,
+      "equal",
+      oldEnd,
+      previousTree.length,
+      newEnd,
+      nextTree.length,
+    );
   }
 
   const nestedBudgetExceeded = processNestedNodeArrayDiffs(
@@ -1403,9 +1473,21 @@ const computeTokenDiffInRootRange = (
     if (!rootSpliceOps) {
       return buildConservativeTreeTokenDiff(previousTree, nextTree, edit, fullDocumentSpans);
     }
-    return buildDiffShapeFromSegments(accumulator.segments, previousTree, nextTree, edit, rootSpliceOps);
+    return buildDiffShapeFromSegments(
+      accumulator.segments,
+      previousTree,
+      nextTree,
+      edit,
+      rootSpliceOps,
+    );
   }
-  return buildDiffShapeFromSegments(accumulator.segments, previousTree, nextTree, edit, accumulator.ops);
+  return buildDiffShapeFromSegments(
+    accumulator.segments,
+    previousTree,
+    nextTree,
+    edit,
+    accumulator.ops,
+  );
 };
 
 export const computeTokenDiffWithinSourceWindow = (

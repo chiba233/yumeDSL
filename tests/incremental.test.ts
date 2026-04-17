@@ -1205,6 +1205,37 @@ const cases: GoldenCase[] = [
     },
   },
   {
+    name: "[Incremental/SessionDiff] computeTokenDiff should enforce maxOps across repeated single-sided splice branches",
+    run: () => {
+      const previous: StructuralNode[] = [
+        { type: "text", value: "a" },
+        { type: "text", value: "c" },
+        { type: "text", value: "e" },
+      ];
+      const next: StructuralNode[] = [
+        { type: "text", value: "a" },
+        { type: "text", value: "b" },
+        { type: "text", value: "c" },
+        { type: "text", value: "d" },
+        { type: "text", value: "e" },
+      ];
+
+      const diff = computeTokenDiff(
+        previous,
+        next,
+        { startOffset: 1, oldEndOffset: 1, newText: "bd" },
+        8,
+        { maxOps: 1 },
+      );
+
+      assert.equal(diff.patches.length, 1);
+      assert.equal(diff.patches[0]?.kind, "replace");
+      assert.equal(diff.ops.length, 1);
+      assert.equal(diff.ops[0]?.kind, "splice");
+      assertDiffRebuildsNextTree(previous, next, diff);
+    },
+  },
+  {
     name: "[Incremental/SessionDiff] computeTokenDiffWithinSourceWindow should fallback to full diff when old/new window starts map to different root token indexes",
     run: () => {
       const source = "$$bold(a)$$$$bold(mid)$$$$bold(c)$$";
