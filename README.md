@@ -13,7 +13,8 @@
 [![Contributing](https://img.shields.io/badge/Contributing-guide-blue.svg)](./CONTRIBUTING.md)
 [![Security](https://img.shields.io/badge/Security-policy-red.svg)](./SECURITY.md)
 
-Zero-dependency, **Θ(n)** rich-text DSL parser. With enough heap, public structural parse still finishes at 50 million nested layers (`1.1.4` benchmark).
+Zero-dependency, **Θ(n)** rich-text DSL parser. With enough heap, public structural parse still finishes at 50 million
+nested layers (`1.1.4` benchmark).
 Text in, token tree out — tag semantics, rendering, framework: all yours to define.
 
 - **Not** a Markdown renderer, rich-text editor, or HTML pipeline
@@ -48,26 +49,35 @@ Text in, token tree out — tag semantics, rendering, framework: all yours to de
 >
 > Heap after structural parse: 200 KB **~21.60 MB**, 2 MB **~138.51 MB**.
 >
-> Substring parse: `parseRichText` slice + `baseOffset + tracker` **~20.62 µs**, `parseStructural` equivalent path **~13.47 µs**.
+> Substring parse: `parseRichText` slice + `baseOffset + tracker` **~20.62 µs**, `parseStructural` equivalent path **~
+13.47 µs**.
 >
-> Incremental parse (edit one 36-char tag in a ~200 KB document): `nodeAtOffset` **~456.76 µs** + `parseSlice` **~8.36 µs**;
+> Incremental parse (edit one 36-char tag in a ~200 KB document): `nodeAtOffset` **~456.76 µs** + `parseSlice` **~8.36
+µs**;
 > full `parseRichText` on the same document takes **~19.45 ms** — the incremental path is roughly **42x faster**.
 >
-> Stress test: 50 million-layer single-chain inline nesting (~500 MB), `parseStructural` **~224.1 s** (historical `1.1.4` benchmark; not re-measured for current `1.4.x`).
+> Stress test: 50 million-layer single-chain inline nesting (~500 MB), `parseStructural` **~224.1 s** (historical
+`1.1.4` benchmark; not re-measured for current `1.4.x`).
 > Large-scale deep-nesting runs use an expanded heap budget; see the performance page for exact conditions.
 >
-> Pair with [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker)'s `parseSlice` — only the touched region gets re-parsed.
-> `createIncrementalSession(...)` brings editor-grade structural caching to repeated edits, so the parser can keep pace with live typing instead of rebuilding from scratch every time.
-> `parseIncremental(...)` gives you the same incremental model as a ready-to-reuse first snapshot — perfect when you want to enter the incremental pipeline from a single parse.
-> the full session lifecycle, exact signatures, and `applyEditWithDiff(...)` details live in the [Incremental Parsing wiki](https://github.com/chiba233/yumeDSL/wiki/en-Incremental-Parsing).
+> Pair with [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker)'s `parseSlice` — only the
+> touched region gets re-parsed.
+> `createIncrementalSession(...)` brings editor-grade structural caching to repeated edits, so the parser can keep pace
+> with live typing instead of rebuilding from scratch every time.
+> `parseIncremental(...)` gives you the same incremental model as a ready-to-reuse first snapshot — perfect when you
+> want to enter the incremental pipeline from a single parse.
+> the full session lifecycle, exact signatures, and `applyEditWithDiff(...)` details live in
+> the [Incremental Parsing wiki](https://github.com/chiba233/yumeDSL/wiki/en-Incremental-Parsing).
 > [Full benchmark data](https://github.com/chiba233/yumeDSL/wiki/en-Performance)
 
 **Use cases:**
-[game dialogue & visual novels](https://github.com/chiba233/yumeDSL/wiki/en-Tutorial-Game-Dialogue) (typewriter / shake / color tags you invent)
+[game dialogue & visual novels](https://github.com/chiba233/yumeDSL/wiki/en-Tutorial-Game-Dialogue) (typewriter /
+shake / color tags you invent)
 
 [chat & comments](https://github.com/chiba233/yumeDSL/wiki/en-Tutorial-Safe-UGC) (safe UGC with graceful degradation)
 
-[CMS & blogs, documentation pipelines, localization workflows](https://github.com/chiba233/yumeDSL/wiki/en-Tutorial-Safe-UGC) (translators edit text, not markup)
+[CMS & blogs, documentation pipelines, localization workflows](https://github.com/chiba233/yumeDSL/wiki/en-Tutorial-Safe-UGC) (
+translators edit text, not markup)
 
 ```tsx
 // React — render tokens recursively
@@ -169,7 +179,10 @@ const dsl = createParser({
 });
 ```
 
-If you only want to **declare a few tag names at near-zero cost**, add inline entries such as `thin: {}` directly in `handlers`. If you want a fixed output shape such as `{ type, value }`, use `createSimpleInlineHandlers(...)` instead. For the exact fallback output shape and form rules, see [Handler Helpers — Standard implicit syntax: empty handler objects](https://github.com/chiba233/yumeDSL/wiki/en-Handler-Helpers#standard-implicit-syntax-empty-handler-objects).
+If you only want to **declare a few tag names at near-zero cost**, add inline entries such as `thin: {}` directly in
+`handlers`. If you want a fixed output shape such as `{ type, value }`, use `createSimpleInlineHandlers(...)` instead.
+For the exact fallback output shape and form rules,
+see [Handler Helpers — Standard implicit syntax: empty handler objects](#standard-implicit-syntax-empty-handler-objects).
 
 ### 2. Parse
 
@@ -237,7 +250,8 @@ Three forms are supported:
 > **Degradation rules:** when input is malformed or a handler doesn't support the written form, the parser degrades
 > gracefully to plain text instead of throwing. The full rules — including the common gotcha of nesting raw/block inside
 > inline — are documented in the
-> [DSL Syntax — Graceful degradation rules](https://github.com/chiba233/yumeDSL/wiki/en-DSL-Syntax#graceful-degradation-rules) wiki page.
+> [DSL Syntax — Graceful degradation rules](https://github.com/chiba233/yumeDSL/wiki/en-DSL-Syntax#graceful-degradation-rules)
+> wiki page.
 
 ### Inline
 
@@ -357,18 +371,18 @@ dsl.parse(text, {onError: (e) => console.warn(e)});
 
 Most of the time you only need to bind `handlers`. The rest just tags along for convenience.
 
-| Option           | What it does when pre-bound                                                                                                                                |
-|------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **`handlers`**   | **Your tag definitions — the main reason to use `createParser`**                                                                                           |
-| `syntax`         | Custom syntax tokens (if you override `$$` prefix, etc.)                                                                                                   |
-| `tagName`        | Custom tag-name character rules                                                                                                                            |
-| `allowForms`     | Restrict accepted tag forms (default: all forms enabled)                                                                                                   |
-| `implicitInlineShorthand` | Control `name(...)` shorthand inside inline args (default: disabled). _Since 1.3_                                                                 |
-| `depthLimit`     | Nesting limit — rarely changes per call                                                                                                                    |
-| `createId`       | Custom token id generator (can be overridden per call)                                                                                                     |
-| `blockTags`      | Block-level line-break normalization — see [`declareMultilineTags`](https://github.com/chiba233/yumeDSL/wiki/en-Handler-Helpers#declaremultilinetagsnames) |
-| `onError`        | Default error handler (can still be overridden per call)                                                                                                   |
-| `trackPositions` | Attach source positions to all output nodes (can be overridden per call)                                                                                   |
+| Option                    | What it does when pre-bound                                                                                                                                |
+|---------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **`handlers`**            | **Your tag definitions — the main reason to use `createParser`**                                                                                           |
+| `syntax`                  | Custom syntax tokens (if you override `$$` prefix, etc.)                                                                                                   |
+| `tagName`                 | Custom tag-name character rules                                                                                                                            |
+| `allowForms`              | Restrict accepted tag forms (default: all forms enabled)                                                                                                   |
+| `implicitInlineShorthand` | Control `name(...)` shorthand inside inline args (default: disabled). _Since 1.3_                                                                          |
+| `depthLimit`              | Nesting limit — rarely changes per call                                                                                                                    |
+| `createId`                | Custom token id generator (can be overridden per call)                                                                                                     |
+| `blockTags`               | Block-level line-break normalization — see [`declareMultilineTags`](https://github.com/chiba233/yumeDSL/wiki/en-Handler-Helpers#declaremultilinetagsnames) |
+| `onError`                 | Default error handler (can still be overridden per call)                                                                                                   |
+| `trackPositions`          | Attach source positions to all output nodes (can be overridden per call)                                                                                   |
 
 **Without `createParser`** you must pass the full options object on every call:
 
@@ -445,7 +459,9 @@ In practice:
 - one-shot structure snapshot → `parseIncremental(...)`
 - editor / live preview / repeated updates → `createIncrementalSession(...)`
 
-The README keeps this section short on purpose. For end-to-end examples of `getDocument`, `applyEdit`, `applyEditWithDiff`, `rebuild`, and diff consumption patterns, see the [Incremental Parsing wiki page](https://github.com/chiba233/yumeDSL/wiki/en-Incremental-Parsing).
+The README keeps this section short on purpose. For end-to-end examples of `getDocument`, `applyEdit`,
+`applyEditWithDiff`, `rebuild`, and diff consumption patterns, see
+the [Incremental Parsing wiki page](https://github.com/chiba233/yumeDSL/wiki/en-Incremental-Parsing).
 
 ---
 
@@ -526,7 +542,8 @@ This is the library's recommended **zero-cost declaration syntax** for implicit 
 
 - think of `bold: {}` as the direct, helper-free equivalent of the old `createPassthroughTags(["bold"])`
 - think of `createSimpleInlineHandlers(["bold"])` as the explicit version that fixes the output shape up front
-- for the exact fallback output shape and form rules, see [Handler Helpers — Standard implicit syntax: empty handler objects](https://github.com/chiba233/yumeDSL/wiki/en-Handler-Helpers#standard-implicit-syntax-empty-handler-objects)
+- for the exact fallback output shape and form rules,
+  see [Handler Helpers — Standard implicit syntax: empty handler objects](https://github.com/chiba233/yumeDSL/wiki/en-Handler-Helpers#standard-implicit-syntax-empty-handler-objects)
 
 ### `createPipeHandlers(definitions)`
 
@@ -570,7 +587,8 @@ const dsl = createParser({
 
 ### `declareMultilineTags(names)` — block-level line-break normalization
 
-Use this when a tag renders like a block/container and you do not want boundary newlines leaking into the content. It does **not** register handlers; it only controls newline normalization.
+Use this when a tag renders like a block/container and you do not want boundary newlines leaking into the content. It
+does **not** register handlers; it only controls newline normalization.
 It also accepts `{ tag, forms }` objects when you want per-tag, per-form control instead of all-form normalization.
 
 **Shortest usage:**
@@ -579,14 +597,18 @@ It also accepts `{ tag, forms }` objects when you want per-tag, per-form control
 blockTags: declareMultilineTags(["info", "warning", "center"])
 ```
 
-**Rule of thumb:** if your tag renders as a block-level element, make sure it appears in `blockTags`. Otherwise boundary line breaks leak into the content and produce extra blank lines at render time.
+**Rule of thumb:** if your tag renders as a block-level element, make sure it appears in `blockTags`. Otherwise boundary
+line breaks leak into the content and produce extra blank lines at render time.
 
-See the [Handler Helpers wiki page](https://github.com/chiba233/yumeDSL/wiki/en-Handler-Helpers#declaremultilinetagsnames) for full API
+See
+the [Handler Helpers wiki page](https://github.com/chiba233/yumeDSL/wiki/en-Handler-Helpers#declaremultilinetagsnames)
+for full API
 signatures, form-specific normalization rules, and callback details.
 
 ## ParseOptions
 
-This section keeps only the shortest overview. For the full field-by-field reference, examples, and edge cases, see the [ParseOptions wiki page](https://github.com/chiba233/yumeDSL/wiki/en-ParseOptions).
+This section keeps only the shortest overview. For the full field-by-field reference, examples, and edge cases, see
+the [ParseOptions wiki page](https://github.com/chiba233/yumeDSL/wiki/en-ParseOptions).
 
 Both `ParseOptions` and `StructuralParseOptions` extend `ParserBaseOptions`:
 
@@ -627,28 +649,35 @@ interface StructuralParseOptions extends ParserBaseOptions {
 - `onError`: collect parse errors
 - `createId`: customize token ids for this parse
 
-`StructuralParseOptions` is the lighter structural-only side. `ParseOptions` adds render-facing fields such as `createId`, `blockTags`, and `onError`.
+`StructuralParseOptions` is the lighter structural-only side. `ParseOptions` adds render-facing fields such as
+`createId`, `blockTags`, and `onError`.
 
 ### allowForms
 
-Use this for global gating such as “inline only” in comments / chat / UGC. Unlisted forms degrade gracefully instead of throwing.
+Use this for global gating such as “inline only” in comments / chat / UGC. Unlisted forms degrade gracefully instead of
+throwing.
 
-Full examples and behavior notes: [ParseOptions wiki — `allowForms`](https://github.com/chiba233/yumeDSL/wiki/en-ParseOptions).
+Full examples and behavior notes: [ParseOptions wiki —
+`allowForms`](https://github.com/chiba233/yumeDSL/wiki/en-ParseOptions).
 
 ### implicitInlineShorthand
 
 > _Since 1.3_
 
-Use this when you want lighter `name(...)` syntax **inside inline arguments only**. It can be `false`, `true`, or a tag-name allowlist.
+Use this when you want lighter `name(...)` syntax **inside inline arguments only**. It can be `false`, `true`, or a
+tag-name allowlist.
 
-Full examples, whitelist behavior, and parsing priority: [ParseOptions wiki — `implicitInlineShorthand`](https://github.com/chiba233/yumeDSL/wiki/en-ParseOptions#implicitinlineshorthand).
+Full examples, whitelist behavior, and parsing priority: [ParseOptions wiki —
+`implicitInlineShorthand`](https://github.com/chiba233/yumeDSL/wiki/en-ParseOptions#implicitinlineshorthand).
 
 ---
 
 ## Token Structure
 
-`TextToken` is the parser output shape: `type`, `value`, `id`, optional `position`, plus any extra fields your handlers add.
-The structure stays intentionally open so the parser can represent your tags without knowing your app schema ahead of time.
+`TextToken` is the parser output shape: `type`, `value`, `id`, optional `position`, plus any extra fields your handlers
+add.
+The structure stays intentionally open so the parser can represent your tags without knowing your app schema ahead of
+time.
 
 ### Strong Typing
 
@@ -682,7 +711,8 @@ Most tags can be created with [`createPipeHandlers`](#createpipehandlersdefiniti
 logic that helpers can't express — e.g., conditional field mapping, content transformation, or
 dynamic type selection.
 
-Keep `ctx` in manual handlers even if you do not use it yet — it keeps your code aligned with future ctx-first APIs and avoids ambient-state pitfalls.
+Keep `ctx` in manual handlers even if you do not use it yet — it keeps your code aligned with future ctx-first APIs and
+avoids ambient-state pitfalls.
 
 **Shortest example:**
 
@@ -707,17 +737,17 @@ const dsl = createParser({
 > Incremental parsing has more surface area than the core parse APIs.
 > For exact signatures and usage notes, check the wiki before wiring advanced session flows.
 
-| Category              | Exports                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-|-----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Core**              | `parseRichText`, `stripRichText`, `createParser`, `parseStructural`, `printStructural`, `buildZones`                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| **Incremental Parsing** | `parseIncremental`, `createIncrementalSession`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| **Configuration**     | `DEFAULT_SYNTAX`, `createEasySyntax`, `createSyntax`, `DEFAULT_TAG_NAME`, `createTagNameConfig`, `createEasyStableId`                                                                                                                                                                                                                                                                                                                                                                                                           |
-| **Handler Helpers**   | `createPassthroughTags`, `createPipeHandlers`, `createPipeBlockHandlers`, `createPipeRawHandlers`, `createSimpleInlineHandlers`, `createSimpleBlockHandlers`, `createSimpleRawHandlers`, `declareMultilineTags`                                                                                                                                                                                                                                                                                                                    |
-| **Handler Utilities** | `parsePipeArgs`, `parsePipeTextArgs`, `parsePipeTextList`, `extractText`, `createTextToken`, `splitTokensByPipe`, `materializeTextTokens`, `unescapeInline`, `readEscapedSequence`, `createToken`, `createTokenGuard`, `resetTokenIdSeed`                                                                                                                                                                                                                                                                                         |
-| **Token Traversal**   | `walkTokens`, `mapTokens`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| **Position Tracking** | `buildPositionTracker`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| **Legacy Context (deprecated)** | `withSyntax`, `getSyntax`, `withTagNameConfig`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| **Types**             | `TextToken`, `TokenDraft`, `CreateId`, `DslContext`, `TagHandler`, `TagForm`, `InlineShorthandOption`, `ParseOptions`, `ParserBaseOptions`, `StructuralParseOptions`, `Parser`, `SyntaxInput`, `SyntaxConfig`, `TagNameConfig`, `BlockTagInput`, `BlockTagLookup`, `MultilineForm`, `ErrorCode`, `ParseError`, `StructuralNode`, `SourcePosition`, `SourceSpan`, `PositionTracker`, `PipeArgs`, `PipeHandlerDefinition`, `EasyStableIdOptions`, `PrintOptions`, `TokenVisitContext`, `WalkVisitor`, `MapVisitor`, `Zone`, `IncrementalDocument`, `IncrementalEdit`, `IncrementalParseOptions`, `IncrementalSessionOptions`, `TokenDiffResult`, `IncrementalSessionApplyResult`, `IncrementalSessionApplyWithDiffResult`, `NarrowToken`, `NarrowDraft`, `NarrowTokenUnion` |
+| Category                        | Exports                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+|---------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Core**                        | `parseRichText`, `stripRichText`, `createParser`, `parseStructural`, `printStructural`, `buildZones`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| **Incremental Parsing**         | `parseIncremental`, `createIncrementalSession`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| **Configuration**               | `DEFAULT_SYNTAX`, `createEasySyntax`, `createSyntax`, `DEFAULT_TAG_NAME`, `createTagNameConfig`, `createEasyStableId`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| **Handler Helpers**             | `createPassthroughTags`, `createPipeHandlers`, `createPipeBlockHandlers`, `createPipeRawHandlers`, `createSimpleInlineHandlers`, `createSimpleBlockHandlers`, `createSimpleRawHandlers`, `declareMultilineTags`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| **Handler Utilities**           | `parsePipeArgs`, `parsePipeTextArgs`, `parsePipeTextList`, `extractText`, `createTextToken`, `splitTokensByPipe`, `materializeTextTokens`, `unescapeInline`, `readEscapedSequence`, `createToken`, `createTokenGuard`, `resetTokenIdSeed`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| **Token Traversal**             | `walkTokens`, `mapTokens`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| **Position Tracking**           | `buildPositionTracker`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| **Legacy Context (deprecated)** | `withSyntax`, `getSyntax`, `withTagNameConfig`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| **Types**                       | `TextToken`, `TokenDraft`, `CreateId`, `DslContext`, `TagHandler`, `TagForm`, `InlineShorthandOption`, `ParseOptions`, `ParserBaseOptions`, `StructuralParseOptions`, `Parser`, `SyntaxInput`, `SyntaxConfig`, `TagNameConfig`, `BlockTagInput`, `BlockTagLookup`, `MultilineForm`, `ErrorCode`, `ParseError`, `StructuralNode`, `SourcePosition`, `SourceSpan`, `PositionTracker`, `PipeArgs`, `PipeHandlerDefinition`, `EasyStableIdOptions`, `PrintOptions`, `TokenVisitContext`, `WalkVisitor`, `MapVisitor`, `Zone`, `IncrementalDocument`, `IncrementalEdit`, `IncrementalParseOptions`, `IncrementalSessionOptions`, `TokenDiffResult`, `IncrementalSessionApplyResult`, `IncrementalSessionApplyWithDiffResult`, `NarrowToken`, `NarrowDraft`, `NarrowTokenUnion` |
 
 See the [Exports wiki page](https://github.com/chiba233/yumeDSL/wiki/en-Exports) for full signatures and detailed
 documentation.
@@ -752,12 +782,14 @@ parseRichText("$$bold(unclosed", {
 // errors[0].code === "INLINE_NOT_CLOSED"
 ```
 
-The parser degrades gracefully instead of throwing: unknown tags, unsupported forms, and malformed input fall back to text-shaped output.
+The parser degrades gracefully instead of throwing: unknown tags, unsupported forms, and malformed input fall back to
+text-shaped output.
 
 > **⚠️ Common gotcha:** raw / block tags nested inside inline arguments require the handler to also declare `inline`.
 > Without it, the parser can't enter a child frame and the entire nested tag degrades to plain text.
 > See the full degradation rules and decision table in the
-> [DSL Syntax — Graceful degradation rules](https://github.com/chiba233/yumeDSL/wiki/en-DSL-Syntax#graceful-degradation-rules) wiki page.
+> [DSL Syntax — Graceful degradation rules](https://github.com/chiba233/yumeDSL/wiki/en-DSL-Syntax#graceful-degradation-rules)
+> wiki page.
 
 See also the [Error Handling wiki page](https://github.com/chiba233/yumeDSL/wiki/en-Error-Handling) for
 error codes, triggers, and detailed degradation scenarios with examples.

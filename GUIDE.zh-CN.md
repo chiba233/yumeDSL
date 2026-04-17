@@ -163,7 +163,10 @@ const dsl = createParser({
 });
 ```
 
-如果你只是想**零成本声明几个标签名**，也可以像上面的 `thin: {}` 一样，直接把某些 inline 标签写进 `handlers`。如果你想固定输出形状（例如明确得到 `{type, value}`），再用 `createSimpleInlineHandlers(...)`。具体 fallback 结果和 form 规则，见 [标准隐式写法：空对象 handlers](#标准隐式写法空对象-handlers)。
+如果你只是想**零成本声明几个标签名**，也可以把其中一部分 inline 标签直接写成 `bold: {}` / `italic: {}`。可以把它理解成不经过
+helper、直接手写版的 `createPassthroughTags(...)`；如果你想固定输出形状（例如明确得到 `{type, value}`），再用
+`createSimpleInlineHandlers(...)`。具体 fallback 结果和 form
+规则，见 [标准隐式写法：空对象 handlers](#标准隐式写法空对象-handlers)。
 
 ### 2. 解析
 
@@ -512,16 +515,17 @@ const handlers = {
 
 这是库里正式推荐的**零成本声明语法**：
 
-| 写法 | 语义 |
-|------|------|
+| 写法                                     | 语义                                                                       |
+|----------------------------------------|--------------------------------------------------------------------------|
 | `createSimpleInlineHandlers(["bold"])` | 显式安装 `inline` handler，固定产出 `{ type: "bold", value: materializedTokens }` |
-| `bold: {}` | 只声明标签名存在，依赖默认 materialization / fallback |
+| `bold: {}`                             | 只声明标签名存在，依赖默认 materialization / fallback                                 |
 
 如果你喜欢 `createPassthroughTags` 的“短”，真正需要保留的通常不是那个 helper，而是这套空对象 handler 写法本身。
 
 - 可以把 `bold: {}` 理解成旧 `createPassthroughTags(["bold"])` 的直接手写版
 - 可以把 `createSimpleInlineHandlers(["bold"])` 理解成“显式固定输出结构”的版本
-- 具体 fallback 输出和 form 规则，统一看 [处理器辅助函数 — 标准隐式写法：空对象 handlers](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%A4%84%E7%90%86%E5%99%A8%E8%BE%85%E5%8A%A9%E5%87%BD%E6%95%B0#%E6%A0%87%E5%87%86%E9%9A%90%E5%BC%8F%E5%86%99%E6%B3%95%E7%A9%BA%E5%AF%B9%E8%B1%A1-handlers)
+- 具体 fallback 输出和 form
+  规则，统一看 [处理器辅助函数 — 标准隐式写法：空对象 handlers](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%A4%84%E7%90%86%E5%99%A8%E8%BE%85%E5%8A%A9%E5%87%BD%E6%95%B0#%E6%A0%87%E5%87%86%E9%9A%90%E5%BC%8F%E5%86%99%E6%B3%95%E7%A9%BA%E5%AF%B9%E8%B1%A1-handlers)
 
 ### `createPipeHandlers(definitions)`
 
