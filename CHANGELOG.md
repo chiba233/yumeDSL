@@ -2,6 +2,17 @@
 
 # Changelog
 
+### 1.4.1
+
+- **Incremental parsing: malformed nested inline edits no longer stall**
+  - Editing malformed nested inline input such as deleting many trailing `)$$` closers from deeply nested `$$tag(...)$$` content no longer causes incremental session updates to fall onto an extremely slow EOF-recovery path.
+  - This especially improves editor-style incremental updates where the source is temporarily invalid while the user is in the middle of deleting or retyping closing markers.
+- **EOF recovery semantics are now aligned between full parse and incremental reparses**
+  - Unclosed inline recovery at end-of-input now follows the same structural recovery behavior in full parses, dirty-window reparses, and seam probes, avoiding unnecessary divergence between whole-document and incremental paths.
+- **Upgrade note**
+  - No breaking public API changes in `1.4.1`.
+  - Existing `1.4.0` integrations can upgrade directly to `1.4.1`.
+
 ### 1.4.0 (Mirror)
 
 - **Compared with 1.3.x: incremental integration is now stable**

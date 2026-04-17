@@ -394,6 +394,21 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     frame.buf.end = end;
   };
 
+  const recoverUnclosedInlineIntoParent = (frame: ParseFrame): boolean => {
+    const parent = stack[frame.parentIndex];
+    if (!parent) return true;
+    // EOF 上的未闭合 inline 仍然按历史语义降级：
+    // 1. tag 头回退成普通文本
+    // 2. 已经在子帧里解析出来的尾部内容直接挂回父帧
+    // 这样既保留原有输出形状，又避免把父帧游标倒回 argStart 后重扫整段尾巴。
+    flushBuffer(frame);
+    appendBuf(parent, frame.tagStartI, frame.argStartI);
+    flushBuffer(parent);
+    parent.nodes.push(...frame.nodes);
+    parent.i = frame.textEnd;
+    return true;
+  };
+
   // ── 子帧完成分发 ──
 
   const completeChild = (child: ParseFrame) => {
@@ -1122,8 +1137,8 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
 
     if (frame.inlineCloseToken !== null) {
       // inline 帧走到文本末尾仍未关闭 → 未闭合错误
-      // 这里不要整段吞掉：只把 tag 头回退成普通文本，并把父帧 i 放回 argStart。
-      // 后续正文会继续在父帧里按正常字符流扫描，这是老版本错误恢复语义。
+      // 恢复语义仍然是"tag 头降级成普通文本，正文留给父层"，
+      // 但这里直接把已解析 child nodes 接回父帧，避免 EOF 场景反复重扫整段尾巴。
       emitError(
         tracker,
         onError,
@@ -1134,21 +1149,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         emittedErrorKeys,
       );
       stack.pop();
-      const parent = stack[frame.parentIndex];
-      const eofOwnership = resolveShorthandOwnership({
-        phase: "eof",
-        frame,
-        parent: parent ?? null,
-      });
-      if (eofOwnership === "defer-parent") {
-        appendBuf(parent, frame.tagStartI, frame.argStartI);
-        parent.i = frame.argStartI;
-        return true;
-      }
-
-      appendBuf(parent, frame.tagStartI, frame.argStartI);
-      parent.i = frame.argStartI;
-      return true;
+      return recoverUnclosedInlineIntoParent(frame);
     }
 
     flushBuffer(frame);

@@ -1118,6 +1118,35 @@ const cases: GoldenCase[] = [
     },
   },
   {
+    name: "[Incremental/Session] deleting many inline closes should not stall on unclosed nested tails",
+    run: () => {
+      const handlers = createSimpleInlineHandlers(["bold"]);
+      const depthLimit = 256;
+      const nested = makeNestedInline(60);
+      const source = `${nested}\n$$bold(tail)$$`;
+      const removedClosers = 30;
+      const suffix = ")$$".repeat(removedClosers);
+      const startOffset = source.indexOf(suffix);
+      assert.notEqual(startOffset, -1);
+      const oldEndOffset = startOffset + suffix.length;
+      const newSource = applyEdit(source, startOffset, oldEndOffset, "");
+      const session = createIncrementalSession(source, { handlers, depthLimit });
+      const startedAt = Date.now();
+
+      const result = session.applyEdit(
+        { startOffset, oldEndOffset, newText: "" },
+        newSource,
+      );
+      const elapsedMs = Date.now() - startedAt;
+      const full = parseFull(newSource, { handlers, depthLimit });
+
+      assert.equal(result.doc.source, newSource);
+      assert.deepEqual(result.doc.tree, full.tree);
+      assert.deepEqual(result.doc.zones, full.zones);
+      assert.ok(elapsedMs < 2_000, `expected nested-close deletion to finish quickly, got ${elapsedMs}ms`);
+    },
+  },
+  {
     name: "[Incremental/SessionDiff] applyEditWithDiff should conservatively fallback when diff refinement throws",
     run: () => {
       const source = "abc";
