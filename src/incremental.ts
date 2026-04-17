@@ -16,37 +16,37 @@
 // 文件导航（行号可能因编辑微调，但顺序不变）：
 //
 //   ── 快照克隆 ──
-//    ~56  cloneSnapshotValueInternal   递归深拷贝 plain object/array
-//    ~85  cloneHandlersSnapshot        handler 层级：函数引用保留，data 递归拷贝
-//   ~108  cloneParseOptions            顶层入口；frozenSnapshots 做幂等守卫
+//   ~130  cloneSnapshotValueInternal   递归深拷贝 plain object/array
+//   ~246  cloneHandlersSnapshot        handler 层级：函数引用保留，data 递归拷贝
+//   ~265  cloneParseOptions            顶层入口；frozenSnapshots 做幂等守卫
 //
 //   ── 指纹 & 签名 ──
-//   ~138  objectIdentitySeed           函数/对象 identity → 整数映射
-//   ~158  buildHandlersShapeFingerprint  handler 结构指纹（key + inline/raw/block identity）
-//   ~179  buildParseOptionsFingerprint   整合 syntax/tagName/allowForms/handlers
-//   ~310  nodeSignature                节点结构签名（bounded content hash，首尾 32 字符）
-//   ~354  zoneSignature                zone 签名 = 子节点签名聚合
+//   ~304  objectIdentitySeed           函数/对象 identity → 整数映射
+//   ~327  buildHandlersShapeFingerprint  handler 结构指纹（key + inline/raw/block identity）
+//   ~353  buildParseOptionsFingerprint   整合 syntax/tagName/allowForms/handlers
+//   ~509  nodeSignature                节点结构签名（bounded content hash，首尾 32 字符）
+//   ~606  zoneSignature                zone 签名 = 子节点签名聚合
 //
 //   ── 右侧复用 ──
-//   ~374  isSafeRightReuse            seam probe：在拼接缝重解析一小段，比对签名
-//   ~442  createShiftedNodeShell       节点壳平移（只移 position，不递归子节点）
-//   ~463  shiftNode                   迭代式深度平移（用栈模拟递归）
+//   ~631  isSafeRightReuse             seam probe：在拼接缝重解析一小段，比对签名
+//  ~1566  createShiftedNodeShell       节点壳平移（只移 position，不递归子节点）
+//  ~1587  shiftNode                    迭代式深度平移（用栈模拟递归）
 //
 //   ── 懒 delta 平移（1.2.4+）──
-//   ~508  deferShiftZone              O(1) 记录 delta，不动节点
-//   ~524  materializeZone             首次读取时一次性平移节点 position
-//   ~543  installLazyDocument         用 Object.defineProperty 挂 lazy getter
+//  ~1645  deferShiftZone               O(1) 记录 delta，不动节点
+//  ~1663  materializeZone              首次读取时一次性平移节点 position
+//  ~1682  installLazyDocument          用 Object.defineProperty 挂 lazy getter
 //
 //   ── 增量更新核心 ──
-//   ~573  findDirtyRange              找脏 zone 区间（overlap + 左右各扩一格）
-//   ~606  reparseDirtyWindowUntilStable  循环重解析直到右边界稳定或超预算
-//   ~665  assertValidEdit             编辑合法性三重校验
-//   ~691  parseIncremental            全量解析入口（首次 / rebuild）
-//   ~729  updateIncrementalInternal   增量更新主流程
+//  ~1717  findDirtyRange               找脏 zone 区间（overlap + 左右各扩一格）
+//  ~1754  reparseDirtyWindowUntilStable  循环重解析直到右边界稳定或超预算
+//  ~1818  assertValidEdit              编辑合法性三重校验
+//  ~1886  parseIncremental             全量解析入口（首次 / rebuild）
+//  ~1920  updateIncrementalInternal    增量更新主流程
 //
 //   ── Session（自适应策略）──
-//   ~880  createIncrementalSession    有状态会话，auto/incremental-only/full-only
-//   ~969  applyEdit                   session 的编辑入口（策略门控 → 增量 → 兜底）
+//  ~2131  createIncrementalSession     有状态会话，auto/incremental-only/full-only
+//  ~2309  applyEdit                    session 的编辑入口（策略门控 → 增量 → 兜底）
 // ═══════════════════════════════════════════════════════════════
 
 import { buildPositionTracker } from "./positions.js";

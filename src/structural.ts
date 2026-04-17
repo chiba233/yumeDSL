@@ -13,30 +13,30 @@
 // 文件导航（行号可能因编辑微调，但顺序不变）：
 //
 //    ~83  IndexedStructuralNode  内部节点类型（带 _meta）
-//   ~125  pushNode / node工厂     节点工具
-//   ~212  ScanContext            跨递归层共享的不可变配置
-//   ~237  parseNodes             主入口（下面全是它的内部定义）
+//   ~138  pushNode / node工厂     节点工具
+//   ~174  ScanContext            跨递归层共享的不可变配置
+//   ~187  parseNodes             主入口（下面全是它的内部定义）
 //
 //  parseNodes 内部结构：
-//   ~252  ── 帧定义 ──           ParseFrame 接口 + ReturnKind 类型
-//   ~296  makeFrame              帧工厂
-//   ~326  ── 缓冲区 ──           flushBuffer / appendBuf
-//   ~354  ── 子帧完成分发 ──     completeChild：按 returnKind 统一组装节点
-//   ~428  buildComplexMeta       raw / block 的 meta + position 构造
-//   ~451  pushInlineChild        push inline 子帧（lazy close，不预扫）
+//   ~263  ── 帧定义 ──           ParseFrame 接口 + ReturnKind 类型
+//   ~302  makeFrame              帧工厂
+//   ~340  ── 缓冲区 ──           flushBuffer / appendBuf
+//   ~399  ── 子帧完成分发 ──     completeChild：按 returnKind 统一组装节点
+//   ~469  buildComplexMeta       raw / block 的 meta + position 构造
+//   ~492  pushInlineChild        push inline 子帧（lazy close，不预扫）
 //
-//  主循环（~489 while）：
-//   ~492  帧完成                 textEnd 到达 / inline 未闭合处理
-//   ~520  转义序列               readEscapedSequence
-//   ~537  inline 帧 argClose     )$$ / )% / )* form 判定 + shorthand 关闭
-//   ~715  非 inline 帧意外 endTag
-//   ~723  管道分隔符             insideArgs 时的 | 处理
-//   ~738  标签头识别             readTagStartInfo + shorthand 识别
-//   ~750  深度限制退化           skipTagBoundary
-//   ~759  inline 帧嵌套标签      gating 检查 + pushInlineChild（跳过 getTagCloserType）
-//   ~775  非 inline 帧 form 判定 getTagCloserType → inline / raw / block 分发
+//  主循环（~1161 while）：
+//  ~1120  帧完成                 textEnd 到达 / inline 未闭合处理
+//  ~1173  转义序列               readEscapedSequence
+//  ~1186  inline 帧 argClose     )$$ / )% / )* form 判定 + shorthand 关闭
+//  ~1194  非 inline 帧意外 endTag
+//  ~1215  管道分隔符             insideArgs 时的 | 处理
+//  ~1226  标签头识别             readTagStartInfo + shorthand 识别
+//   ~704  深度限制退化           skipTagBoundary
+//   ~758  inline 帧嵌套标签      gating 检查 + pushInlineChild（跳过 getTagCloserType）
+//   ~885  非 inline 帧 form 判定 getTagCloserType → inline / raw / block 分发
 //
-//   ~926  ── Public API ──       parseStructuralWithResolved / parseStructural
+//  ~1279  ── Public API ──       parseStructuralWithResolved / parseStructural
 // ═══════════════════════════════════════════════════════════════
 
 import type {
