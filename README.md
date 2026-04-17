@@ -161,12 +161,15 @@ import {
 const dsl = createParser({
     handlers: {
         ...createSimpleInlineHandlers(["bold", "italic", "underline", "strike"]),
+        thin: {}, // current versions: roughly equivalent to createSimpleInlineHandlers(["thin"])
         ...createSimpleBlockHandlers(["info", "warning"]),
         ...createSimpleRawHandlers(["code"]),
     },
     blockTags: declareMultilineTags(["info", "warning", "code"]),
 });
 ```
+
+If you only want to **declare a few tag names at near-zero cost**, add inline entries such as `thin: {}` directly in `handlers`. If you want a fixed output shape such as `{ type, value }`, use `createSimpleInlineHandlers(...)` instead. For the exact fallback output shape and form rules, see [Handler Helpers — Standard implicit syntax: empty handler objects](https://github.com/chiba233/yumeDSL/wiki/en-Handler-Helpers#standard-implicit-syntax-empty-handler-objects).
 
 ### 2. Parse
 
@@ -508,6 +511,23 @@ const dsl = createParser({
 | `createSimpleBlockHandlers`  | `{ type: tagName, arg, value: content }`          |
 | `createSimpleRawHandlers`    | `{ type: tagName, arg, value: content }` (string) |
 
+### Standard implicit syntax: empty handler objects
+
+When you only want to declare that a tag exists, the shortest form is:
+
+```ts
+const handlers = {
+    bold: {},
+    italic: {},
+};
+```
+
+This is the library's recommended **zero-cost declaration syntax** for implicit fallback/materialization semantics.
+
+- think of `bold: {}` as the direct, helper-free equivalent of the old `createPassthroughTags(["bold"])`
+- think of `createSimpleInlineHandlers(["bold"])` as the explicit version that fixes the output shape up front
+- for the exact fallback output shape and form rules, see [Handler Helpers — Standard implicit syntax: empty handler objects](https://github.com/chiba233/yumeDSL/wiki/en-Handler-Helpers#standard-implicit-syntax-empty-handler-objects)
+
 ### `createPipeHandlers(definitions)`
 
 The **recommended helper** for tags that need pipe parameters, multiple forms, or any custom logic.
@@ -751,6 +771,17 @@ The following exported compatibility APIs will be removed in a future major vers
 
 See the [Deprecated API wiki page](https://github.com/chiba233/yumeDSL/wiki/en-Deprecated-API) for
 signatures, replacements, and migration guide.
+
+If you liked `createPassthroughTags` because it was the shortest way to declare tags, write empty handler objects directly:
+
+```ts
+const handlers = {
+    bold: {},
+    italic: {},
+};
+```
+
+The helper is deprecated; the empty-object handler style is not.
 
 ---
 
