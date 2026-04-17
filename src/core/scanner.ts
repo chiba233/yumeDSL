@@ -1,4 +1,4 @@
-import type { SyntaxConfig, TagHead, TagNameConfig, TagStartInfo } from "../types/index.js";
+import type { SyntaxConfig, TagHead, TagNameConfig, TagStartInfo } from "../types";
 import { getLineEnd, isWholeLineToken } from "../config/chars.js";
 import { readEscapedSequence, readEscapedSequenceWithTokens } from "../handlerBuilders/escape.js";
 

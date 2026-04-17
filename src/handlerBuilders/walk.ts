@@ -44,6 +44,10 @@ export type MapVisitor = (
   ctx: TokenVisitContext,
 ) => TextToken | TextToken[] | null;
 
+type FilterVisitor<T extends TextToken = TextToken> =
+  | ((token: TextToken, ctx: TokenVisitContext) => boolean)
+  | ((token: TextToken, ctx: TokenVisitContext) => token is T);
+
 /**
  * Depth-first **pre-order** traversal. Pure side-effect visitor.
  *
@@ -186,3 +190,14 @@ export const mapTokens = (tokens: TextToken[], visitor: MapVisitor): TextToken[]
 
   return root.result;
 };
+
+/**
+ * Keep only tokens whose predicate returns true.
+ *
+ * This is shorthand for `mapTokens(tokens, (token, ctx) => predicate(token, ctx) ? token : null)`.
+ */
+export const filterTokens = <T extends TextToken = TextToken>(
+  tokens: TextToken[],
+  predicate: FilterVisitor<T>,
+): T[] =>
+  mapTokens(tokens, (token, ctx) => (predicate(token, ctx) ? token : null)) as T[];

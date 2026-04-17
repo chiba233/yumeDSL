@@ -16,6 +16,13 @@
 - **`createEasySyntax`: added `closeMiddle` override**
   - The shared literal between the raw/block marker and `tagPrefix` in derived `rawClose` / `blockClose` tokens can now be overridden (defaults to `"end"`).
   - `createEasySyntax({ tagPrefix: "@@", closeMiddle: "fin" })` produces `rawClose: "%fin@@"`, `blockClose: "*fin@@"`.
+- **`extractText` now accepts a single `TextToken`**
+  - `extractText(token)` is now valid in addition to `extractText(tokens)`. Avoids the `extractText([token])` wrapper.
+- **New: `filterTokens(tokens, predicate)`**
+  - Shorthand for `mapTokens(tokens, (t, ctx) => predicate(t, ctx) ? t : null)`.
+  - Supports type-predicate narrowing: `filterTokens(tokens, (t): t is MyToken => ...)` returns `MyToken[]`.
+- **Internal: eliminated `as string` casts in render pipeline**
+  - `trimBlockBoundaryTokens` now uses `typeof` guards instead of `as string` assertions on cloned token values.
 - No breaking public API changes
 
 ### 1.4.1

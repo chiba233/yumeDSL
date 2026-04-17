@@ -14,6 +14,7 @@ import type {
 import {
   buildZones,
   createEasySyntax,
+  filterTokens,
   createParser,
   createSyntax,
   createPassthroughTags,
@@ -31,6 +32,7 @@ import {
   parsePipeTextArgs,
   parsePipeTextList,
   parseStructural,
+  extractText,
   readEscapedSequence,
   unescapeInline,
   withSyntax,
@@ -154,6 +156,11 @@ void manualToken;
 
 const manualTextToken = createTextToken("hello", dslContext);
 void manualTextToken;
+
+const manualText = extractText(manualTextToken);
+void manualText;
+const filteredTokens = filterTokens([manualTextToken], (token) => token.type === "text");
+void filteredTokens;
 
 const ambientSyntax: SyntaxConfig = getSyntax();
 void ambientSyntax;

@@ -40,7 +40,7 @@ export { unescapeInline, readEscapedSequence } from "./handlerBuilders/escape.js
 export { createToken, resetTokenIdSeed } from "./handlerBuilders/createToken.js";
 
 // ── Token traversal ──
-export { walkTokens, mapTokens } from "./handlerBuilders/walk.js";
+export { walkTokens, mapTokens, filterTokens } from "./handlerBuilders/walk.js";
 export type { TokenVisitContext, WalkVisitor, MapVisitor } from "./handlerBuilders/walk.js";
 
 // ── Legacy context (compat) ──

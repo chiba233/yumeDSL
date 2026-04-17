@@ -16,6 +16,13 @@
 - **`createEasySyntax`：新增 `closeMiddle` 覆盖**
   - 派生 `rawClose` / `blockClose` 时，raw/block 标记与 `tagPrefix` 之间的共享字面量现在可以覆盖（默认为 `"end"`）。
   - `createEasySyntax({ tagPrefix: "@@", closeMiddle: "fin" })` 产出 `rawClose: "%fin@@"`、`blockClose: "*fin@@"`。
+- **`extractText` 现在接受单个 `TextToken`**
+  - `extractText(token)` 现在是合法调用，不再需要 `extractText([token])` 包装。
+- **新增：`filterTokens(tokens, predicate)`**
+  - 等价于 `mapTokens(tokens, (t, ctx) => predicate(t, ctx) ? t : null)` 的快捷方式。
+  - 支持类型谓词收窄：`filterTokens(tokens, (t): t is MyToken => ...)` 返回 `MyToken[]`。
+- **内部：消除 render 管线中的 `as string` 强转**
+  - `trimBlockBoundaryTokens` 现在用 `typeof` 守卫替代对 cloned token value 的 `as string` 断言。
 - 无破坏性公共 API 变化
 
 ### 1.4.1

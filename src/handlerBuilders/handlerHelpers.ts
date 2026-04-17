@@ -234,7 +234,7 @@ const createPipeFormHandlers = <const T extends readonly string[]>(
     const handler: PipeFormHandler = (pipeArgs, content, _ctx, rawArg) => ({
       type: tagName,
       arg: rawArg,
-      args: pipeArgs.parts.map((_: unknown, index: number) => pipeArgs.text(index)),
+      args: pipeArgs.parts.map((_: TextToken[], index: number) => pipeArgs.text(index)),
       value: content,
     });
     definitions[tagName as T[number]] = { [form]: handler };

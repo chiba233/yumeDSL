@@ -23,19 +23,21 @@ export const createTextToken = (value: string, ctx?: DslContext): TextToken =>
  * // "a"
  * ```
  */
-export const extractText = (tokens?: TextToken[]): string => {
+export const extractText = (input?: TextToken | TextToken[]): string => {
+  const tokens = input ? (Array.isArray(input) ? input : [input]) : [];
   if (!tokens?.length) return "";
   const parts: string[] = [];
   const stack = [...tokens].reverse();
   while (stack.length > 0) {
     const token = stack.pop();
     if (!token) continue;
-    if (typeof token.value === "string") {
-      parts.push(token.value);
-      continue;
-    }
-    for (let i = token.value.length - 1; i >= 0; i--) {
-      stack.push(token.value[i]);
+    const value = token.value;
+    if (typeof value === "string") {
+      parts.push(value);
+    } else {
+      for (let i = value.length - 1; i >= 0; i--) {
+        stack.push(value[i]);
+      }
     }
   }
   return parts.join("");

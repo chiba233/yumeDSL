@@ -121,7 +121,7 @@ const deriveEasySyntaxCompounds = (
  * endTag     = tagClose + tagPrefix
  * rawOpen    = tagClose + rawMarker
  * blockOpen  = tagClose + blockMarker
- * rawClose   = rawMarker + closeMiddle + tagPrefix
+ * rawClose   = rawMarker + closeMiddle + tagPrefix   // closeMiddle defaults to "end"
  * blockClose = blockMarker + closeMiddle + tagPrefix
  * ```
  *

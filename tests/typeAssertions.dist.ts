@@ -16,12 +16,14 @@ import {
   buildZones,
   createTokenGuard,
   createEasySyntax,
+  filterTokens,
   createParser,
   createPipeHandlers,
   createSyntax,
   createTagNameConfig,
   createTextToken,
   createToken,
+  extractText,
   parsePipeArgs,
   parsePipeTextArgs,
   parseRichText,
@@ -193,6 +195,12 @@ const parser = createParser({
 
 const parserTokens = parser.parse("@@link<<https://a.com || hi>>@@");
 void parserTokens;
+
+const singleLeafText = extractText(createTextToken("single", ctx));
+void singleLeafText;
+
+const filteredParserTokens = filterTokens(parserTokens, (token) => token.type !== "link");
+void filteredParserTokens;
 
 const parserNodes = parser.structural("@@link<<a || b>>@@", {
   tracker,

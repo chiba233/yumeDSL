@@ -6,7 +6,7 @@ import type {
   PositionTracker,
   SyntaxConfig,
   TextToken,
-} from "../types/index.js";
+} from "../types";
 
 // 设计边界，后面别顺手抹平：
 // - structural parser 负责原始源码位置真相
@@ -156,15 +156,17 @@ const trimBlockBoundaryTokens = (
 
   if (needTrimFirst) {
     const cloned = cloneToken(first);
-    const [nextValue, removed] = trimLeadingLineBreak(cloned.value as string);
-    if (removed > 0) {
-      if (!nextValue) {
-        trimmed.shift();
-      } else {
-        cloned.value = nextValue;
-        if (cloned.position && tracker)
-          cloned.position = shiftPosition(cloned.position, tracker, "start", removed);
-        trimmed[0] = cloned;
+    if (typeof cloned.value === "string") {
+      const [nextValue, removed] = trimLeadingLineBreak(cloned.value);
+      if (removed > 0) {
+        if (!nextValue) {
+          trimmed.shift();
+        } else {
+          cloned.value = nextValue;
+          if (cloned.position && tracker)
+            cloned.position = shiftPosition(cloned.position, tracker, "start", removed);
+          trimmed[0] = cloned;
+        }
       }
     }
   }
@@ -174,15 +176,17 @@ const trimBlockBoundaryTokens = (
     const target = trimmed[lastIdx];
     // 如果 first === last 且 first 已经被 clone 过，不需要再 clone
     const cloned = target === first && needTrimFirst ? target : cloneToken(target);
-    const [nextValue, removed] = trimTrailingLineBreak(cloned.value as string);
-    if (removed > 0) {
-      if (!nextValue) {
-        trimmed.pop();
-      } else {
-        cloned.value = nextValue;
-        if (cloned.position && tracker)
-          cloned.position = shiftPosition(cloned.position, tracker, "end", removed);
-        trimmed[lastIdx] = cloned;
+    if (typeof cloned.value === "string") {
+      const [nextValue, removed] = trimTrailingLineBreak(cloned.value);
+      if (removed > 0) {
+        if (!nextValue) {
+          trimmed.pop();
+        } else {
+          cloned.value = nextValue;
+          if (cloned.position && tracker)
+            cloned.position = shiftPosition(cloned.position, tracker, "end", removed);
+          trimmed[lastIdx] = cloned;
+        }
       }
     }
   }

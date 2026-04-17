@@ -70,6 +70,7 @@ const smokeTest = (mod: DistModule, label: string) => {
         assert.equal(typeof mod.declareMultilineTags, "function");
         assert.equal(typeof mod.createEasyStableId, "function");
         assert.equal(typeof mod.buildZones, "function");
+        assert.equal(typeof mod.filterTokens, "function");
         assert.ok(mod.DEFAULT_SYNTAX);
       },
     },
@@ -279,6 +280,32 @@ const smokeTest = (mod: DistModule, label: string) => {
       run: () => {
         const tokens = parse("$$bold(hello)$$ world");
         assert.equal(mod.extractText(tokens), "hello world");
+      },
+    },
+    {
+      name: `[${label}] extractText supports single token`,
+      run: () => {
+        const token: TextToken = { type: "text", value: "hello", id: "leaf-1" };
+        assert.equal(mod.extractText(token), "hello");
+      },
+    },
+    {
+      name: `[${label}] filterTokens shorthand`,
+      run: () => {
+        const input: TextToken[] = [
+          { type: "root", value: [
+            { type: "text", value: "a", id: "a" },
+            { type: "omit", value: "b", id: "b" },
+            { type: "text", value: "c", id: "c" },
+          ], id: "root" },
+        ];
+        const result = mod.filterTokens(input, (token: TextToken) => token.type !== "omit");
+        assert.deepEqual(normalize(result), [
+          { type: "root", value: [
+            { type: "text", value: "a" },
+            { type: "text", value: "c" },
+          ] },
+        ]);
       },
     },
     {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { walkTokens, mapTokens } from "../src/index.ts";
+import { filterTokens, walkTokens, mapTokens } from "../src/index.ts";
 import type { TextToken } from "../src/types/index.ts";
 import type { GoldenCase } from "./testHarness.ts";
 import { runGoldenCases } from "./testHarness.ts";
@@ -234,6 +234,19 @@ const cases: GoldenCase[] = [
     run: () => {
       const result = mapTokens([], () => null);
       assert.deepEqual(result, []);
+    },
+  },
+  {
+    name: "filterTokens: shorthand keeps matched tokens with mapTokens semantics",
+    run: () => {
+      const input = [branch("root", [leaf("text", "a"), leaf("omit", "b"), leaf("text", "c")])];
+      const result = filterTokens(input, (token) => token.type !== "omit");
+      const root = result[0];
+      assert.equal(root?.type, "root");
+      assert.deepEqual(root && Array.isArray(root.value) ? root.value : [], [
+        leaf("text", "a"),
+        leaf("text", "c"),
+      ]);
     },
   },
 ];
