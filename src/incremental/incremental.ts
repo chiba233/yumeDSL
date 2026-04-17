@@ -50,6 +50,7 @@ import { buildParseOptionsFingerprint, cloneParseOptions } from "./options.js";
 // - fingerprint 只负责判断"配置有没有变"，不能替代 snapshot clone
 // - 右侧复用必须过 seam probe，不能盲信 offset 对齐
 // - diff refinement 失败不能影响 session 推进，必须保守兜底
+// - 预算守卫一旦认定"不划算"，就要果断 full rebuild，不能继续赌增量
 //
 // 文件导航（按职责拆分）：
 // - options.ts    快照克隆 / parseOptions fingerprint
@@ -93,6 +94,8 @@ const createIncrementalEditError = (
   code: IncrementalUpdateErrorCode,
   message: string,
 ): IncrementalUpdateError => {
+  // code 不是装饰字段，而是 session fallbackReason 的输入。
+  // 没有它，上层只能把所有失败都当成同一类未知异常。
   const error = new Error(message) as IncrementalUpdateError;
   error.code = code;
   return error;
@@ -115,6 +118,8 @@ const isIncrementalUpdateError = (error: unknown): error is IncrementalUpdateErr
 // 有重叠 → [firstOverlap - 1, lastOverlap + 1]（左右各扩一格）
 // 纯插入无重叠 → 从插入点邻居开始，左回看一格
 const findDirtyRange = (zones: readonly Zone[], edit: IncrementalEdit): { from: number; to: number } => {
+  // 左边只 lookbehind 一个 zone，是刻意保守但有限的折中。
+  // 再继续往左扩，确实能覆盖更多极端边界，但会让普通编辑的脏窗长期偏大。
   let firstOverlap = -1;
   let lastOverlap = -1;
   let insertionIndex = zones.length;
@@ -168,6 +173,8 @@ const reparseDirtyWindowUntilStable = (
   dirtyZones: Zone[];
   cumulativeReparsedBytes: number;
 } => {
+  // 这里不是"直到解析成功"，而是"直到右边界真的收敛"。
+  // 如果 reparsedEnd 一直追不上 dirtyEndNew，就说明影响已经穿透到了更右边的 zone。
   let nextDirtyTo = dirtyTo;
   let nextDirtyZones: Zone[] = [];
   let nextCumulativeReparsedBytes = cumulativeReparsedBytes;
@@ -270,6 +277,7 @@ const updateIncrementalInternal = (
   internalObserver: InternalUpdateObserver | undefined,
   zoneCap: number,
 ): IncrementalDocument => {
+  // 低层 API 先验证调用契约，不在这里偷偷修正非法输入。
   assertValidEdit(doc, edit, newSource);
   let cumulativeReparsedBytes = 0;
   let probeSliceBytes = 0;
@@ -283,6 +291,7 @@ const updateIncrementalInternal = (
   const runtimeParseOptions = options ?? doc.parseOptions;
   // nextParseOptionsSnapshot 延后到确定走增量路径后再算，
   // 避免 fullRebuild 路径白做一次 cloneParseOptions。
+  // 判断阶段可以先看 runtimeParseOptions，但真正写回文档的必须是隔离后的 snapshot。
 
   const emitDebug = (fellBackToFull: boolean) => {
     const wastedPreWorkMs = fellBackToFull && incrementalDebugSink
@@ -306,6 +315,8 @@ const updateIncrementalInternal = (
 
   const prevZones = getRawZones(doc);
 
+  // 这些 early bailout 越早越划算：
+  // 配置变了、zone 太少、zone 覆盖不可信时，再做脏窗分析只是在浪费前置工作。
   if (previousOptionsFingerprint !== nextOptionsFingerprint) return earlyFullRebuild();
   if (prevZones.length === 0) return earlyFullRebuild();
   // zone 太少（≤1）→ 没有足够的左/脏/右结构可复用，增量路径开销白费。
@@ -345,6 +356,8 @@ const updateIncrementalInternal = (
     zoneCap,
   );
   cumulativeReparsedBytes = firstReparse.cumulativeReparsedBytes;
+  // 超预算不表示结果错误，只表示"继续增量不值了"。
+  // 这时马上 rebuild，能避免极端编辑把增量拖成反复扩窗。
   if (firstReparse.budgetExceeded) return fullRebuild();
   dirtyTo = firstReparse.dirtyTo;
   dirtyZones = firstReparse.dirtyZones;
@@ -366,6 +379,8 @@ const updateIncrementalInternal = (
     probeSliceBytes = rightReuseCheck.probeSliceBytes;
     if (!rightReuseCheck.ok) return fullRebuild();
   }
+  // seam probe 通过之前，右侧一律视为不安全。
+  // "看起来没动"不算证据，闭合边界轻微漂移就是最难查的那类增量 bug。
   const rightZones = oldRightZones.map((zone) => deferShiftZone(zone, delta));
 
   const nextRawZones = [...leftZones, ...dirtyZones, ...rightZones];
@@ -415,6 +430,8 @@ const tryUpdateIncrementalInternal = (
       value: updateIncrementalInternal(doc, edit, newSource, options, internalObserver, zoneCap),
     };
   } catch (error) {
+    // 已知契约错误保持原样返回；只有未知异常才包成 UNKNOWN。
+    // 不然 session 无法区分到底是调用方 edit 错了，还是内部实现出了问题。
     if (isIncrementalUpdateError(error)) {
       return {
         ok: false,
@@ -463,6 +480,8 @@ export const createIncrementalSession = (
   options?: IncrementalParseOptions,
   sessionOptions?: IncrementalSessionOptions,
 ): IncrementalSession => {
+  // session 层的第一目标永远是推进到正确的新快照。
+  // 增量命中率、diff 精细度、性能优化都只能在这个前提下排队。
   const zoneCap = normalizeSoftZoneNodeCap(sessionOptions?.softZoneNodeCap);
   const diffRefinementDepthCap = normalizeDiffRefinementDepthCap(sessionOptions?.diffRefinementDepthCap);
   let currentDoc = parseIncrementalInternal(source, options, zoneCap);
@@ -516,6 +535,7 @@ export const createIncrementalSession = (
     nextOptions: IncrementalParseOptions | undefined,
     fallbackReason: IncrementalSessionFallbackReason,
   ): IncrementalSessionApplyResult => {
+    // rebuild 也要记样本；否则 auto 策略只知道增量多快，不知道 full 路径基线。
     const start = now();
     currentDoc = parseIncrementalInternal(nextSource, nextOptions ?? currentDoc.parseOptions, zoneCap);
     const elapsedMs = now() - start;
@@ -538,6 +558,7 @@ export const createIncrementalSession = (
 
     const fallbackRate = average(fallbackMarks);
     if (fallbackRate > maxFallbackRate) {
+      // fallback 率过高说明当前文档/编辑模式不适合继续赌增量。
       enterFullPreference();
       return;
     }
@@ -546,6 +567,7 @@ export const createIncrementalSession = (
     const avgIncrementalMs = average(incrementalDurations);
     const avgFullMs = average(fullDurations);
     if (avgIncrementalMs > avgFullMs * switchToFullMultiplier) {
+      // 连平均耗时都输给 full rebuild 时，再坚持增量已经没有意义。
       enterFullPreference();
     }
   };
@@ -573,12 +595,14 @@ export const createIncrementalSession = (
     const editRatio = Math.max(replacedLength, writtenLength) / previousLength;
 
     if (strategy === "auto" && editRatio > maxEditRatioForIncremental) {
+      // 大编辑不一定不正确，但通常没有可观复用收益，直接 rebuild 更稳。
       result = runRebuild(newSource, nextOptions, "AUTO_LARGE_EDIT");
       maybeAdaptPolicy();
       return { previousDoc, result };
     }
 
     if (strategy === "auto" && preferFullMode && cooldownRemaining > 0) {
+      // cooldown 用来避免模式抖动：刚切 full 后，别下一次又立刻试探性切回增量。
       cooldownRemaining -= 1;
       if (cooldownRemaining === 0) {
         preferFullMode = false;
@@ -609,6 +633,7 @@ export const createIncrementalSession = (
       recordBounded(fallbackMarks, internalFullRebuild ? 1 : 0);
       maybeAdaptPolicy();
       if (internalFullRebuild) {
+        // 这类 fallback 和 runRebuild 不同：它说明增量流程已经跑起来了，但中途判定不安全。
         result = {
           doc: currentDoc,
           mode: "full-fallback",
@@ -656,11 +681,13 @@ export const createIncrementalSession = (
         (previousDoc.source.length > MAX_FULL_FALLBACK_DIFF_REFINEMENT_SOURCE_LENGTH ||
           result.doc.source.length > MAX_FULL_FALLBACK_DIFF_REFINEMENT_SOURCE_LENGTH);
       if (skipRefinementForLargeFallback) {
+        // full-fallback 且文档很大时，深挖细粒度 diff 的性价比通常很差。
         diff = buildConservativeTokenDiff(previousDoc, result.doc);
       } else {
         diff = computeTokenDiff(previousDoc.tree, result.doc.tree, edit, diffRefinementDepthCap);
       }
     } catch (_error) {
+      // diff 降级不能影响 session 结果；新快照已经是对的，只是 diff 不够细。
       diff = buildConservativeTokenDiff(previousDoc, result.doc);
     }
     return { ...result, diff };

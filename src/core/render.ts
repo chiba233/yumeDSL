@@ -13,9 +13,9 @@ import type {
 // - render layer 负责规范化后的渲染位置真相
 // - 允许共享 config / tracker
 // - 不允许共享最终 spans
-import { createTextToken, materializeTextTokens } from "yume-dsl-rich-text";
+import { createTextToken, materializeTextTokens } from "../handlerBuilders/builders.js";
 import { supportsInlineForm } from "../config/resolveOptions.js";
-import { createToken } from "yume-dsl-rich-text";
+import { createToken } from "../handlerBuilders/createToken.js";
 import { makePosition } from "../internal/positions.js";
 import { readEscaped } from "../handlerBuilders/escape.js";
 import {

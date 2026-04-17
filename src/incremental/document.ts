@@ -1,6 +1,6 @@
 import { parseStructural } from "../core/structural.js";
 import { fnv1a, fnvFeedStringBounded, fnvFeedU32, fnvInit } from "../internal/hash.js";
-import { buildPositionTracker } from "yume-dsl-rich-text";
+import { buildPositionTracker } from "../internal/positions.js";
 import { buildZonesInternal, SOFT_ZONE_NODE_CAP } from "../internal/zones.js";
 import type {
   IncrementalDocument,
@@ -21,6 +21,9 @@ import { buildParseOptionsFingerprint, cloneParseOptions } from "./options.js";
 // seam probe 时比对新旧 zone 签名，不一致 → 右侧不能复用。
 //
 // 两者都基于 FNV-1a hash，但用途不同，别混。
+// 一个常见误区是想"既然 fingerprint 没变，就说明右侧可复用"：
+// 这是错的。fingerprint 只说明配置没变，不说明编辑之后拼接缝右边的解析结果还一致。
+// 右侧能不能复用，只能靠 seam probe + signature 来判断。
 
 // 右侧复用安全门：
 // 增量更新只在 seam probe 确认拼接缝两侧结构稳定后，才复用右侧 zone。
@@ -33,6 +36,8 @@ const RIGHT_REUSE_PROBE_ZONES = 2;
 const RIGHT_REUSE_PROBE_EXTRA_ZONES = 1;
 // 单次 probe 的节点签名预算——超了就放弃 probe，直接 full rebuild。
 const RIGHT_REUSE_PROBE_SIGNATURE_NODE_BUDGET = 4096;
+// 这里故意保守：预算用完就 rebuild，而不是继续硬算。
+// 否则极大文档在 seam probe 阶段就可能把所谓"增量更新"拖回高成本路径。
 
 // 节点类型标签——用于签名 hash，让不同类型的节点永远产生不同签名。
 const NODE_TAG_TEXT = 1;
@@ -49,6 +54,8 @@ const nodeSignatureCache = new WeakMap<StructuralNode, number>();
 const zoneSignatureCache = new WeakMap<Zone, number>();
 // 文档 → 配置指纹缓存：避免每次增量更新都重算 fingerprint。
 const parseOptionsFingerprintCache = new WeakMap<IncrementalDocument, number>();
+// 这些 WeakMap 只缓存内部生成的不可变快照/zone/node。
+// 不要把它们理解成"可以拿来缓存任意用户对象"：用户对象是可变的，语义完全不同。
 
 // 签名预算：seam probe 时限制签名计算的节点数，防止巨型树拖慢 probe。
 type SignatureBudget = {
@@ -136,6 +143,8 @@ const tryConsumeSignatureBudget = (budget: SignatureBudget): boolean => {
 // 纯结构比对不需要全量 hash content，但纯长度又有"同长不同内容"盲区，
 // 所以折中用 bounded sampling（首尾 32 字符）——O(1) 且几乎不会误判。
 export const nodeSignature = (node: StructuralNode, budget?: SignatureBudget): number | undefined => {
+  // 只有"无预算限制"的常规路径才写缓存。
+  // seam probe 的 budget 路径若把半途失败的中间结果写进缓存，反而会污染后续判断。
   if (!budget) {
     const cached = nodeSignatureCache.get(node);
     if (cached !== undefined) return cached;
@@ -270,6 +279,8 @@ export const hasUnsafeZoneCoverageTailGap = (zones: readonly Zone[], edit: Incre
 // 把解析结果的签名和旧 zone 签名逐一比对。
 // 全部匹配 → 右侧可以安全复用；任何一个不匹配 → full rebuild。
 // 这是"宁可多 rebuild 也不误复用"的保守策略。
+// 注意这里不是做"最佳努力复用"：只要有一点不确定，就直接判失败。
+// 因为右侧误复用的代价比一次 full rebuild 大得多——那会把错误结构带到后续每一代快照里。
 /**
  * Probe whether right-side zones may be safely reused after an edit.
  *
@@ -354,12 +365,15 @@ export const parseIncrementalInternal = (
   zoneCap: number,
   existingTracker?: PositionTracker,
 ): IncrementalDocument => {
+  // fallback 路径允许复用已经构建好的 tracker，避免同一次更新里重复扫描整份源码。
   const tracker = existingTracker ?? buildPositionTracker(source);
   const tree = parseWithPositions(source, tracker, options);
   const zones = buildZonesInternal(tree, zoneCap);
   for (let i = 0; i < zones.length; i++) {
     zoneSignature(zones[i]);
   }
+  // 这里主动预热 zone signature，不是"多做无用功"：
+  // 后续增量更新一定会频繁依赖这些签名做 seam probe，提前算好可以把成本放到 full parse 时摊平。
   const parseOptions = cloneParseOptions(options);
   const fingerprint = buildParseOptionsFingerprint(parseOptions);
   const doc = {

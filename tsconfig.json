@@ -15,10 +15,7 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "types": ["node"],
-    "paths": {
-      "yume-dsl-rich-text": ["./src/index.ts"]
-    }
+    "types": ["node"]
   },
   "include": ["src", "tests"]
 }

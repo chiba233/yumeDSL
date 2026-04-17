@@ -25,6 +25,8 @@ import { flattenZones, getCachedZoneSignature, setCachedZoneSignature } from "./
 // 节点位置平移：
 // createShiftedNodeShell 只创建节点壳（平移 position，子节点留空）。
 // shiftNode 用显式栈迭代，避免递归爆栈。
+// 这里不能原地改旧节点 position：
+// 右侧 zone 可能仍被旧文档快照引用，原地写会把"历史版本"一起污染掉。
 const shiftPosition = (
   position: SourcePosition | undefined,
   delta: number,
@@ -121,6 +123,8 @@ export const deferShiftZone = (zone: Zone, delta: number): Zone => {
   if (totalDelta !== 0) {
     zonePendingDeltaMap.set(newZone, totalDelta);
   }
+  // zone signature 不包含 position。
+  // 所以只要结构节点没变，lazy shift 后可以继续沿用旧 signature 缓存。
   const signature = getCachedZoneSignature(zone);
   if (signature !== undefined) {
     setCachedZoneSignature(newZone, signature);
@@ -154,6 +158,9 @@ const materializeZone = (zone: Zone, tracker: PositionTracker): Zone => {
  * with offset-correct but not-yet-materialized right-side reused zones.
  */
 export const getRawZones = (doc: IncrementalDocument): readonly Zone[] => rawZonesMap.get(doc) ?? doc.zones;
+// 这也是内部代码必须坚持走 getRawZones 的原因：
+// raw zone 的 offset 已经是新的，但 node.position 可能还是旧的。
+// 增量逻辑若误读 doc.zones / doc.tree，就会被迫提前物化，甚至把"只看 offset"的路径也拖慢。
 
 /**
  * Install lazy `zones` and `tree` getters onto an incremental document.
@@ -169,6 +176,9 @@ export const installLazyDocument = (
   rawZonesMap.set(doc, rawZones);
   let materializedZones: Zone[] | undefined;
   let materializedTree: StructuralNode[] | undefined;
+  // 不用 Proxy，而是显式 getter：
+  // 1. 对外仍然是普通数组语义
+  // 2. 首次物化后结果可缓存，不会每次读取都重复 shift
   Object.defineProperty(doc, "zones", {
     get() {
       if (!materializedZones) {

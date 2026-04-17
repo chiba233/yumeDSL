@@ -13,6 +13,8 @@ import type { IncrementalParseOptions } from "../types";
 // 下次同一个 snapshot 再传进来时，我们知道"这是自己人"，但仍然要 re-clone
 // nested 字段（handlers/syntax/tagName/allowForms），因为跨代共享会导致
 // 旧文档改动影响新文档。所以 frozenSnapshots 目前只是幂等守卫，不是性能快路径。
+// 这里最容易踩坑的点就是：不要把 frozenSnapshots 当作"可以直接复用旧 options 对象"的许可。
+// 只要 options 里面还有 handlers / syntax 这类可变嵌套结构，就必须重新拍扁成新 snapshot。
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> => {
   if (!value || typeof value !== "object") return false;
@@ -158,6 +160,8 @@ export const cloneParseOptions = (
   if (!options) return undefined;
   // 已经是内部 snapshot —— 仍然 re-clone 嵌套可变字段，
   // 防止跨代引用穿透（旧 doc.parseOptions.handlers.bold.meta 被改 → 影响新文档）。
+  // 这里如果为了省一次 clone 而直接返回旧对象，session 的"历史快照"语义就会被破坏：
+  // 后一代编辑会悄悄改到前一代 doc.parseOptions 上，调试时会非常难查。
   const snapshot: IncrementalParseOptions = {
     ...options,
     handlers: cloneHandlersSnapshot(options.handlers),
@@ -199,6 +203,8 @@ const hashText = (value: string): number => fnv1a(value);
 // handler 结构指纹：hash(key 列表 + 每个 handler 的 inline/raw/block 函数引用 identity)。
 // key 排序是必要的——JS 对象 key 顺序受插入顺序影响，
 // 等价 handler 用不同顺序构造会产生不同 key 序列，不排序会误判为"配置变了"。
+// 这里故意只看 handler 形状和函数 identity，不看 handler 附带的 plain data。
+// plain data 的隔离由 snapshot clone 负责；fingerprint 若把它也算进去，会让增量路径过度敏感。
 const buildHandlersShapeFingerprint = (handlers: unknown): number => {
   if (!handlers || typeof handlers !== "object") return 0;
   const record = handlers as Record<string, unknown>;
@@ -225,6 +231,8 @@ const normalizeShorthandList = (input: readonly string[]): string[] => Array.fro
 // 整合指纹：handlers + allowForms + shorthand 模式 + syntax 8 字段 + tagName 两个函数引用。
 // 任何一项变了 → fingerprint 不同 → 增量更新直接跳 full rebuild。
 export const buildParseOptionsFingerprint = (options: IncrementalParseOptions | undefined): number => {
+  // 这里的目标不是"绝对唯一哈希"，而是作为"配置是否足够不同到必须 rebuild"的稳定哨兵。
+  // 宁可偶发保守 rebuild，也不能把明显不同的配置误判成同一套语义。
   if (!options) return DEFAULT_PARSE_OPTIONS_FINGERPRINT;
   const syntax = options.syntax ?? {};
   const tagName = options.tagName ?? {};

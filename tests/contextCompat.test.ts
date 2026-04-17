@@ -18,7 +18,7 @@ import {
   unescapeInline,
   withSyntax,
 } from "../src/index.ts";
-import { withTagNameConfig } from "yume-dsl-rich-text";
+import { withTagNameConfig } from "../src/index.ts";
 import type { DslContext, StructuralNode, TagHandler, TextToken } from "../src/types/index.ts";
 import { runGoldenCases } from "./testHarness.ts";
 

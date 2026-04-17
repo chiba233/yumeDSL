@@ -20,6 +20,7 @@ import { nodeSignature } from "./document.js";
 // 约束：
 // - ops 必须按 descending path/index 排序，消费者才能顺序应用而不被前面的 splice 破坏索引
 // - 深树 diff 不能依赖递归调用栈；路径也不能每一步都复制整条数组
+// - 细粒度不是第一优先级；一旦 refinement 成本或不确定性上来，就应退回 splice
 
 type SequenceDiffSegment = {
   kind: "equal" | "change";
@@ -147,6 +148,9 @@ const emitSplice = (
   newStart: number,
   newEnd: number,
 ): void => {
+  // root patch / unchangedRanges 只应记录一次。
+  // 某些分支会先把区间标成 change，随后又决定退化成 splice；
+  // 那种情况下调用方必须传 recordSegments=false，避免重复记同一段 root patch。
   if (recordSegments) {
     appendDiffSegment(accumulator.segments, "change", oldStart, oldEnd, newStart, newEnd);
   }
@@ -242,6 +246,7 @@ const signaturesMatch = (previousNode: StructuralNode, nextNode: StructuralNode)
 // 结构相等判断走显式栈，避免极深嵌套时递归爆栈。
 const areNodesStructurallyEqual = (previousNode: StructuralNode, nextNode: StructuralNode): boolean => {
   if (previousNode === nextNode) return true;
+  // signature 只负责快速剪枝；命中后仍要逐字段确认，不能把 hash 相等当成真相。
   if (!signaturesMatch(previousNode, nextNode)) return false;
 
   const pending: Array<{ previousNode: StructuralNode; nextNode: StructuralNode }> = [
@@ -316,6 +321,8 @@ const areNodesStructurallyEqual = (previousNode: StructuralNode, nextNode: Struc
 
 // 只有"同形"节点才值得做递归 diff；否则直接退化为 splice 更稳妥。
 const canDiffNodesRecursively = (previousNode: StructuralNode, nextNode: StructuralNode): boolean => {
+  // 这里故意不尝试"跨类型修补"。
+  // 节点形状一旦变了，强行拆细只会让 op 语义更脆，直接 splice 更稳定。
   if (previousNode.type !== nextNode.type) return false;
   if (previousNode.type === "text" && nextNode.type === "text") return true;
   if (previousNode.type === "escape" && nextNode.type === "escape") return true;
@@ -341,6 +348,8 @@ const findAnchors = (
   newStart: number,
   newEnd: number,
 ): AnchorCandidate[] => {
+  // anchor 必须是唯一节点。
+  // 如果重复内容也拿来当锚点，diff 很容易被切到错误位置，最终比整段 splice 更难消费。
   const oldEntries = new Map<number, { count: number; index: number }>();
   const newEntries = new Map<number, { count: number; index: number }>();
 
@@ -485,6 +494,8 @@ const diffNodeArrays = (
   recordSegments = !path && field === "root",
   nestedTasks: NestedNodeArrayDiffTask[] = [],
 ): void => {
+  // recordSegments 只在 root 层开启，因为 patches / unchangedRanges 只描述 root token 序列。
+  // 子树变化全部交给 ops 表达；两边都记会让消费者拿到互相冲突的两套信息。
   const workStack: NodeArrayDiffWorkItem[] = [
     {
       kind: "range",
@@ -659,6 +670,8 @@ const diffNodeArrays = (
           const supportsNestedRefinement =
             previousNode.type === "raw" || previousNode.type === "inline" || previousNode.type === "block";
           if (!refineNested && supportsNestedRefinement) {
+            // 深度上限一到就立刻收手。
+            // 不要继续往下追 set-text / set-raw-content，否则深树会把 diff 成本重新拉爆。
             emitSplice(
               accumulator,
               false,
@@ -885,6 +898,8 @@ export const computeTokenDiff = (
   edit: IncrementalEdit,
   diffRefinementDepthCap: number,
 ): TokenDiffResult => {
+  // diff 是锦上添花，不是 session 正确性的前提。
+  // 所以策略始终是：能细就细，细不动就保守，绝不为了 diff 反过来拖垮主更新流程。
   const accumulator: SequenceDiffAccumulator = { segments: [], ops: [] };
   const nestedTasks: NestedNodeArrayDiffTask[] = [];
   diffNodeArrays(

@@ -19,15 +19,15 @@
 import assert from "node:assert/strict";
 import type { GoldenCase } from "./testHarness.ts";
 import { runGoldenCases } from "./testHarness.ts";
-import { parseStructural } from "yume-dsl-rich-text";
+import { parseStructural } from "../src/index.ts";
 import { parseRichText } from "../src/core/parse.ts";
-import { createTokenGuard } from "yume-dsl-rich-text";
+import { createTokenGuard } from "../src/index.ts";
 import type { StructuralNode, TagHandler, TextToken } from "../src/types/index.ts";
 import { renderNodes, type RenderContext } from "../src/core/render.ts";
 import { parseStructuralWithResolved } from "../src/core/structural.ts";
 import { resolveBaseOptions } from "../src/config/resolveOptions.ts";
-import { createSyntax } from "yume-dsl-rich-text";
-import { createTagNameConfig } from "yume-dsl-rich-text";
+import { createSyntax } from "../src/index.ts";
+import { createTagNameConfig } from "../src/index.ts";
 import { findInlineClose, getTagCloserType, readTagStartInfo, skipTagBoundary } from "../src/core/scanner.ts";
 import { fnvFeedString, fnvFeedStringBounded, fnvInit } from "../src/internal/hash.ts";
 

@@ -14,7 +14,9 @@ import {
   parseIncremental,
   parseStructural,
 } from "../src/index.ts";
+import { buildConservativeTokenDiff, computeTokenDiff } from "../src/incremental/diff.ts";
 import { __setIncrementalDebugSink, tryUpdateIncremental, updateIncremental } from "../src/incremental/incremental.ts";
+import { buildParseOptionsFingerprint, cloneParseOptions } from "../src/incremental/options.ts";
 import { runGoldenCases, type GoldenCase } from "./testHarness.ts";
 
 type StructuralDiffOp = TokenDiffResult["ops"][number];
@@ -47,12 +49,15 @@ const stripNodePositions = (node: StructuralNode): StructuralNode => {
     return { type: "separator" };
   }
   if (node.type === "inline") {
-    return {
+    const inlineNode: Extract<StructuralNode, { type: "inline" }> = {
       type: "inline",
       tag: node.tag,
       children: node.children.map(stripNodePositions),
-      implicitInlineShorthand: node.implicitInlineShorthand,
     };
+    if (node.implicitInlineShorthand) {
+      inlineNode.implicitInlineShorthand = true;
+    }
+    return inlineNode;
   }
   if (node.type === "raw") {
     return {
@@ -572,6 +577,62 @@ const cases: GoldenCase[] = [
     },
   },
   {
+    name: "[Incremental/Options] cloneParseOptions should re-clone nested arrays from frozen snapshots",
+    run: () => {
+      const inline = (tokens: TextToken[]) => ({ type: "bold", value: tokens });
+      const handlers: Record<string, TagHandler & { meta: { variants: Array<{ mode: string }> } }> = {
+        bold: {
+          inline,
+          meta: {
+            variants: [{ mode: "a" }, { mode: "b" }],
+          },
+        },
+      };
+      const first = cloneParseOptions({
+        handlers,
+      });
+      const second = cloneParseOptions(first);
+      const firstHandlers = first?.handlers as
+        | Record<string, TagHandler & { meta?: { variants?: Array<{ mode: string }> } }>
+        | undefined;
+      const secondHandlers = second?.handlers as
+        | Record<string, TagHandler & { meta?: { variants?: Array<{ mode: string }> } }>
+        | undefined;
+      const firstVariants = firstHandlers?.bold.meta?.variants;
+      const secondVariants = secondHandlers?.bold.meta?.variants;
+
+      assert.ok(first);
+      assert.ok(second);
+      assert.notEqual(second, first);
+      assert.ok(firstVariants);
+      assert.ok(secondVariants);
+      assert.notEqual(secondVariants, firstVariants);
+      assert.notEqual(secondVariants?.[0], firstVariants?.[0]);
+
+      if (secondVariants?.[0]) {
+        secondVariants[0].mode = "changed";
+      }
+
+      assert.equal(firstVariants?.[0]?.mode, "a");
+      assert.equal(secondVariants?.[0]?.mode, "changed");
+    },
+  },
+  {
+    name: "[Incremental/Fingerprint] shorthand boolean mode should change fingerprint",
+    run: () => {
+      const handlers = createSimpleInlineHandlers(["bold"]);
+      const base = { handlers };
+
+      const defaultFingerprint = buildParseOptionsFingerprint(base);
+      const falseFingerprint = buildParseOptionsFingerprint({ ...base, implicitInlineShorthand: false });
+      const trueFingerprint = buildParseOptionsFingerprint({ ...base, implicitInlineShorthand: true });
+
+      assert.equal(falseFingerprint, defaultFingerprint);
+      assert.notEqual(trueFingerprint, defaultFingerprint);
+      assert.notEqual(trueFingerprint, falseFingerprint);
+    },
+  },
+  {
     name: "[Incremental/TryUpdate] should return ok:true on valid update",
     run: () => {
       const source = "hello $$bold(world)$$";
@@ -1084,6 +1145,275 @@ const cases: GoldenCase[] = [
       assert.equal(result.diff.dirtySpanOld.endOffset, source.length);
       assert.equal(result.diff.dirtySpanNew.startOffset, 0);
       assert.equal(result.diff.dirtySpanNew.endOffset, newSource.length);
+    },
+  },
+  {
+    name: "[Incremental/SessionDiff] computeTokenDiff should emit insert patch and fallback dirty span without positions",
+    run: () => {
+      const next = stripTreePositions(parseStructural("tail"));
+      const diff = computeTokenDiff([], next, { startOffset: 0, oldEndOffset: 0, newText: "tail" }, 8);
+
+      assert.equal(diff.isNoop, false);
+      assert.deepEqual(diff.patches, [{ kind: "insert", oldRange: { start: 0, end: 0 }, newRange: { start: 0, end: 1 } }]);
+      assert.equal(diff.dirtySpanOld.startOffset, 0);
+      assert.equal(diff.dirtySpanOld.endOffset, 0);
+      assert.equal(diff.dirtySpanNew.startOffset, 0);
+      assert.equal(diff.dirtySpanNew.endOffset, "tail".length);
+    },
+  },
+  {
+    name: "[Incremental/SessionDiff] computeTokenDiff should emit remove patch and fallback dirty span without positions",
+    run: () => {
+      const previous = stripTreePositions(parseStructural("tail"));
+      const diff = computeTokenDiff(previous, [], { startOffset: 0, oldEndOffset: 4, newText: "" }, 8);
+
+      assert.equal(diff.isNoop, false);
+      assert.deepEqual(diff.patches, [{ kind: "remove", oldRange: { start: 0, end: 1 }, newRange: { start: 0, end: 0 } }]);
+      assert.equal(diff.dirtySpanOld.startOffset, 0);
+      assert.equal(diff.dirtySpanOld.endOffset, 4);
+      assert.equal(diff.dirtySpanNew.startOffset, 0);
+      assert.equal(diff.dirtySpanNew.endOffset, 0);
+    },
+  },
+  {
+    name: "[Incremental/SessionDiff] buildConservativeTokenDiff should no-op for empty snapshots",
+    run: () => {
+      const previousDoc = parseIncremental("");
+      const nextDoc = parseIncremental("");
+      const diff = buildConservativeTokenDiff(previousDoc, nextDoc);
+
+      assert.equal(diff.isNoop, true);
+      assert.deepEqual(diff.patches, []);
+      assert.deepEqual(diff.unchangedRanges, []);
+      assert.deepEqual(diff.ops, []);
+      assert.equal(diff.dirtySpanOld.startOffset, 0);
+      assert.equal(diff.dirtySpanOld.endOffset, 0);
+      assert.equal(diff.dirtySpanNew.startOffset, 0);
+      assert.equal(diff.dirtySpanNew.endOffset, 0);
+    },
+  },
+  {
+    name: "[Incremental/SessionDiff] computeTokenDiff should refine escape raw and shorthand ops together",
+    run: () => {
+      const previous: StructuralNode[] = [
+        { type: "separator" },
+        { type: "escape", raw: "\\$" },
+        { type: "raw", tag: "code", args: [{ type: "text", value: "ts" }], content: "A" },
+        {
+          type: "inline",
+          tag: "bold",
+          children: [{ type: "text", value: "x" }],
+          implicitInlineShorthand: true,
+        },
+      ];
+      const next: StructuralNode[] = [
+        { type: "separator" },
+        { type: "escape", raw: "\\%" },
+        { type: "raw", tag: "code", args: [{ type: "text", value: "js" }], content: "B" },
+        {
+          type: "inline",
+          tag: "bold",
+          children: [{ type: "text", value: "x" }],
+          implicitInlineShorthand: undefined,
+        },
+      ];
+      const diff = computeTokenDiff(previous, next, { startOffset: 0, oldEndOffset: 4, newText: "next" }, 8);
+
+      assert.equal(diff.isNoop, false);
+      assert.ok(diff.ops.some((op) => op.kind === "set-escape"));
+      assert.ok(diff.ops.some((op) => op.kind === "set-raw-content"));
+      assert.ok(diff.ops.some((op) => op.kind === "set-implicit-inline-shorthand"));
+      assert.ok(diff.ops.some((op) => op.kind === "set-text" && op.path.length === 2 && op.path[1]?.field === "args"));
+      assertDiffRebuildsNextTree(previous, next, diff);
+    },
+  },
+  {
+    name: "[Incremental/SessionDiff] computeTokenDiff should refine block args and children text updates",
+    run: () => {
+      const previous: StructuralNode[] = [
+        {
+          type: "block",
+          tag: "note",
+          args: [{ type: "text", value: "old-title" }],
+          children: [{ type: "text", value: "old-body" }],
+        },
+      ];
+      const next: StructuralNode[] = [
+        {
+          type: "block",
+          tag: "note",
+          args: [{ type: "text", value: "new-title" }],
+          children: [{ type: "text", value: "new-body" }],
+        },
+      ];
+      const diff = computeTokenDiff(previous, next, { startOffset: 0, oldEndOffset: 1, newText: "next" }, 8);
+      const setTextOps = diff.ops.filter((op) => op.kind === "set-text");
+      const fields = setTextOps.map((op) => op.path[1]?.field).sort();
+
+      assert.equal(diff.isNoop, false);
+      assert.equal(setTextOps.length, 2);
+      assert.deepEqual(fields, ["args", "children"]);
+      assertDiffRebuildsNextTree(previous, next, diff);
+    },
+  },
+  {
+    name: "[Incremental/SessionDiff] computeTokenDiff should sort nested block splices by field rank",
+    run: () => {
+      const previous: StructuralNode[] = [
+        {
+          type: "block",
+          tag: "note",
+          args: [{ type: "text", value: "title" }],
+          children: [{ type: "text", value: "body" }],
+        },
+      ];
+      const next: StructuralNode[] = [
+        {
+          type: "block",
+          tag: "note",
+          args: [{ type: "text", value: "title" }, { type: "text", value: "more-title" }],
+          children: [{ type: "text", value: "body" }, { type: "text", value: "more-body" }],
+        },
+      ];
+      const diff = computeTokenDiff(previous, next, { startOffset: 0, oldEndOffset: 1, newText: "next" }, 8);
+      const spliceOps = diff.ops.filter((op) => op.kind === "splice");
+
+      assert.equal(spliceOps.length, 2);
+      assert.equal(spliceOps[0]?.field, "args");
+      assert.equal(spliceOps[1]?.field, "children");
+      assertDiffRebuildsNextTree(previous, next, diff);
+    },
+  },
+  {
+    name: "[Incremental/SessionDiff] computeTokenDiff should keep duplicate middle islands as equal segments",
+    run: () => {
+      const previous: StructuralNode[] = [
+        { type: "text", value: "left" },
+        { type: "text", value: "same" },
+        { type: "text", value: "same" },
+        { type: "text", value: "right" },
+      ];
+      const next: StructuralNode[] = [
+        { type: "text", value: "L" },
+        { type: "text", value: "same" },
+        { type: "text", value: "same" },
+        { type: "text", value: "R" },
+      ];
+      const diff = computeTokenDiff(previous, next, { startOffset: 0, oldEndOffset: 4, newText: "next" }, 8);
+
+      assert.equal(diff.isNoop, false);
+      assert.ok(
+        diff.unchangedRanges.some(
+          (range) =>
+            range.oldRange.start === 1 &&
+            range.oldRange.end === 3 &&
+            range.newRange.start === 1 &&
+            range.newRange.end === 3,
+        ),
+      );
+      assertDiffRebuildsNextTree(previous, next, diff);
+    },
+  },
+  {
+    name: "[Incremental/SessionDiff] computeTokenDiff should pick stable anchors when duplicate signatures exist",
+    run: () => {
+      const previous: StructuralNode[] = [
+        { type: "text", value: "start" },
+        { type: "text", value: "dup" },
+        { type: "text", value: "one" },
+        { type: "text", value: "two" },
+        { type: "text", value: "three" },
+        { type: "text", value: "dup" },
+        { type: "text", value: "end" },
+      ];
+      const next: StructuralNode[] = [
+        { type: "text", value: "start" },
+        { type: "text", value: "dup" },
+        { type: "text", value: "two" },
+        { type: "text", value: "one" },
+        { type: "text", value: "three" },
+        { type: "text", value: "dup" },
+        { type: "text", value: "end" },
+      ];
+      const diff = computeTokenDiff(previous, next, { startOffset: 0, oldEndOffset: 7, newText: "next" }, 8);
+
+      assert.equal(diff.isNoop, false);
+      assert.ok(diff.unchangedRanges.length >= 2);
+      assert.ok(diff.patches.length >= 1);
+      assertDiffRebuildsNextTree(previous, next, diff);
+    },
+  },
+  {
+    name: "[Incremental/SessionDiff] computeTokenDiff should fallback to splice when refinement depth is capped",
+    run: () => {
+      const previous: StructuralNode[] = [
+        {
+          type: "inline",
+          tag: "bold",
+          children: [{ type: "text", value: "x" }],
+          implicitInlineShorthand: undefined,
+        },
+      ];
+      const next: StructuralNode[] = [
+        {
+          type: "inline",
+          tag: "bold",
+          children: [{ type: "text", value: "y" }],
+          implicitInlineShorthand: undefined,
+        },
+      ];
+      const diff = computeTokenDiff(previous, next, { startOffset: 0, oldEndOffset: 1, newText: "next" }, 0);
+
+      assert.equal(diff.patches.length, 1);
+      assert.equal(diff.patches[0]?.kind, "replace");
+      assert.equal(diff.ops.length, 1);
+      assert.equal(diff.ops[0]?.kind, "splice");
+      assert.equal(diff.ops[0]?.path.length, 0);
+      assertDiffRebuildsNextTree(previous, next, diff);
+    },
+  },
+  {
+    name: "[Incremental/SessionDiff] computeTokenDiff should splice when recursive diff is ineligible",
+    run: () => {
+      const previous: StructuralNode[] = [
+        {
+          type: "raw",
+          tag: "code",
+          args: [{ type: "text", value: "ts" }],
+          content: "A",
+        },
+      ];
+      const next: StructuralNode[] = [
+        {
+          type: "raw",
+          tag: "quote",
+          args: [{ type: "text", value: "ts" }],
+          content: "A",
+        },
+      ];
+      const diff = computeTokenDiff(previous, next, { startOffset: 0, oldEndOffset: 1, newText: "next" }, 8);
+
+      assert.equal(diff.patches.length, 1);
+      assert.equal(diff.patches[0]?.kind, "replace");
+      assert.equal(diff.ops.length, 1);
+      assert.equal(diff.ops[0]?.kind, "splice");
+      assertDiffRebuildsNextTree(previous, next, diff);
+    },
+  },
+  {
+    name: "[Incremental/SessionDiff] computeTokenDiff should noop for identical trees",
+    run: () => {
+      const tree = stripTreePositions(
+        parseStructural("plain $$bold(x)$$", {
+          handlers: createSimpleInlineHandlers(["bold"]),
+        }),
+      );
+      const diff = computeTokenDiff(tree, tree, { startOffset: 0, oldEndOffset: 0, newText: "" }, 8);
+
+      assert.equal(diff.isNoop, true);
+      assert.deepEqual(diff.patches, []);
+      assert.deepEqual(diff.ops, []);
+      assert.ok(diff.unchangedRanges.length > 0);
     },
   },
   {

@@ -7,7 +7,7 @@ import { runGoldenCases } from "./testHarness.ts";
 import type { SourceSpan, StructuralNode, TextToken } from "../src/types/index.ts";
 import { createParser, createSyntax } from "../src/index.ts";
 import { parseRichText } from "../src/core/parse.ts";
-import { parseStructural } from "yume-dsl-rich-text";
+import { parseStructural } from "../src/index.ts";
 import { buildPositionTracker } from "../src/index.ts";
 import { testHandlers } from "./handlers.ts";
 

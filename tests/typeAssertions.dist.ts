@@ -10,7 +10,7 @@ import type {
   TagHandler,
   TextToken,
   Zone,
-} from "yume-dsl-rich-text";
+} from "../src/index.ts";
 import {
   buildPositionTracker,
   buildZones,
@@ -28,7 +28,7 @@ import {
   parseStructural,
   readEscapedSequence,
   unescapeInline,
-} from "yume-dsl-rich-text";
+} from "../src/index.ts";
 
 const distTokenMap = {
   link: { url: "" },
