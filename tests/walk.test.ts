@@ -237,7 +237,7 @@ const cases: GoldenCase[] = [
     },
   },
   {
-    name: "filterTokens: shorthand keeps matched tokens with mapTokens semantics",
+    name: "filterTokens: tree-pruning shorthand keeps nesting intact",
     run: () => {
       const input = [branch("root", [leaf("text", "a"), leaf("omit", "b"), leaf("text", "c")])];
       const result = filterTokens(input, (token) => token.type !== "omit");

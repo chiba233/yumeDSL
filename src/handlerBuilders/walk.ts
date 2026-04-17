@@ -192,9 +192,11 @@ export const mapTokens = (tokens: TextToken[], visitor: MapVisitor): TextToken[]
 };
 
 /**
- * Keep only tokens whose predicate returns true.
+ * Prune a token tree by removing nodes whose predicate returns false.
  *
  * This is shorthand for `mapTokens(tokens, (token, ctx) => predicate(token, ctx) ? token : null)`.
+ * It preserves the original tree shape for kept nodes, so this is a tree-pruning
+ * helper rather than a flat-array filter.
  */
 export const filterTokens = <T extends TextToken = TextToken>(
   tokens: TextToken[],

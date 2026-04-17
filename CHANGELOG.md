@@ -20,6 +20,7 @@
   - `extractText(token)` is now valid in addition to `extractText(tokens)`. Avoids the `extractText([token])` wrapper.
 - **New: `filterTokens(tokens, predicate)`**
   - Shorthand for `mapTokens(tokens, (t, ctx) => predicate(t, ctx) ? t : null)`.
+  - This is a tree-pruning helper, not a flat filter: kept nodes stay nested and rejected subtrees are removed in place.
   - Supports type-predicate narrowing: `filterTokens(tokens, (t): t is MyToken => ...)` returns `MyToken[]`.
 - **Internal: eliminated `as string` casts in render pipeline**
   - `trimBlockBoundaryTokens` now uses `typeof` guards instead of `as string` assertions on cloned token values.
