@@ -618,6 +618,54 @@ const cases: GoldenCase[] = [
     },
   },
   {
+    name: "[Incremental/Options] cloneParseOptions should preserve shared references and clone null-prototype metadata",
+    run: () => {
+      const inline = (tokens: TextToken[]) => ({ type: "bold", value: tokens });
+      const sharedMeta = Object.create(null) as { nested: { mode: string } };
+      sharedMeta.nested = { mode: "shared" };
+      const sharedVariants = [{ mode: "a" }, { mode: "b" }];
+      const handlers: Record<
+        string,
+        TagHandler & {
+          meta: { nested: { mode: string } };
+          aliasMeta: { nested: { mode: string } };
+          variants: Array<{ mode: string }>;
+          aliasVariants: Array<{ mode: string }>;
+        }
+      > = {
+        bold: {
+          inline,
+          meta: sharedMeta,
+          aliasMeta: sharedMeta,
+          variants: sharedVariants,
+          aliasVariants: sharedVariants,
+        },
+      };
+
+      const cloned = cloneParseOptions({ handlers });
+      const clonedHandlers = cloned?.handlers as
+        | Record<
+            string,
+            TagHandler & {
+              meta?: { nested?: { mode: string } };
+              aliasMeta?: { nested?: { mode: string } };
+              variants?: Array<{ mode: string }>;
+              aliasVariants?: Array<{ mode: string }>;
+            }
+          >
+        | undefined;
+
+      assert.ok(clonedHandlers);
+      assert.ok(clonedHandlers?.bold.meta);
+      assert.notEqual(clonedHandlers?.bold.meta, sharedMeta);
+      assert.equal(clonedHandlers?.bold.meta, clonedHandlers?.bold.aliasMeta);
+      assert.equal(clonedHandlers?.bold.meta?.nested?.mode, "shared");
+      assert.equal(clonedHandlers?.bold.variants, clonedHandlers?.bold.aliasVariants);
+      assert.notEqual(clonedHandlers?.bold.variants, sharedVariants);
+      assert.notEqual(clonedHandlers?.bold.variants?.[0], sharedVariants[0]);
+    },
+  },
+  {
     name: "[Incremental/Fingerprint] shorthand boolean mode should change fingerprint",
     run: () => {
       const handlers = createSimpleInlineHandlers(["bold"]);

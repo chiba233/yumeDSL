@@ -19,15 +19,23 @@
 import assert from "node:assert/strict";
 import type { GoldenCase } from "./testHarness.ts";
 import { runGoldenCases } from "./testHarness.ts";
-import { parseStructural } from "../src/index.ts";
+import {
+  createPipeBlockHandlers,
+  createPipeRawHandlers,
+  createSimpleInlineHandlers,
+  createSyntax,
+  createTagNameConfig,
+  createTextToken,
+  createTokenGuard,
+  extractText,
+  parseStructural,
+  splitTokensByPipe,
+} from "../src/index.ts";
 import { parseRichText } from "../src/core/parse.ts";
-import { createTokenGuard } from "../src/index.ts";
 import type { StructuralNode, TagHandler, TextToken } from "../src/types/index.ts";
 import { renderNodes, type RenderContext } from "../src/core/render.ts";
 import { parseStructuralWithResolved } from "../src/core/structural.ts";
 import { resolveBaseOptions } from "../src/config/resolveOptions.ts";
-import { createSyntax } from "../src/index.ts";
-import { createTagNameConfig } from "../src/index.ts";
 import { findInlineClose, getTagCloserType, readTagStartInfo, skipTagBoundary } from "../src/core/scanner.ts";
 import { fnvFeedString, fnvFeedStringBounded, fnvInit } from "../src/internal/hash.ts";
 
@@ -395,9 +403,49 @@ const cases: GoldenCase[] = [
       assert.equal(text, source);
     },
   },
+  {
+    name: "[Coverage/Render] block handler should trim LF boundary from a single text token",
+    run() {
+      const source = "$$info(title)*\nhello\n*end$$";
+      const tokens = parseRichText(source, {
+        handlers: {
+          info: {
+            block: (_arg, children) => ({ type: "info", value: children }),
+          },
+        },
+      });
+
+      assert.deepEqual(normalizeTokens(tokens), [
+        {
+          type: "info",
+          value: [{ type: "text", value: "hello" }],
+        },
+      ]);
+    },
+  },
+  {
+    name: "[Coverage/Render] block handler should trim CRLF boundary from a single text token",
+    run() {
+      const source = "$$info(title)*\r\nhello\r\n*end$$";
+      const tokens = parseRichText(source, {
+        handlers: {
+          info: {
+            block: (_arg, children) => ({ type: "info", value: children }),
+          },
+        },
+      });
+
+      assert.deepEqual(normalizeTokens(tokens), [
+        {
+          type: "info",
+          value: [{ type: "text", value: "hello" }],
+        },
+      ]);
+    },
+  },
 
   // ═══════════════════════════════════════════════════════════
-  // builders.ts — createTokenGuard (lines 250-251)
+  // builders.ts — createTokenGuard / extractText / splitTokensByPipe
   // ═══════════════════════════════════════════════════════════
   {
     name: "[Coverage/Builders] createTokenGuard narrows token type at runtime",
@@ -419,6 +467,80 @@ const cases: GoldenCase[] = [
       if (is(linkToken, "link")) {
         assert.equal((linkToken as unknown as { url: string }).url, "https://example.com");
       }
+    },
+  },
+  {
+    name: "[Coverage/Builders] extractText should handle undefined input and a single token input",
+    run() {
+      const token = createTextToken("solo");
+      assert.equal(extractText(), "");
+      assert.equal(extractText(token), "solo");
+    },
+  },
+  {
+    name: "[Coverage/Builders] splitTokensByPipe should reuse token on slow path without valid divider or escape",
+    run() {
+      const token = createTextToken(String.raw`a\q`);
+      const parts = splitTokensByPipe([token]);
+
+      assert.equal(parts.length, 1);
+      assert.equal(parts[0]?.length, 1);
+      assert.equal(parts[0]?.[0], token);
+    },
+  },
+  {
+    name: "[Coverage/HandlerHelpers] createPipeRawHandlers should treat undefined arg as empty text",
+    run() {
+      const handlers = createPipeRawHandlers(["code"] as const);
+      const draft = handlers.code.raw?.(undefined, "body");
+
+      assert.deepEqual(draft, {
+        type: "code",
+        arg: undefined,
+        args: [""],
+        value: "body",
+      });
+    },
+  },
+  {
+    name: "[Coverage/HandlerHelpers] createPipeBlockHandlers should treat undefined arg as empty text",
+    run() {
+      const handlers = createPipeBlockHandlers(["panel"] as const);
+      const children = [createTextToken("body")];
+      const draft = handlers.panel.block?.(undefined, children);
+
+      assert.deepEqual(draft, {
+        type: "panel",
+        arg: undefined,
+        args: [""],
+        value: children,
+      });
+    },
+  },
+  {
+    name: "[Coverage/Structural] shorthand whitelist should leave unlisted shorthand as plain text",
+    run() {
+      const handlers = createSimpleInlineHandlers(["bold", "italic"] as const);
+      const nodes = parseStructural("bold(x)", {
+        handlers,
+        implicitInlineShorthand: ["italic"],
+      });
+
+      assert.deepEqual(normalizeStructuralNodes(nodes), [{ type: "text", value: "bold(x)" }]);
+    },
+  },
+  {
+    name: "[Coverage/Structural] unclosed shorthand should report SHORTHAND_NOT_CLOSED",
+    run() {
+      const errors: Array<{ code: string }> = [];
+      const tokens = parseRichText("$$bold(link(x$$", {
+        handlers: createSimpleInlineHandlers(["bold", "link"] as const),
+        implicitInlineShorthand: true,
+        onError: (error) => errors.push({ code: error.code }),
+      });
+
+      assert.equal(extractText(tokens), "$$bold(link(x$$");
+      assert.equal(errors.some((error) => error.code === "SHORTHAND_NOT_CLOSED"), true);
     },
   },
 

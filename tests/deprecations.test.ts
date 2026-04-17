@@ -254,6 +254,42 @@ const cases = [
       );
     },
   },
+  {
+    name: "[Deprecations] production 环境 -> 应当抑制弃用告警",
+    run: async () => {
+      const { stderr } = await runSnippet(`
+        process.env.NODE_ENV = "production";
+        const {getSyntax} = mod;
+        getSyntax();
+      `);
+
+      assert.equal(stderr.includes("[yume-dsl-rich-text] Deprecated:"), false);
+    },
+  },
+  {
+    name: "[Deprecations] stderr.write 缺失 -> 应当回退到 console.warn",
+    run: async () => {
+      const { stderr } = await runSnippet(`
+        process.stderr.write = undefined;
+        const {getSyntax} = mod;
+        getSyntax();
+      `);
+
+      assert.equal(stderr.includes("getSyntax() is deprecated. Use DslContext.syntax instead."), true);
+    },
+  },
+  {
+    name: "[Deprecations] stderr.write 抛错 -> 应当回退到 console.warn",
+    run: async () => {
+      const { stderr } = await runSnippet(`
+        process.stderr.write = (() => { throw new Error("stderr boom"); });
+        const {getSyntax} = mod;
+        getSyntax();
+      `);
+
+      assert.equal(stderr.includes("getSyntax() is deprecated. Use DslContext.syntax instead."), true);
+    },
+  },
 ];
 
 await runGoldenCases("Deprecations", " deprecation warning case", cases);

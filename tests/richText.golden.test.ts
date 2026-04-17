@@ -825,6 +825,35 @@ const cases: Array<{ name: string; run: () => void }> = [
     },
   },
   {
+    name: "[Syntax/Easy] createEasySyntax -> 返回的 SyntaxConfig 不应泄漏 closeMiddle",
+    run: () => {
+      const easySyntax = createEasySyntax({
+        tagPrefix: "@@",
+        tagOpen: "<<",
+        tagClose: ">>",
+        closeMiddle: "fin",
+      });
+
+      assert.equal("closeMiddle" in easySyntax, false);
+      assert.deepEqual(
+        Object.keys(easySyntax).sort(),
+        [
+          "blockClose",
+          "blockOpen",
+          "endTag",
+          "escapableTokens",
+          "escapeChar",
+          "rawClose",
+          "rawOpen",
+          "tagClose",
+          "tagDivider",
+          "tagOpen",
+          "tagPrefix",
+        ],
+      );
+    },
+  },
+  {
     name: "[Syntax/Easy] createEasySyntax -> 显式 raw/block close override 应优先于 closeMiddle",
     run: () => {
       const easySyntax = createEasySyntax({

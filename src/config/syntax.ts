@@ -142,9 +142,10 @@ export const createEasySyntax = (
   overrides?: Partial<SyntaxInput> & { closeMiddle?: string },
 ): SyntaxConfig => {
   const base = resolveEasySyntaxBase(overrides);
+  const { closeMiddle: _closeMiddle, ...syntaxBase } = base;
 
   return createSyntax({
-    ...base,
+    ...syntaxBase,
     ...deriveEasySyntaxCompounds(base, overrides),
   });
 };
