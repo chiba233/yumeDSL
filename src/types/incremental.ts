@@ -107,6 +107,16 @@ export interface IncrementalSessionOptions {
    * @default 64
    */
   softZoneNodeCap?: number;
+  /**
+   * Maximum recursive refinement depth used by `applyEditWithDiff`.
+   *
+   * Larger values preserve more fine-grained nested diff ops on deep trees,
+   * but increase cost on extremely deep structures.
+   * Smaller values prefer coarse splice ops earlier.
+   *
+   * @default 512
+   */
+  diffRefinementDepthCap?: number;
 }
 
 /**

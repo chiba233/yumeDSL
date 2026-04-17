@@ -2,6 +2,18 @@
 
 # 更新日志
 
+### 1.4.0 (Mirror)
+
+- **增量加载已进入稳定版（stable）**
+  - 增量链路（`parseIncremental`、`createIncrementalSession`、`applyEdit`、`applyEditWithDiff`）现已视为生产可用的稳定能力。
+  - session 回退语义与 diff 返回契约已作为稳定集成协议进行文档化与测试固化。
+- **极深嵌套场景的 diff 韧性增强**
+  - 结构 diff 精化过程的 path 处理改为更稳健的深树实现，降低深层路径分配成本。
+  - 对超大 full-fallback 文档引入保守 diff 路径，避免病态深度精化开销。
+- **兼容性声明**
+  - 本版本无破坏性公共 API 变更。
+  - 现有增量集成代码可直接升级到 `1.4.x`。
+
 ### 1.3.9
 
 - **增量 diff：新增显式 no-op 信号**

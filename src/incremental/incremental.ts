@@ -701,10 +701,19 @@ type AnchorCandidate = {
   newIndex: number;
 };
 
+type DiffPathNode = {
+  parent: DiffPathRef;
+  field: StructuralDiffContainerField;
+  index: number;
+  depth: number;
+};
+
+type DiffPathRef = DiffPathNode | undefined;
+
 type NestedNodeArrayDiffTask = {
   previousNodes: readonly StructuralNode[];
   nextNodes: readonly StructuralNode[];
-  path: StructuralDiffPath;
+  path: DiffPathRef;
   field: StructuralDiffContainerField;
 };
 
@@ -738,7 +747,7 @@ const appendDiffSegment = (
 const emitSplice = (
   accumulator: SequenceDiffAccumulator,
   recordSegments: boolean,
-  path: StructuralDiffPath,
+  path: DiffPathRef,
   field: StructuralDiffContainerField,
   previousNodes: readonly StructuralNode[],
   nextNodes: readonly StructuralNode[],
@@ -752,7 +761,7 @@ const emitSplice = (
   }
   accumulator.ops.push({
     kind: "splice",
-    path: path.slice(),
+    path: materializeDiffPath(path),
     field,
     oldRange: { start: oldStart, end: oldEnd },
     newRange: { start: newStart, end: newEnd },
@@ -790,7 +799,7 @@ const appendTrailingEqualSegments = (
 const emitSpliceAndTrailingEquals = (
   accumulator: SequenceDiffAccumulator,
   recordSegments: boolean,
-  path: StructuralDiffPath,
+  path: DiffPathRef,
   field: StructuralDiffContainerField,
   previousNodes: readonly StructuralNode[],
   nextNodes: readonly StructuralNode[],
@@ -826,10 +835,26 @@ const emitSpliceAndTrailingEquals = (
 };
 
 const appendPathSegment = (
-  path: StructuralDiffPath,
+  path: DiffPathRef,
   field: StructuralDiffContainerField,
   index: number,
-): StructuralDiffPath => [...path, { field, index }];
+): DiffPathNode => ({
+  parent: path,
+  field,
+  index,
+  depth: (path?.depth ?? 0) + 1,
+});
+
+const materializeDiffPath = (pathRef: DiffPathRef): StructuralDiffPath => {
+  if (!pathRef) return [];
+  const path: StructuralDiffPath = new Array(pathRef.depth);
+  let cursor: DiffPathRef = pathRef;
+  for (let i = pathRef.depth - 1; i >= 0 && cursor; i--) {
+    path[i] = { field: cursor.field, index: cursor.index };
+    cursor = cursor.parent;
+  }
+  return path;
+};
 
 const signaturesMatch = (previousNode: StructuralNode, nextNode: StructuralNode): boolean =>
   nodeSignature(previousNode) === nodeSignature(nextNode);
@@ -1059,7 +1084,7 @@ const queueNestedNodeArrayDiff = (
   nestedTasks: NestedNodeArrayDiffTask[],
   previousNodes: readonly StructuralNode[],
   nextNodes: readonly StructuralNode[],
-  path: StructuralDiffPath,
+  path: DiffPathRef,
   field: StructuralDiffContainerField,
 ): void => {
   nestedTasks.push({ previousNodes, nextNodes, path, field });
@@ -1069,7 +1094,7 @@ interface NodeArrayDiffRangeWorkItem {
   kind: "range";
   previousNodes: readonly StructuralNode[];
   nextNodes: readonly StructuralNode[];
-  path: StructuralDiffPath;
+  path: DiffPathRef;
   field: StructuralDiffContainerField;
   oldStart: number;
   oldEnd: number;
@@ -1089,17 +1114,28 @@ interface NodeArrayDiffEqualWorkItem {
 
 type NodeArrayDiffWorkItem = NodeArrayDiffRangeWorkItem | NodeArrayDiffEqualWorkItem;
 
+const MAX_DIFF_RECURSIVE_REFINEMENT_DEPTH = 512;
+const MAX_FULL_FALLBACK_DIFF_REFINEMENT_SOURCE_LENGTH = 20_000;
+
+const normalizeDiffRefinementDepthCap = (value: number | undefined): number => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return MAX_DIFF_RECURSIVE_REFINEMENT_DEPTH;
+  }
+  return Math.max(0, Math.floor(value));
+};
+
 const diffNodeArrays = (
   previousNodes: readonly StructuralNode[],
   nextNodes: readonly StructuralNode[],
-  path: StructuralDiffPath,
+  path: DiffPathRef,
   field: StructuralDiffContainerField,
   accumulator: SequenceDiffAccumulator,
+  diffRefinementDepthCap: number,
   oldStart = 0,
   oldEnd = previousNodes.length,
   newStart = 0,
   newEnd = nextNodes.length,
-  recordSegments = path.length === 0 && field === "root",
+  recordSegments = !path && field === "root",
   nestedTasks: NestedNodeArrayDiffTask[] = [],
 ): void => {
   const workStack: NodeArrayDiffWorkItem[] = [
@@ -1272,17 +1308,35 @@ const diffNodeArrays = (
             );
           }
           const nextPath = appendPathSegment(work.path, work.field, previousIndex);
+          const refineNested = (nextPath.depth <= diffRefinementDepthCap);
+          const supportsNestedRefinement =
+            previousNode.type === "raw" || previousNode.type === "inline" || previousNode.type === "block";
+          if (!refineNested && supportsNestedRefinement) {
+            emitSplice(
+              accumulator,
+              false,
+              work.path,
+              work.field,
+              work.previousNodes,
+              work.nextNodes,
+              previousIndex,
+              previousIndex + 1,
+              nextIndex,
+              nextIndex + 1,
+            );
+            continue;
+          }
           if (previousNode.type === "text" && nextNode.type === "text") {
             accumulator.ops.push({
               kind: "set-text",
-              path: nextPath,
+              path: materializeDiffPath(nextPath),
               oldValue: previousNode.value,
               newValue: nextNode.value,
             });
           } else if (previousNode.type === "escape" && nextNode.type === "escape") {
             accumulator.ops.push({
               kind: "set-escape",
-              path: nextPath,
+              path: materializeDiffPath(nextPath),
               oldValue: previousNode.raw,
               newValue: nextNode.raw,
             });
@@ -1290,7 +1344,7 @@ const diffNodeArrays = (
             if (previousNode.content !== nextNode.content) {
               accumulator.ops.push({
                 kind: "set-raw-content",
-                path: nextPath,
+                path: materializeDiffPath(nextPath),
                 oldValue: previousNode.content,
                 newValue: nextNode.content,
               });
@@ -1300,7 +1354,7 @@ const diffNodeArrays = (
             if (!!previousNode.implicitInlineShorthand !== !!nextNode.implicitInlineShorthand) {
               accumulator.ops.push({
                 kind: "set-implicit-inline-shorthand",
-                path: nextPath,
+                path: materializeDiffPath(nextPath),
                 oldValue: previousNode.implicitInlineShorthand,
                 newValue: nextNode.implicitInlineShorthand,
               });
@@ -1370,6 +1424,7 @@ const diffNodeArrays = (
 const processNestedNodeArrayDiffs = (
   nestedTasks: NestedNodeArrayDiffTask[],
   accumulator: SequenceDiffAccumulator,
+  diffRefinementDepthCap: number,
 ): void => {
   while (nestedTasks.length > 0) {
     const task = nestedTasks.pop();
@@ -1380,6 +1435,7 @@ const processNestedNodeArrayDiffs = (
       task.path,
       task.field,
       accumulator,
+      diffRefinementDepthCap,
       0,
       task.previousNodes.length,
       0,
@@ -1464,11 +1520,25 @@ const computeTokenDiff = (
   previousTree: readonly StructuralNode[],
   nextTree: readonly StructuralNode[],
   edit: IncrementalEdit,
+  diffRefinementDepthCap: number,
 ): TokenDiffResult => {
   const accumulator: SequenceDiffAccumulator = { segments: [], ops: [] };
   const nestedTasks: NestedNodeArrayDiffTask[] = [];
-  diffNodeArrays(previousTree, nextTree, [], "root", accumulator, 0, previousTree.length, 0, nextTree.length, true, nestedTasks);
-  processNestedNodeArrayDiffs(nestedTasks, accumulator);
+  diffNodeArrays(
+    previousTree,
+    nextTree,
+    undefined,
+    "root",
+    accumulator,
+    diffRefinementDepthCap,
+    0,
+    previousTree.length,
+    0,
+    nextTree.length,
+    true,
+    nestedTasks,
+  );
+  processNestedNodeArrayDiffs(nestedTasks, accumulator, diffRefinementDepthCap);
 
   const unchangedRanges: TokenDiffUnchangedRange[] = [];
   const patches: TokenDiffPatch[] = [];
@@ -2134,6 +2204,7 @@ export const createIncrementalSession = (
   sessionOptions?: IncrementalSessionOptions,
 ): IncrementalSession => {
   const zoneCap = normalizeSoftZoneNodeCap(sessionOptions?.softZoneNodeCap);
+  const diffRefinementDepthCap = normalizeDiffRefinementDepthCap(sessionOptions?.diffRefinementDepthCap);
   let currentDoc = parseIncrementalInternal(source, options, zoneCap);
   const strategy: IncrementalSessionStrategy = sessionOptions?.strategy ?? "auto";
   const sampleWindowSize = Math.max(4, sessionOptions?.sampleWindowSize ?? 24);
@@ -2320,7 +2391,15 @@ export const createIncrementalSession = (
     const { previousDoc, result } = applyEditCore(edit, newSource, nextOptions);
     let diff: TokenDiffResult;
     try {
-      diff = computeTokenDiff(previousDoc.tree, result.doc.tree, edit);
+      const skipRefinementForLargeFallback =
+        result.mode === "full-fallback" &&
+        (previousDoc.source.length > MAX_FULL_FALLBACK_DIFF_REFINEMENT_SOURCE_LENGTH ||
+          result.doc.source.length > MAX_FULL_FALLBACK_DIFF_REFINEMENT_SOURCE_LENGTH);
+      if (skipRefinementForLargeFallback) {
+        diff = buildConservativeTokenDiff(previousDoc, result.doc);
+      } else {
+        diff = computeTokenDiff(previousDoc.tree, result.doc.tree, edit, diffRefinementDepthCap);
+      }
     } catch (_error) {
       // Diff refinement must never break session advancement; fall back to a
       // conservative whole-tree diff when structural refinement fails.
