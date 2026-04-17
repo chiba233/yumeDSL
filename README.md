@@ -131,7 +131,7 @@ const RichText: FC<{ tokens: TextToken[] }> = ({tokens}) => (
 [Install](#install) · [Quick Start](#quick-start) · [DSL Syntax](#dsl-syntax) · [API](#api)
 
 **Go deeper:**
-[Custom Syntax](#custom-syntax) · [Handler Helpers](#handler-helpers) · [ParseOptions](#parseoptions) · [Stable Token IDs](#stable-token-ids) · [Source Position Tracking](#source-position-tracking) · [Error Handling](#error-handling) · [Exports](#exports) · [Incremental Parsing](https://github.com/chiba233/yumeDSL/wiki/en-Incremental-Parsing) · [Deprecated API](#deprecated-api) · [Compatibility](#compatibility-notes)
+[Custom Syntax](#custom-syntax) · [Handler Helpers](#handler-helpers) · [ParseOptions](#parseoptions) · [Stable Token IDs](#stable-token-ids) · [Source Position Tracking](#source-position-tracking) · [Error Handling](#error-handling) · [Exports](#exports) · [Incremental Parsing](https://github.com/chiba233/yumeDSL/wiki/en-Incremental-Parsing) · [Deprecated API](#deprecated-api) · [Compatibility](https://github.com/chiba233/yumeDSL/wiki/en-Version-Semantics)
 
 ---
 
@@ -760,9 +760,9 @@ signatures, replacements, and migration guide.
 
 ### Compatibility notes
 
-- Dual inline + block/raw tags on the same name: `1.0.7+`
-- `createParser` partial-override deep merge: `1.0.11+`
-- `declareMultilineTags` inline form support (`MultilineForm: "inline"`): `1.0.14+`
+Compatibility and upgrade-sensitive behavior notes now live in the wiki:
+
+- [Version Semantics Notes](https://github.com/chiba233/yumeDSL/wiki/en-Version-Semantics)
 
 ---
 

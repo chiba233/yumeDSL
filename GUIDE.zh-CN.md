@@ -125,7 +125,7 @@ const RichText: FC<{ tokens: TextToken[] }> = ({tokens}) => (
 **从这里开始：** [安装](#安装) · [快速开始](#快速开始) · [DSL 语法](#dsl-语法) · [API](#api)
 
 **深入了解：**
-[自定义语法](#自定义语法) · [处理器辅助函数](#处理器辅助函数) · [ParseOptions](#parseoptions) · [稳定 Token ID](#稳定-token-id) · [源码位置追踪](#源码位置追踪) · [错误处理](#错误处理) · [导出一览](#导出一览) · [增量解析](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%A2%9E%E9%87%8F%E8%A7%A3%E6%9E%90) · [待弃用 API](#待弃用-api) · [兼容性](#兼容性说明)
+[自定义语法](#自定义语法) · [处理器辅助函数](#处理器辅助函数) · [ParseOptions](#parseoptions) · [稳定 Token ID](#稳定-token-id) · [源码位置追踪](#源码位置追踪) · [错误处理](#错误处理) · [导出一览](#导出一览) · [增量解析](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%A2%9E%E9%87%8F%E8%A7%A3%E6%9E%90) · [待弃用 API](#待弃用-api) · [兼容性](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E7%89%88%E6%9C%AC%E8%AF%AD%E4%B9%89%E8%AF%B4%E6%98%8E)
 
 ---
 
@@ -749,8 +749,9 @@ parseRichText("$$bold(unclosed", {
 
 ### 兼容性说明
 
-- 同一标签同时支持 inline 与 block/raw：`1.0.7+`
-- `createParser` 局部覆盖深合并：`1.0.11+`
+兼容性与版本升级时需要注意的行为变化，现已统一放到 wiki：
+
+- [版本语义说明](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E7%89%88%E6%9C%AC%E8%AF%AD%E4%B9%89%E8%AF%B4%E6%98%8E)
 
 ---
 
