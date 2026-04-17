@@ -896,7 +896,7 @@ semantics.
 - Add CI publish workflow for npm and GitHub Packages
 - Add pre-publish README verification step
 
-### 0.1.1
+### 0.1.2
 
 - Fix: ensure parse errors are reported correctly
 - Add golden test suite (60 cases) and dist smoke tests (36 cases)
