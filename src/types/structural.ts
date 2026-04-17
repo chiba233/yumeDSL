@@ -9,26 +9,65 @@ import type { ParserBaseOptions, SourceSpan } from "./core.js";
  * and accepts any syntactically valid tag without handler registration.
  */
 export type StructuralNode =
-  | { type: "text"; value: string; position?: SourceSpan }
-  | { type: "escape"; raw: string; position?: SourceSpan }
-  | { type: "separator"; position?: SourceSpan }
   | {
+      /** Plain text segment with no recognized tag structure. */
+      type: "text";
+      /** Text content exactly as preserved by structural parsing. */
+      value: string;
+      /** Optional source span when position tracking is enabled. */
+      position?: SourceSpan;
+    }
+  | {
+      /** Escaped syntax literal preserved as a dedicated node. */
+      type: "escape";
+      /** Raw escaped source content, including the escape sequence payload. */
+      raw: string;
+      /** Optional source span when position tracking is enabled. */
+      position?: SourceSpan;
+    }
+  | {
+      /** Separator token produced only inside structural arg parsing. */
+      type: "separator";
+      /** Optional source span when position tracking is enabled. */
+      position?: SourceSpan;
+    }
+  | {
+      /** Inline-form tag node. */
       type: "inline";
+      /** Parsed tag name. */
       tag: string;
+      /** Nested inline/body children. */
       children: StructuralNode[];
       /**
        * True when this inline node comes from implicit inline shorthand (`name(...)`)
        * inside an inline-arg context.
        */
       implicitInlineShorthand?: boolean;
+      /** Optional source span when position tracking is enabled. */
       position?: SourceSpan;
     }
-  | { type: "raw"; tag: string; args: StructuralNode[]; content: string; position?: SourceSpan }
   | {
-      type: "block";
+      /** Raw-form tag node. */
+      type: "raw";
+      /** Parsed tag name. */
       tag: string;
+      /** Parsed structural arg nodes before the raw body. */
       args: StructuralNode[];
+      /** Raw body content preserved as plain string. */
+      content: string;
+      /** Optional source span when position tracking is enabled. */
+      position?: SourceSpan;
+    }
+  | {
+      /** Block-form tag node. */
+      type: "block";
+      /** Parsed tag name. */
+      tag: string;
+      /** Parsed structural arg nodes before the block body. */
+      args: StructuralNode[];
+      /** Parsed structural children inside the block body. */
       children: StructuralNode[];
+      /** Optional source span when position tracking is enabled. */
       position?: SourceSpan;
     };
 

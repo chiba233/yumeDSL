@@ -1,6 +1,11 @@
 // ── Internal types (not re-exported from index) ──
 
-/** Buffered text/segment state while scanning structural frames. */
+/**
+ * Buffered text/segment state while scanning structural frames.
+ *
+ * The scanner accumulates contiguous plain-text ranges and optional escaped
+ * fragments before flushing them into structural nodes.
+ */
 export interface BufferState {
   /** Buffered range start in frame-local source. */
   start: number;
@@ -10,7 +15,12 @@ export interface BufferState {
   segments: number[] | null;
 }
 
-/** Parsed result for a complete tag start token at cursor. */
+/**
+ * Parsed result for a complete tag-start token at the current cursor.
+ *
+ * Used by frame scanners after a tag head has already been recognized and the
+ * parser needs the exact bounds of the argument section.
+ */
 export interface TagStartInfo {
   /** Parsed tag name. */
   tag: string;
@@ -22,7 +32,12 @@ export interface TagStartInfo {
   argStart: number;
 }
 
-/** Minimal tag head info used by scanner helpers. */
+/**
+ * Minimal tag-head info used by low-level scanner helpers.
+ *
+ * Compared with {@link TagStartInfo}, this is the lighter-weight shape used
+ * before the full opening token has been validated.
+ */
 export interface TagHead {
   /** Parsed tag name. */
   tag: string;

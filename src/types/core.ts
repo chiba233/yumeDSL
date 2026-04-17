@@ -4,8 +4,11 @@ import type { SyntaxInput, SyntaxConfig, TagNameConfig } from "./config.js";
 
 /** Absolute source position used by `trackPositions` outputs. */
 export interface SourcePosition {
+  /** UTF-16 code-unit offset from the start of the original source. */
   offset: number;
+  /** 1-based line number. */
   line: number;
+  /** 1-based column number within the resolved line. */
   column: number;
 }
 
@@ -28,17 +31,25 @@ export interface PositionTracker {
 
 /** Render token shape returned by `parseRichText`. */
 export interface TextToken {
+  /** Semantic token kind chosen by the matching handler. */
   type: string;
+  /** Token payload: plain text or nested child tokens. */
   value: string | TextToken[];
+  /** Stable token id used by renderers and diff-aware consumers. */
   id: string;
+  /** Optional source span when `trackPositions` is enabled. */
   position?: SourceSpan;
+  /** Extension slot for handler-defined metadata such as `url`, `lang`, or `title`. */
   [key: string]: unknown;
 }
 
 /** Token draft shape expected from handlers before `id` assignment. */
 export interface TokenDraft {
+  /** Semantic token kind chosen by the handler. */
   type: string;
+  /** Draft payload before the parser attaches `id`. */
   value: string | TextToken[];
+  /** Extension slot for handler-defined metadata. */
   [key: string]: unknown;
 }
 
@@ -159,7 +170,13 @@ export interface DslContext {
 
 // ── Tag handling ──
 
-/** Runtime handlers for each supported tag form. */
+/**
+ * Runtime handlers for each supported tag form.
+ *
+ * A handler may implement any subset of forms. Missing forms degrade
+ * gracefully: the parser keeps the original source as plain text rather than
+ * throwing.
+ */
 export interface TagHandler {
   /** Inline-form handler (`$$tag(args)$$`). */
   inline?: (tokens: TextToken[], ctx?: DslContext) => TokenDraft;
@@ -169,9 +186,13 @@ export interface TagHandler {
   block?: (arg: string | undefined, content: TextToken[], ctx?: DslContext) => TokenDraft;
 }
 
-/** Supported structural tag forms. */
+/** Supported structural tag forms understood by the parser. */
 export type TagForm = "inline" | "raw" | "block";
-/** Controls implicit inline shorthand parsing in inline arg context. */
+/**
+ * Controls implicit inline shorthand parsing in inline-arg context.
+ *
+ * The shorthand form is `name(...)` without the normal `tagOpen` prefix.
+ */
 export type InlineShorthandOption = boolean | readonly string[];
 
 /** @internal Alias — same union, used for line-break normalization context. */
@@ -217,7 +238,12 @@ export type ErrorCode =
   | "RAW_NOT_CLOSED"
   | "RAW_CLOSE_MALFORMED";
 
-/** Structured parse error payload passed to `onError`. */
+/**
+ * Structured parse error payload passed to `onError`.
+ *
+ * Errors are best-effort diagnostics: parsing continues with graceful
+ * degradation whenever possible instead of aborting the whole document.
+ */
 export interface ParseError {
   /** Machine-readable error code. */
   code: ErrorCode;
@@ -240,7 +266,12 @@ export interface ParseError {
  * syntax configuration, and depth limiting.
  */
 export interface ParserBaseOptions {
-  /** Tag handler map – keys are tag names, values define how each tag is parsed. */
+  /**
+   * Tag handler map keyed by tag name.
+   *
+   * When omitted, `parseRichText` treats every tag as unknown and `parseStructural`
+   * accepts any syntactically valid tag without handler gating.
+   */
   handlers?: Record<string, TagHandler>;
   /**
    * Restrict which tag forms the parser will accept.
@@ -258,7 +289,12 @@ export interface ParserBaseOptions {
    * Default: `false`.
    */
   implicitInlineShorthand?: InlineShorthandOption;
-  /** Maximum nesting depth (default 50). */
+  /**
+   * Maximum nesting depth before the parser degrades deeper syntax to text.
+   *
+   * This protects against pathological nesting and accidental stack pressure.
+   * Default: `50`.
+   */
   depthLimit?: number;
   /** Override DSL syntax tokens (default: `$$tag(…)$$` family). */
   syntax?: Partial<SyntaxInput>;
@@ -303,7 +339,12 @@ export interface ParseOptions extends ParserBaseOptions {
    * Use `parseStructural` for syntax-highlighting use cases.
    */
   mode?: "render";
-  /** Called for every parse error. If omitted, errors are silently discarded. */
+  /**
+   * Called for every parse error that the parser decides to surface.
+   *
+   * Throwing inside `onError` does not abort parsing; the parser swallows the
+   * callback failure and continues.
+   */
   onError?: (error: ParseError) => void;
   /** When true, attach source position info (`position`) to every TextToken. Default: false. */
   trackPositions?: boolean;

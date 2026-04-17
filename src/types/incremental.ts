@@ -136,22 +136,38 @@ export interface IncrementalSessionApplyResult {
 
 // ── Token diff types ──
 
+/** Half-open range over token indexes. */
+export interface TokenIndexRange {
+  /** Inclusive starting token index. */
+  start: number;
+  /** Exclusive ending token index. */
+  end: number;
+}
+
+/** Source-coordinate span expressed in UTF-16 offsets. */
+export interface SourceOffsetRange {
+  /** Inclusive starting source offset. */
+  startOffset: number;
+  /** Exclusive ending source offset. */
+  endOffset: number;
+}
+
 /** Token-index patch emitted by incremental token diff. */
 export interface TokenDiffPatch {
   /** Patch kind over token-index ranges. */
   kind: "insert" | "remove" | "replace";
   /** Half-open range in previous token array. */
-  oldRange: { start: number; end: number };
+  oldRange: TokenIndexRange;
   /** Half-open range in next token array. */
-  newRange: { start: number; end: number };
+  newRange: TokenIndexRange;
 }
 
 /** Matched unchanged token-index range pair (`old` ↔ `new`). */
 export interface TokenDiffUnchangedRange {
   /** Half-open range in previous token array. */
-  oldRange: { start: number; end: number };
+  oldRange: TokenIndexRange;
   /** Half-open range in next token array. */
-  newRange: { start: number; end: number };
+  newRange: TokenIndexRange;
 }
 
 // ── Structural diff types ──
@@ -170,6 +186,24 @@ export interface StructuralDiffPathSegment {
 /** Path from the root structural node array to a specific node. */
 export type StructuralDiffPath = StructuralDiffPathSegment[];
 
+/**
+ * Shared scalar value-op shape for path-aware structural updates.
+ *
+ * Specialized ops such as `set-text` and `set-escape` reuse this base to keep
+ * their contract consistent: address one node by path, then replace one scalar
+ * payload field.
+ */
+export interface StructuralDiffValueOpBase<TKind extends string, TValue> {
+  /** Operation discriminator. */
+  kind: TKind;
+  /** Path to the target node in the previous tree. */
+  path: StructuralDiffPath;
+  /** Previous scalar value observed at that node. */
+  oldValue: TValue;
+  /** Next scalar value that should replace `oldValue`. */
+  newValue: TValue;
+}
+
 /** Array splice inside the root tree or a node's `children` / `args`. */
 export interface StructuralDiffSpliceOp {
   kind: "splice";
@@ -178,9 +212,9 @@ export interface StructuralDiffSpliceOp {
   /** Which array container under `path` is being modified. */
   field: StructuralDiffContainerField;
   /** Half-open range in the previous container. */
-  oldRange: { start: number; end: number };
+  oldRange: TokenIndexRange;
   /** Half-open range in the next container. */
-  newRange: { start: number; end: number };
+  newRange: TokenIndexRange;
   /** Previous nodes covered by the splice. */
   oldNodes: StructuralNode[];
   /** Next nodes covered by the splice. */
@@ -188,40 +222,17 @@ export interface StructuralDiffSpliceOp {
 }
 
 /** Scalar text update on a `text` node. */
-export interface StructuralDiffTextOp {
-  kind: "set-text";
-  /** Path to the target `text` node. */
-  path: StructuralDiffPath;
-  oldValue: string;
-  newValue: string;
-}
+export interface StructuralDiffTextOp extends StructuralDiffValueOpBase<"set-text", string> {}
 
 /** Scalar raw update on an `escape` node. */
-export interface StructuralDiffEscapeOp {
-  kind: "set-escape";
-  /** Path to the target `escape` node. */
-  path: StructuralDiffPath;
-  oldValue: string;
-  newValue: string;
-}
+export interface StructuralDiffEscapeOp extends StructuralDiffValueOpBase<"set-escape", string> {}
 
 /** Scalar content update on a `raw` node. */
-export interface StructuralDiffRawContentOp {
-  kind: "set-raw-content";
-  /** Path to the target `raw` node. */
-  path: StructuralDiffPath;
-  oldValue: string;
-  newValue: string;
-}
+export interface StructuralDiffRawContentOp extends StructuralDiffValueOpBase<"set-raw-content", string> {}
 
 /** Flag update on an `inline` node. */
-export interface StructuralDiffInlineFlagOp {
-  kind: "set-implicit-inline-shorthand";
-  /** Path to the target `inline` node. */
-  path: StructuralDiffPath;
-  oldValue?: boolean;
-  newValue?: boolean;
-}
+export interface StructuralDiffInlineFlagOp
+  extends StructuralDiffValueOpBase<"set-implicit-inline-shorthand", boolean | undefined> {}
 
 /** Path-aware structural operations emitted alongside range-based token diff. */
 export type StructuralDiffOp =
@@ -248,9 +259,9 @@ export interface TokenDiffResult {
    */
   ops: StructuralDiffOp[];
   /** Best-effort dirty span in previous source coordinates. */
-  dirtySpanOld: { startOffset: number; endOffset: number };
+  dirtySpanOld: SourceOffsetRange;
   /** Best-effort dirty span in next source coordinates. */
-  dirtySpanNew: { startOffset: number; endOffset: number };
+  dirtySpanNew: SourceOffsetRange;
 }
 
 /** Session apply result extended with token diff payload. */
