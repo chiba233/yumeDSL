@@ -27,17 +27,33 @@ import { flattenZones, getCachedZoneSignature, setCachedZoneSignature } from "./
 // shiftNode 用显式栈迭代，避免递归爆栈。
 // 这里不能原地改旧节点 position：
 // 右侧 zone 可能仍被旧文档快照引用，原地写会把"历史版本"一起污染掉。
+type ShiftFrame =
+  | {
+      kind: "inline";
+      source: Extract<StructuralNode, { type: "inline" }>;
+      target: Extract<StructuralNode, { type: "inline" }>;
+    }
+  | {
+      kind: "raw";
+      source: Extract<StructuralNode, { type: "raw" }>;
+      target: Extract<StructuralNode, { type: "raw" }>;
+    }
+  | {
+      kind: "block";
+      source: Extract<StructuralNode, { type: "block" }>;
+      target: Extract<StructuralNode, { type: "block" }>;
+    };
+
 const shiftPosition = (
-  position: SourcePosition | undefined,
+  position: SourcePosition,
   delta: number,
   tracker: PositionTracker,
-): SourcePosition | undefined => {
-  if (!position) return undefined;
-  return tracker.resolve(position.offset + delta);
-};
+): SourcePosition => tracker.resolve(position.offset + delta);
+
+const describeNodeType = (node: Pick<StructuralNode, "type">): StructuralNode["type"] => node.type;
 
 const assertUnreachable = (value: never): never => {
-  throw new Error(`shiftNode(): unexpected node type: ${String((value as { type?: unknown }).type)}`);
+  throw new Error(`shiftNode(): unexpected node type: ${describeNodeType(value)}`);
 };
 
 const createShiftedNodeShell = (
@@ -45,12 +61,13 @@ const createShiftedNodeShell = (
   delta: number,
   tracker: PositionTracker,
 ): StructuralNode => {
-  const position = node.position
-    ? {
-        start: shiftPosition(node.position.start, delta, tracker)!,
-        end: shiftPosition(node.position.end, delta, tracker)!,
-      }
-    : undefined;
+  const position =
+    node.position === undefined
+      ? undefined
+      : {
+          start: shiftPosition(node.position.start, delta, tracker),
+          end: shiftPosition(node.position.end, delta, tracker),
+        };
 
   if (node.type === "text") return { type: "text", value: node.value, position };
   if (node.type === "escape") return { type: "escape", raw: node.raw, position };
@@ -63,7 +80,16 @@ const createShiftedNodeShell = (
 
 const shiftNode = (node: StructuralNode, delta: number, tracker: PositionTracker): StructuralNode => {
   const root = createShiftedNodeShell(node, delta, tracker);
-  const stack: Array<{ source: StructuralNode; target: StructuralNode }> = [{ source: node, target: root }];
+  const stack: ShiftFrame[] = [];
+  const pushFrame = (sourceNode: StructuralNode, targetNode: StructuralNode): void => {
+    if (sourceNode.type === "inline" && targetNode.type === "inline") {
+      stack.push({ kind: "inline", source: sourceNode, target: targetNode });
+    } else if (sourceNode.type === "raw" && targetNode.type === "raw") {
+      stack.push({ kind: "raw", source: sourceNode, target: targetNode });
+    } else if (sourceNode.type === "block" && targetNode.type === "block") {
+      stack.push({ kind: "block", source: sourceNode, target: targetNode });
+    }
+  };
 
   const appendShiftedNodes = (
     sourceNodes: readonly StructuralNode[],
@@ -73,28 +99,25 @@ const shiftNode = (node: StructuralNode, delta: number, tracker: PositionTracker
       const sourceNode = sourceNodes[i];
       const targetNode = createShiftedNodeShell(sourceNode, delta, tracker);
       targetNodes.push(targetNode);
-      if (sourceNode.type === "inline" || sourceNode.type === "raw" || sourceNode.type === "block") {
-        stack.push({ source: sourceNode, target: targetNode });
-      }
+      pushFrame(sourceNode, targetNode);
     }
   };
+
+  pushFrame(node, root);
 
   while (stack.length > 0) {
     const frame = stack.pop();
     if (!frame) break;
-    const { source, target } = frame;
-
-    if (source.type === "text" || source.type === "escape" || source.type === "separator") continue;
-
-    if (source.type === "inline" && target.type === "inline") {
+    if (frame.kind === "inline") {
+      const { source, target } = frame;
       appendShiftedNodes(source.children, target.children);
-    } else if (source.type === "raw" && target.type === "raw") {
+    } else if (frame.kind === "raw") {
+      const { source, target } = frame;
       appendShiftedNodes(source.args, target.args);
-    } else if (source.type === "block" && target.type === "block") {
+    } else if (frame.kind === "block") {
+      const { source, target } = frame;
       appendShiftedNodes(source.args, target.args);
       appendShiftedNodes(source.children, target.children);
-    } else {
-      throw new Error(`shiftNode(): unsupported frame source type: ${source.type}`);
     }
   }
 

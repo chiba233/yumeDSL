@@ -2,6 +2,19 @@
 
 # Changelog
 
+### 1.4.2
+
+- **Internal: type-level cleanup across incremental and internal modules**
+  - Eliminated remaining `as` casts and `!` non-null assertions in `incremental/` and `internal/` source files.
+  - `lazy.ts`: replaced untyped stack frames with a discriminated `ShiftFrame` union; `shiftPosition` no longer accepts `undefined`.
+  - `options.ts`: introduced `SnapshotValue` type family so the clone pipeline is fully narrowed end-to-end; `getIdentityForUnknown` replaced with properly typed `getIdentityForReference`; `buildHandlersShapeFingerprint` now takes `IncrementalParseOptions["handlers"]` instead of `unknown`.
+  - `zones.ts`: extracted `PositionedStructuralNode` type guard; sentinel value `-1` replaced with `null` for pending zone boundaries.
+  - `stableId.ts`: `activeState()` uses `??` instead of `!`; introduced `StableTokenChildren` / `StableIdTokenInput` type aliases.
+  - `incremental.ts`: simplified `createIncrementalEditError` to `Object.assign`; extracted `isIncrementalUpdateErrorCode` type predicate.
+  - `document.ts` / `lazy.ts`: unified `describeNodeType` helper for error messages, replacing raw `as` casts.
+  - `errors.ts` / `blockTagFormatting.ts`: normalized import paths (`"../types/index.js"` → `"../types"`).
+- No breaking public API changes
+
 ### 1.4.1
 
 - **Incremental parsing: malformed nested inline edits no longer stall**

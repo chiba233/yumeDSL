@@ -108,23 +108,21 @@ export const __setIncrementalDebugSink: (sink?: IncrementalDebugSink) => void = 
 const createIncrementalEditError = (
   code: IncrementalUpdateErrorCode,
   message: string,
-): IncrementalUpdateError => {
+): IncrementalUpdateError =>
   // code 不是装饰字段，而是 session fallbackReason 的输入。
   // 没有它，上层只能把所有失败都当成同一类未知异常。
-  const error = new Error(message) as IncrementalUpdateError;
-  error.code = code;
-  return error;
-};
+  Object.assign(new Error(message), { code });
+
+const isIncrementalUpdateErrorCode = (code: string): code is IncrementalUpdateErrorCode =>
+  code === "INVALID_EDIT_RANGE" ||
+  code === "NEW_SOURCE_LENGTH_MISMATCH" ||
+  code === "EDIT_TEXT_MISMATCH" ||
+  code === "UNKNOWN";
 
 const isIncrementalUpdateError = (error: unknown): error is IncrementalUpdateError => {
   if (!(error instanceof Error)) return false;
-  const withCode = error as Error & { code?: unknown };
-  return (
-    withCode.code === "INVALID_EDIT_RANGE" ||
-    withCode.code === "NEW_SOURCE_LENGTH_MISMATCH" ||
-    withCode.code === "EDIT_TEXT_MISMATCH" ||
-    withCode.code === "UNKNOWN"
-  );
+  if (!("code" in error) || typeof error.code !== "string") return false;
+  return isIncrementalUpdateErrorCode(error.code);
 };
 
 // ── 增量更新核心（编排层）──

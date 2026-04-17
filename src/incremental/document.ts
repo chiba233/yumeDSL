@@ -68,8 +68,10 @@ const hashText = (value: string): number => fnv1a(value);
 // 只 hash 首尾各 32 字符（O(1) 有界），在速度和误判率之间取平衡。
 const hashTextBounded = (hash: number, value: string): number => fnvFeedStringBounded(hash, value);
 
+const describeNodeType = (node: Pick<StructuralNode, "type">): StructuralNode["type"] => node.type;
+
 const assertUnreachableNode = (value: never): never => {
-  throw new Error(`nodeSignature(): unexpected node type: ${String((value as { type?: unknown }).type)}`);
+  throw new Error(`nodeSignature(): unexpected node type: ${describeNodeType(value)}`);
 };
 
 /**

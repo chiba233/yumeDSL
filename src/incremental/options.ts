@@ -1,6 +1,15 @@
 import { fnvFeedU32, fnvInit, fnv1a } from "../internal/hash.js";
 import type { IncrementalParseOptions } from "../types";
 
+type SnapshotPrimitive = string | number | boolean | bigint | symbol | null | undefined;
+type SnapshotReference = object | Function;
+interface SnapshotObject {
+  [key: string]: SnapshotValue;
+}
+interface SnapshotArray extends Array<SnapshotValue> {}
+type SnapshotValue = SnapshotPrimitive | SnapshotReference | SnapshotObject | SnapshotArray;
+type SnapshotContainer = SnapshotObject | SnapshotArray;
+
 // ── 快照克隆 ──
 //
 // 为什么要克隆 parseOptions？
@@ -16,7 +25,7 @@ import type { IncrementalParseOptions } from "../types";
 // 这里最容易踩坑的点就是：不要把 frozenSnapshots 当作"可以直接复用旧 options 对象"的许可。
 // 只要 options 里面还有 handlers / syntax 这类可变嵌套结构，就必须重新拍扁成新 snapshot。
 
-const isPlainObject = (value: unknown): value is Record<string, unknown> => {
+const isPlainObject = (value: SnapshotValue): value is SnapshotObject => {
   if (!value || typeof value !== "object") return false;
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
@@ -24,33 +33,34 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> => {
 
 // 深拷贝：只处理 plain object 和 array，函数/class 实例原样返回。
 // 显式栈 + seen WeakMap 防循环引用（不走原生递归，避免深层栈溢出）。
-const cloneSnapshotValueInternal = <T>(value: T, seen: WeakMap<object, unknown>): T => {
+const cloneSnapshotValueInternal = <TValue extends SnapshotValue>(
+  value: TValue,
+  seen: WeakMap<object, SnapshotContainer>,
+): TValue => {
   type ObjectFrame = {
     kind: "object";
-    source: Record<string, unknown>;
-    target: Record<string, unknown>;
+    source: SnapshotObject;
+    target: SnapshotObject;
     keys: string[];
     index: number;
   };
   type ArrayFrame = {
     kind: "array";
-    source: unknown[];
-    target: unknown[];
+    source: SnapshotArray;
+    target: SnapshotArray;
     index: number;
   };
   type CloneFrame = ObjectFrame | ArrayFrame;
-  type CloneContainer = {
-    source: object;
-    clone: unknown[] | Record<string, unknown>;
-    kind: "array" | "object";
-  };
+  type ArrayCloneContainer = { kind: "array"; source: SnapshotArray; clone: SnapshotArray };
+  type ObjectCloneContainer = { kind: "object"; source: SnapshotObject; clone: SnapshotObject };
+  type CloneContainer = ArrayCloneContainer | ObjectCloneContainer;
 
-  const asContainer = (candidate: unknown): CloneContainer | undefined => {
+  const asContainer = (candidate: SnapshotValue): CloneContainer | undefined => {
     if (Array.isArray(candidate)) {
-      return { source: candidate, clone: new Array(candidate.length), kind: "array" };
+      return { kind: "array", source: candidate, clone: new Array(candidate.length) };
     }
     if (isPlainObject(candidate)) {
-      return { source: candidate, clone: {}, kind: "object" };
+      return { kind: "object", source: candidate, clone: {} };
     }
     return undefined;
   };
@@ -62,23 +72,23 @@ const cloneSnapshotValueInternal = <T>(value: T, seen: WeakMap<object, unknown>)
     if (container.kind === "array") {
       stack.push({
         kind: "array",
-        source: container.source as unknown[],
-        target: container.clone as unknown[],
+        source: container.source,
+        target: container.clone,
         index: 0,
       });
       return;
     }
     stack.push({
       kind: "object",
-      source: container.source as Record<string, unknown>,
-      target: container.clone as Record<string, unknown>,
-      keys: Object.keys(container.source as Record<string, unknown>),
+      source: container.source,
+      target: container.clone,
+      keys: Object.keys(container.source),
       index: 0,
     });
   };
 
   const rootSeen = seen.get(rootContainer.source);
-  if (rootSeen !== undefined) return rootSeen as T;
+  if (rootSeen !== undefined) return rootSeen as TValue;
   seen.set(rootContainer.source, rootContainer.clone);
 
   const stack: CloneFrame[] = [];
@@ -130,11 +140,11 @@ const cloneSnapshotValueInternal = <T>(value: T, seen: WeakMap<object, unknown>)
     pushContainerFrame(container, stack);
   }
 
-  return rootContainer.clone as T;
+  return rootContainer.clone as TValue;
 };
 
-const cloneSnapshotValue = <T>(value: T): T =>
-  cloneSnapshotValueInternal(value, new WeakMap<object, unknown>());
+const cloneSnapshotValue = <TValue extends SnapshotValue>(value: TValue): TValue =>
+  cloneSnapshotValueInternal(value, new WeakMap<object, SnapshotContainer>());
 
 // handler 克隆：每个 handler 的 data 字段递归深拷贝，函数引用保留。
 // 不能改成浅拷贝——测试证明 handler.meta 这种嵌套对象会被外部改动。
@@ -181,7 +191,7 @@ let objectIdentitySeed = 1;
 const objectIdentityMap = new WeakMap<object, number>();
 
 // 给函数/对象分配稳定整数 ID，用于 fingerprint 中比对 handler 引用是否相同。
-const getObjectIdentity = (value: object | undefined): number => {
+const getObjectIdentity = (value: SnapshotReference | undefined): number => {
   if (!value) return 0;
   const cached = objectIdentityMap.get(value);
   if (cached) return cached;
@@ -191,12 +201,8 @@ const getObjectIdentity = (value: object | undefined): number => {
   return next;
 };
 
-const getIdentityForUnknown = (value: unknown): number => {
-  if ((typeof value === "object" && value !== null) || typeof value === "function") {
-    return getObjectIdentity(value);
-  }
-  return 0;
-};
+const getIdentityForReference = (value: SnapshotReference | null | undefined): number =>
+  value ? getObjectIdentity(value) : 0;
 
 const hashText = (value: string): number => fnv1a(value);
 
@@ -205,21 +211,19 @@ const hashText = (value: string): number => fnv1a(value);
 // 等价 handler 用不同顺序构造会产生不同 key 序列，不排序会误判为"配置变了"。
 // 这里故意只看 handler 形状和函数 identity，不看 handler 附带的 plain data。
 // plain data 的隔离由 snapshot clone 负责；fingerprint 若把它也算进去，会让增量路径过度敏感。
-const buildHandlersShapeFingerprint = (handlers: unknown): number => {
-  if (!handlers || typeof handlers !== "object") return 0;
-  const record = handlers as Record<string, unknown>;
-  const keys = Object.keys(record).sort();
+const buildHandlersShapeFingerprint = (handlers: IncrementalParseOptions["handlers"] | undefined): number => {
+  if (!handlers) return 0;
+  const keys = Object.keys(handlers).sort();
   let hash = fnvInit();
   hash = fnvFeedU32(hash, keys.length);
   for (let i = 0; i < keys.length; i++) {
     const key = keys[i];
-    const handler = record[key];
+    const handler = handlers[key];
     hash = fnvFeedU32(hash, hashText(key));
-    if (!handler || typeof handler !== "object") continue;
-    const handlerRecord = handler as Record<string, unknown>;
-    hash = fnvFeedU32(hash, getIdentityForUnknown(handlerRecord.inline));
-    hash = fnvFeedU32(hash, getIdentityForUnknown(handlerRecord.raw));
-    hash = fnvFeedU32(hash, getIdentityForUnknown(handlerRecord.block));
+    if (!handler) continue;
+    hash = fnvFeedU32(hash, getIdentityForReference(handler.inline));
+    hash = fnvFeedU32(hash, getIdentityForReference(handler.raw));
+    hash = fnvFeedU32(hash, getIdentityForReference(handler.block));
   }
   return hash >>> 0;
 };
@@ -272,7 +276,7 @@ export const buildParseOptionsFingerprint = (options: IncrementalParseOptions | 
     hash = fnvFeedU32(hash, hashText(syntax[key] ?? ""));
   }
 
-  hash = fnvFeedU32(hash, getObjectIdentity(tagName.isTagStartChar as object | undefined));
-  hash = fnvFeedU32(hash, getObjectIdentity(tagName.isTagChar as object | undefined));
+  hash = fnvFeedU32(hash, getObjectIdentity(tagName.isTagStartChar));
+  hash = fnvFeedU32(hash, getObjectIdentity(tagName.isTagChar));
   return hash >>> 0;
 };

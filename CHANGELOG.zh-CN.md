@@ -2,6 +2,19 @@
 
 # 更新日志
 
+### 1.4.2
+
+- **内部：incremental / internal 模块的类型级清理**
+  - 消除了 `incremental/` 和 `internal/` 源文件中残留的 `as` 强转与 `!` 非空断言。
+  - `lazy.ts`：用辨别联合 `ShiftFrame` 替代无类型栈帧；`shiftPosition` 不再接受 `undefined`。
+  - `options.ts`：引入 `SnapshotValue` 类型族，克隆管线全链路类型收窄；`getIdentityForUnknown` 改为类型正确的 `getIdentityForReference`；`buildHandlersShapeFingerprint` 参数由 `unknown` 改为 `IncrementalParseOptions["handlers"]`。
+  - `zones.ts`：提取 `PositionedStructuralNode` 类型守卫；哨兵值 `-1` 改为 `null`。
+  - `stableId.ts`：`activeState()` 改用 `??` 替代 `!`；引入 `StableTokenChildren` / `StableIdTokenInput` 类型别名。
+  - `incremental.ts`：`createIncrementalEditError` 简化为 `Object.assign`；提取 `isIncrementalUpdateErrorCode` 类型谓词。
+  - `document.ts` / `lazy.ts`：统一 `describeNodeType` 辅助函数用于错误消息，替代原始 `as` 强转。
+  - `errors.ts` / `blockTagFormatting.ts`：规范化导入路径（`"../types/index.js"` → `"../types"`）。
+- 无破坏性公共 API 变化
+
 ### 1.4.1
 
 - **增量解析：损坏的深层 inline 编辑不再卡住**

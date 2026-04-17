@@ -1,6 +1,9 @@
 import type { CreateId, TextToken, TokenDraft } from "../types";
 import { fnv1a, fnvFeedString, fnvFeedU32, fnvInit } from "./hash.js";
 
+type StableTokenChildren = readonly TextToken[];
+type StableIdTokenInput = Readonly<Pick<TokenDraft, "type" | "value">>;
+
 /** @internal parse-lifecycle hooks — not part of public API. */
 export const BEGIN_PARSE: unique symbol = Symbol("yumeBeginParse");
 /** @internal */
@@ -72,7 +75,10 @@ export interface EasyStableIdOptions {
  * collects all uncached arrays via an iterative DFS and hashes them
  * bottom-up — no recursion, fully stack-safe.
  */
-const hashDraft = (root: TokenDraft, arrayCache: WeakMap<TextToken[], number>): number => {
+const hashDraft = (
+  root: StableIdTokenInput,
+  arrayCache: WeakMap<StableTokenChildren, number>,
+): number => {
   let h = fnvInit();
   h = fnvFeedString(h, root.type);
 
@@ -91,9 +97,9 @@ const hashDraft = (root: TokenDraft, arrayCache: WeakMap<TextToken[], number>): 
   // 注意：正常 createToken 流程是自底向上调用 createId 的，
   // 所以子数组一定已被缓存，这里的收集循环通常只包含 rootArr 自身。
   // 手动构造的深层 TokenDraft（如测试用例）才会真正触发多层收集。
-  const uncached: TextToken[][] = [];
-  const visiting = new Set<TextToken[]>();
-  const collectStack: TextToken[][] = [rootArr];
+  const uncached: StableTokenChildren[] = [];
+  const visiting = new Set<StableTokenChildren>();
+  const collectStack: StableTokenChildren[] = [rootArr];
 
   while (collectStack.length > 0) {
     const arr = collectStack.pop()!;
@@ -173,7 +179,7 @@ export const createEasyStableId = (options?: EasyStableIdOptions): CreateId => {
 
   interface StableIdState {
     seen: Map<string, number>;
-    arrayCache: WeakMap<TextToken[], number>;
+    arrayCache: WeakMap<StableTokenChildren, number>;
   }
 
   const createState = (): StableIdState => ({
@@ -181,7 +187,7 @@ export const createEasyStableId = (options?: EasyStableIdOptions): CreateId => {
     // 子数组哈希缓存：createToken 自底向上调用 createId，
     // 子 token 的 value 数组引用被 `{ ...draft, id }` 共享，
     // 所以父 token 处理时子数组一定已缓存，hashDraft 降为 O(1)。
-    arrayCache: new WeakMap<TextToken[], number>(),
+    arrayCache: new WeakMap<StableTokenChildren, number>(),
   });
 
   // lifetime 作用域下使用 baseState；
@@ -189,8 +195,10 @@ export const createEasyStableId = (options?: EasyStableIdOptions): CreateId => {
   const baseState = createState();
   const parseStateStack: StableIdState[] = [];
 
-  const activeState = (): StableIdState =>
-    parseStateStack.length > 0 ? parseStateStack[parseStateStack.length - 1]! : baseState;
+  const activeState = (): StableIdState => {
+    const state = parseStateStack[parseStateStack.length - 1];
+    return state ?? baseState;
+  };
 
   const createId = ((token: TokenDraft): string => {
     const state = activeState();

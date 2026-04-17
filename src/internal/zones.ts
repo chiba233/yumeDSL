@@ -1,5 +1,11 @@
 import type { StructuralNode, Zone } from "../types";
 
+type PositionedStructuralNode = StructuralNode & {
+  position: NonNullable<StructuralNode["position"]>;
+};
+
+const hasPosition = (node: StructuralNode): node is PositionedStructuralNode => node.position !== undefined;
+
 // ── Zone 构建器 ──
 //
 // 把顶层节点列表切分成连续 zone（偏移区间 + 节点数组）。
@@ -64,7 +70,7 @@ export const buildZonesInternal = (
   nodes: readonly StructuralNode[],
   softNodeCap: number,
 ): Zone[] => {
-  if (nodes.length > 0 && !nodes[0].position) {
+  if (nodes.length > 0 && !hasPosition(nodes[0])) {
     throw new Error(
       "buildZones(): nodes have no position info. " +
         "Parse with { trackPositions: true } before calling buildZones().",
@@ -72,44 +78,44 @@ export const buildZonesInternal = (
   }
 
   const zones: Zone[] = [];
-  let pending: StructuralNode[] = [];
-  let pendingStart = -1;
+  let pending: PositionedStructuralNode[] = [];
+  let pendingStart: number | null = null;
+  let pendingEnd: number | null = null;
 
   // 把当前累积的非 breaker 节点 flush 成一个 zone
-  const flushPending = (endOffset: number) => {
-    if (pending.length === 0) return;
-    zones.push({ startOffset: pendingStart, endOffset, nodes: pending });
+  const flushPending = () => {
+    if (pending.length === 0 || pendingStart === null || pendingEnd === null) return;
+    zones.push({ startOffset: pendingStart, endOffset: pendingEnd, nodes: pending });
     pending = [];
-    pendingStart = -1;
+    pendingStart = null;
+    pendingEnd = null;
   };
 
   for (const node of nodes) {
+    if (!hasPosition(node)) continue;
     const pos = node.position;
-    if (!pos) continue;
 
     if (isZoneBreaker(node)) {
       // 硬边界：先 flush 之前积攒的软 zone，再独占一个 zone
-      flushPending(pos.start.offset);
+      flushPending();
       zones.push({
         startOffset: pos.start.offset,
         endOffset: pos.end.offset,
         nodes: [node],
       });
     } else {
-      if (pendingStart === -1) pendingStart = pos.start.offset;
+      if (pendingStart === null) pendingStart = pos.start.offset;
+      pendingEnd = pos.end.offset;
       pending.push(node);
       // 软边界：节点数到达上限 → 切分，防止纯 inline 文档只产生一个巨型 zone
       if (pending.length >= softNodeCap) {
-        flushPending(pos.end.offset);
+        flushPending();
       }
     }
   }
 
   // 收尾：最后一批非 breaker 节点
-  if (pending.length > 0) {
-    const last = pending[pending.length - 1];
-    flushPending(last.position!.end.offset);
-  }
+  flushPending();
 
   return zones;
 };
