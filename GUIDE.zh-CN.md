@@ -48,7 +48,7 @@
 > 增量解析（~200 KB 文档里改一个 36 字符标签）：`nodeAtOffset` **~456.76 µs** + `parseSlice` **~8.36 µs**；
 > 同文档全量 `parseRichText` 需要 **~19.45 ms**——增量路径快约 **42 倍**。
 >
-> 极限压测：5000 万层单链 inline 嵌套（~500 MB）`parseStructural` **~224.1 s**（`1.1.4` 数据，`1.1.6` 未重测）。
+> 极限压测：5000 万层单链 inline 嵌套（~500 MB）`parseStructural` **~224.1 s**（历史 `1.1.4` 基准，当前 `1.4.x` 未重测）。
 > 大规模深嵌套基准使用放宽后的堆预算；具体条件见性能页。
 >
 > 配合 [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker) 的 `parseSlice`——只重解析被修改的区域。
@@ -413,6 +413,11 @@ const tree = parseStructural("$$bold(hello)$$ and $$code(ts)%\nconst x = 1;\n%en
 
 这两个 API 用在“不是只解析一次，而是文档会被持续编辑”的场景。
 
+这组增量 API 在 `1.4.x` 已属于稳定公开能力。
+尤其要注意：session 级 fallback 是文档化契约，不是异常边角行为；
+`applyEdit(...)` / `applyEditWithDiff(...)` 可能返回 `mode: "full-fallback"` 并带 `fallbackReason`，
+而 `sessionOptions.diffRefinementDepthCap` 用于在极深树里折中嵌套 diff 粒度与成本。
+
 - `parseIncremental(source, options?)` —— 建好并返回第一份增量快照（`IncrementalDocument`）
 - `createIncrementalSession(source, options?, sessionOptions?)` —— 建一个长期存活的 session，后面反复吃 edit
 
@@ -421,7 +426,7 @@ const tree = parseStructural("$$bold(hello)$$ and $$code(ts)%\nconst x = 1;\n%en
 - 只要第一份快照 → `parseIncremental(...)`
 - 编辑器 / 实时预览 / 连续更新 → `createIncrementalSession(...)`
 
-README / GUIDE 里这里只放最短说明。`getDocument`、`applyEdit`、`applyEditWithDiff`、`rebuild` 分别怎么用、为什么这么设计、返回字段是什么，统一看 [增量解析 wiki 页面](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%A2%9E%E9%87%8F%E8%A7%A3%E6%9E%90)。
+README / GUIDE 里这里只放最短说明。`getDocument`、`applyEdit`、`applyEditWithDiff`、`rebuild` 的完整用法、diff 消费方式与集成示例，统一看 [增量解析 wiki 页面](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%A2%9E%E9%87%8F%E8%A7%A3%E6%9E%90)。
 
 ---
 
@@ -670,11 +675,12 @@ const dsl = createParser({
 | **核心**       | `parseRichText`、`stripRichText`、`createParser`、`parseStructural`、`printStructural`、`buildZones`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | **增量解析**     | `parseIncremental`、`createIncrementalSession`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | **配置**       | `DEFAULT_SYNTAX`、`createEasySyntax`、`createSyntax`、`DEFAULT_TAG_NAME`、`createTagNameConfig`、`createEasyStableId`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| **处理器辅助函数**  | `createPipeHandlers`、`createSimpleInlineHandlers`、`createSimpleBlockHandlers`、`createSimpleRawHandlers`、`declareMultilineTags`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| **处理器工具函数**  | `parsePipeArgs`、`parsePipeTextArgs`、`parsePipeTextList`、`extractText`、`createTextToken`、`splitTokensByPipe`、`materializeTextTokens`、`unescapeInline`、`readEscapedSequence`、`createToken`                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| **处理器辅助函数**  | `createPassthroughTags`、`createPipeHandlers`、`createPipeBlockHandlers`、`createPipeRawHandlers`、`createSimpleInlineHandlers`、`createSimpleBlockHandlers`、`createSimpleRawHandlers`、`declareMultilineTags`                                                                                                                                                                                                                                                                                                                                                                                                             |
+| **处理器工具函数**  | `parsePipeArgs`、`parsePipeTextArgs`、`parsePipeTextList`、`extractText`、`createTextToken`、`splitTokensByPipe`、`materializeTextTokens`、`unescapeInline`、`readEscapedSequence`、`createToken`、`createTokenGuard`、`resetTokenIdSeed`                                                                                                                                                                                                                                                                                                                                                                                    |
 | **Token 遍历** | `walkTokens`、`mapTokens`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | **位置追踪**     | `buildPositionTracker`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| **类型**       | `TextToken`、`TokenDraft`、`CreateId`、`DslContext`、`TagHandler`、`TagForm`、`InlineShorthandOption`、`ParseOptions`、`ParserBaseOptions`、`StructuralParseOptions`、`Parser`、`SyntaxInput`、`SyntaxConfig`、`TagNameConfig`、`BlockTagInput`、`MultilineForm`、`ErrorCode`、`ParseError`、`StructuralNode`、`SourcePosition`、`SourceSpan`、`PositionTracker`、`PipeArgs`、`PipeHandlerDefinition`、`EasyStableIdOptions`、`PrintOptions`、`TokenVisitContext`、`WalkVisitor`、`MapVisitor`、`Zone`、`IncrementalDocument`、`IncrementalEdit`、`IncrementalParseOptions`、`IncrementalSessionOptions`、`TokenDiffResult`、`IncrementalSessionApplyResult`、`IncrementalSessionApplyWithDiffResult`、`NarrowToken`、`NarrowDraft`、`NarrowTokenUnion` |
+| **兼容上下文（已弃用）** | `withSyntax`、`getSyntax`、`withTagNameConfig`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| **类型**       | `TextToken`、`TokenDraft`、`CreateId`、`DslContext`、`TagHandler`、`TagForm`、`InlineShorthandOption`、`ParseOptions`、`ParserBaseOptions`、`StructuralParseOptions`、`Parser`、`SyntaxInput`、`SyntaxConfig`、`TagNameConfig`、`BlockTagInput`、`BlockTagLookup`、`MultilineForm`、`ErrorCode`、`ParseError`、`StructuralNode`、`SourcePosition`、`SourceSpan`、`PositionTracker`、`PipeArgs`、`PipeHandlerDefinition`、`EasyStableIdOptions`、`PrintOptions`、`TokenVisitContext`、`WalkVisitor`、`MapVisitor`、`Zone`、`IncrementalDocument`、`IncrementalEdit`、`IncrementalParseOptions`、`IncrementalSessionOptions`、`TokenDiffResult`、`IncrementalSessionApplyResult`、`IncrementalSessionApplyWithDiffResult`、`NarrowToken`、`NarrowDraft`、`NarrowTokenUnion` |
 
 详见 [导出一览 wiki 页面](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%AF%BC%E5%87%BA%E4%B8%80%E8%A7%88)
 ：完整签名及详细文档。
@@ -720,9 +726,9 @@ parseRichText("$$bold(unclosed", {
 
 ## 待弃用 API
 
-以下将在未来 major 版本中移除（2026 年 9 月前不会移除）：
+以下这些**已导出的兼容 API**将在未来 major 版本中移除（2026 年 9 月前不会移除）：
 
-`withSyntax`、`getSyntax`、`withTagNameConfig`、`withCreateId`、`resetTokenIdSeed`、
+`withSyntax`、`getSyntax`、`withTagNameConfig`、`resetTokenIdSeed`、
 `createPipeBlockHandlers`、`createPipeRawHandlers`、`createPassthroughTags`、`ParseOptions.mode`
 
 详见 [待弃用 API wiki 页面](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%BE%85%E5%BC%83%E7%94%A8-API)

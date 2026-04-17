@@ -79,7 +79,7 @@ interface NodeArrayDiffEqualWorkItem {
 type NodeArrayDiffWorkItem = NodeArrayDiffRangeWorkItem | NodeArrayDiffEqualWorkItem;
 
 /** Default maximum depth for nested structural diff refinement. */
-export const MAX_DIFF_RECURSIVE_REFINEMENT_DEPTH = 512;
+export const MAX_DIFF_RECURSIVE_REFINEMENT_DEPTH = 64;
 /** Full-fallback documents above this size skip expensive deep diff refinement. */
 export const MAX_FULL_FALLBACK_DIFF_REFINEMENT_SOURCE_LENGTH = 20_000;
 

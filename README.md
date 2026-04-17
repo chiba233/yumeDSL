@@ -53,7 +53,7 @@ Text in, token tree out — tag semantics, rendering, framework: all yours to de
 > Incremental parse (edit one 36-char tag in a ~200 KB document): `nodeAtOffset` **~456.76 µs** + `parseSlice` **~8.36 µs**;
 > full `parseRichText` on the same document takes **~19.45 ms** — the incremental path is roughly **42x faster**.
 >
-> Stress test: 50 million-layer single-chain inline nesting (~500 MB), `parseStructural` **~224.1 s** (`1.1.4` data; not re-measured for `1.1.6`).
+> Stress test: 50 million-layer single-chain inline nesting (~500 MB), `parseStructural` **~224.1 s** (historical `1.1.4` benchmark; not re-measured for current `1.4.x`).
 > Large-scale deep-nesting runs use an expanded heap budget; see the performance page for exact conditions.
 >
 > Pair with [`yume-dsl-token-walker`](https://github.com/chiba233/yume-dsl-token-walker)'s `parseSlice` — only the touched region gets re-parsed.
@@ -429,6 +429,11 @@ for
 
 Use these when you are not parsing once, but keeping a document alive across many edits.
 
+This incremental API set is part of the stable public surface in `1.4.x`.
+In particular, session-level fallback is a documented contract rather than an exceptional edge case:
+`applyEdit(...)` / `applyEditWithDiff(...)` may return `mode: "full-fallback"` with a `fallbackReason`,
+and `sessionOptions.diffRefinementDepthCap` lets you trade nested diff granularity for cost on very deep trees.
+
 - `parseIncremental(source, options?)` — build and return the **first** incremental snapshot (`IncrementalDocument`)
 - `createIncrementalSession(source, options?, sessionOptions?)` — create a **long-lived session** for repeated edits
 
@@ -437,7 +442,7 @@ In practice:
 - one-shot structure snapshot → `parseIncremental(...)`
 - editor / live preview / repeated updates → `createIncrementalSession(...)`
 
-The README keeps this section short on purpose. For the session methods (`getDocument`, `applyEdit`, `applyEditWithDiff`, `rebuild`), return fields, and version-specific signatures, see the [Incremental Parsing wiki page](https://github.com/chiba233/yumeDSL/wiki/en-Incremental-Parsing).
+The README keeps this section short on purpose. For end-to-end examples of `getDocument`, `applyEdit`, `applyEditWithDiff`, `rebuild`, and diff consumption patterns, see the [Incremental Parsing wiki page](https://github.com/chiba233/yumeDSL/wiki/en-Incremental-Parsing).
 
 ---
 
@@ -687,11 +692,12 @@ const dsl = createParser({
 | **Core**              | `parseRichText`, `stripRichText`, `createParser`, `parseStructural`, `printStructural`, `buildZones`                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | **Incremental Parsing** | `parseIncremental`, `createIncrementalSession`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | **Configuration**     | `DEFAULT_SYNTAX`, `createEasySyntax`, `createSyntax`, `DEFAULT_TAG_NAME`, `createTagNameConfig`, `createEasyStableId`                                                                                                                                                                                                                                                                                                                                                                                                           |
-| **Handler Helpers**   | `createPipeHandlers`, `createSimpleInlineHandlers`, `createSimpleBlockHandlers`, `createSimpleRawHandlers`, `declareMultilineTags`                                                                                                                                                                                                                                                                                                                                                                                              |
-| **Handler Utilities** | `parsePipeArgs`, `parsePipeTextArgs`, `parsePipeTextList`, `extractText`, `createTextToken`, `splitTokensByPipe`, `materializeTextTokens`, `unescapeInline`, `readEscapedSequence`, `createToken`, `createTokenGuard`                                                                                                                                                                                                                                                                                                           |
+| **Handler Helpers**   | `createPassthroughTags`, `createPipeHandlers`, `createPipeBlockHandlers`, `createPipeRawHandlers`, `createSimpleInlineHandlers`, `createSimpleBlockHandlers`, `createSimpleRawHandlers`, `declareMultilineTags`                                                                                                                                                                                                                                                                                                                    |
+| **Handler Utilities** | `parsePipeArgs`, `parsePipeTextArgs`, `parsePipeTextList`, `extractText`, `createTextToken`, `splitTokensByPipe`, `materializeTextTokens`, `unescapeInline`, `readEscapedSequence`, `createToken`, `createTokenGuard`, `resetTokenIdSeed`                                                                                                                                                                                                                                                                                         |
 | **Token Traversal**   | `walkTokens`, `mapTokens`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | **Position Tracking** | `buildPositionTracker`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| **Types**             | `TextToken`, `TokenDraft`, `CreateId`, `DslContext`, `TagHandler`, `TagForm`, `InlineShorthandOption`, `ParseOptions`, `ParserBaseOptions`, `StructuralParseOptions`, `Parser`, `SyntaxInput`, `SyntaxConfig`, `TagNameConfig`, `BlockTagInput`, `MultilineForm`, `ErrorCode`, `ParseError`, `StructuralNode`, `SourcePosition`, `SourceSpan`, `PositionTracker`, `PipeArgs`, `PipeHandlerDefinition`, `EasyStableIdOptions`, `PrintOptions`, `TokenVisitContext`, `WalkVisitor`, `MapVisitor`, `Zone`, `IncrementalDocument`, `IncrementalEdit`, `IncrementalParseOptions`, `IncrementalSessionOptions`, `TokenDiffResult`, `IncrementalSessionApplyResult`, `IncrementalSessionApplyWithDiffResult`, `NarrowToken`, `NarrowDraft`, `NarrowTokenUnion` |
+| **Legacy Context (deprecated)** | `withSyntax`, `getSyntax`, `withTagNameConfig`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| **Types**             | `TextToken`, `TokenDraft`, `CreateId`, `DslContext`, `TagHandler`, `TagForm`, `InlineShorthandOption`, `ParseOptions`, `ParserBaseOptions`, `StructuralParseOptions`, `Parser`, `SyntaxInput`, `SyntaxConfig`, `TagNameConfig`, `BlockTagInput`, `BlockTagLookup`, `MultilineForm`, `ErrorCode`, `ParseError`, `StructuralNode`, `SourcePosition`, `SourceSpan`, `PositionTracker`, `PipeArgs`, `PipeHandlerDefinition`, `EasyStableIdOptions`, `PrintOptions`, `TokenVisitContext`, `WalkVisitor`, `MapVisitor`, `Zone`, `IncrementalDocument`, `IncrementalEdit`, `IncrementalParseOptions`, `IncrementalSessionOptions`, `TokenDiffResult`, `IncrementalSessionApplyResult`, `IncrementalSessionApplyWithDiffResult`, `NarrowToken`, `NarrowDraft`, `NarrowTokenUnion` |
 
 See the [Exports wiki page](https://github.com/chiba233/yumeDSL/wiki/en-Exports) for full signatures and detailed
 documentation.
@@ -738,9 +744,9 @@ error codes, triggers, and detailed degradation scenarios with examples.
 
 ## Deprecated API
 
-The following will be removed in a future major version (not before September 2026):
+The following exported compatibility APIs will be removed in a future major version (not before September 2026):
 
-`withSyntax`, `getSyntax`, `withTagNameConfig`, `withCreateId`, `resetTokenIdSeed`,
+`withSyntax`, `getSyntax`, `withTagNameConfig`, `resetTokenIdSeed`,
 `createPipeBlockHandlers`, `createPipeRawHandlers`, `createPassthroughTags`, `ParseOptions.mode`
 
 See the [Deprecated API wiki page](https://github.com/chiba233/yumeDSL/wiki/en-Deprecated-API) for

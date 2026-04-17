@@ -114,7 +114,7 @@ export interface IncrementalSessionOptions {
    * but increase cost on extremely deep structures.
    * Smaller values prefer coarse splice ops earlier.
    *
-   * @default 512
+   * @default 64
    */
   diffRefinementDepthCap?: number;
 }

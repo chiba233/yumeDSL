@@ -4,15 +4,16 @@
 
 ### 1.4.0 (Mirror)
 
-- **增量加载已进入稳定版（stable）**
-  - 增量链路（`parseIncremental`、`createIncrementalSession`、`applyEdit`、`applyEditWithDiff`）现已视为生产可用的稳定能力。
-  - session 回退语义与 diff 返回契约已作为稳定集成协议进行文档化与测试固化。
-- **极深嵌套场景的 diff 韧性增强**
-  - 结构 diff 精化过程的 path 处理改为更稳健的深树实现，降低深层路径分配成本。
-  - 对超大 full-fallback 文档引入保守 diff 路径，避免病态深度精化开销。
-- **兼容性声明**
-  - 本版本无破坏性公共 API 变更。
-  - 现有增量集成代码可直接升级到 `1.4.x`。
+- **相较 1.3.x：增量集成现在已进入 stable**
+  - `parseIncremental`、`updateIncremental`、`tryUpdateIncremental` 与 `createIncrementalSession` 不再只是“暂时可用的内部能力”，而是可按稳定集成面理解的公开能力。
+  - session 的回退语义与 diff 返回预期，现在可以按版本契约来理解和升级。
+- **相较 1.3.x：大编辑与深层结构下的行为更可预期**
+  - 当细粒度精化成本过高或存在风险时，增量更新与 `applyEditWithDiff(...)` 会更保守地选择安全路径。
+  - 默认 `diffRefinementDepthCap` 现已调低，深层嵌套 diff 会更早退化为较粗粒度的 splice。
+  - 对接入方来说，这意味着极端输入下更少的意外失败，以及更清晰的 fallback 预期。
+- **升级说明**
+  - `1.4.0` 没有破坏性公共 API 变更。
+  - 现有 `1.3.x` 集成代码可直接升级到 `1.4.x`。
 
 ### 1.3.9
 

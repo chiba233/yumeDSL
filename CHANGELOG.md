@@ -4,15 +4,16 @@
 
 ### 1.4.0 (Mirror)
 
-- **Incremental loading is now stable**
-  - The incremental pipeline (`parseIncremental`, `createIncrementalSession`, `applyEdit`, `applyEditWithDiff`) is now considered production-stable.
-  - Session fallback semantics and diff behavior are now explicitly documented and tested as stable integration contracts.
-- **Deep-diff resilience for extreme nesting**
-  - Path handling in structural diff refinement is now stack-safe and allocation-aware for deep trees.
-  - Very large full-fallback documents now use a conservative diff path to avoid pathological deep-refinement cost.
-- **Compatibility statement**
-  - No breaking public API changes in this release.
-  - Existing incremental integration code can upgrade directly to `1.4.x`.
+- **Compared with 1.3.x: incremental integration is now stable**
+  - `parseIncremental`, `updateIncremental`, `tryUpdateIncremental`, and `createIncrementalSession` are now presented as stable integration surfaces rather than provisional internals.
+  - Session fallback behavior and diff payload expectations are now treated as versioned guarantees for host applications.
+- **Compared with 1.3.x: large or deeply nested edits are more predictable to integrate**
+  - Incremental updates and `applyEditWithDiff(...)` now behave more conservatively when fine-grained refinement would be too costly or unsafe.
+  - The default `diffRefinementDepthCap` is now lower, so deep nested diff refinement degrades to coarse splice ops earlier by default.
+  - For downstream consumers, this means fewer surprising edge-case failures and clearer upgrade expectations around fallback behavior.
+- **Upgrade note**
+  - No breaking public API changes in `1.4.0`.
+  - Existing `1.3.x` integrations can upgrade directly to `1.4.x`.
 
 ### 1.3.9
 
