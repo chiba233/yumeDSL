@@ -768,17 +768,6 @@ parseRichText("$$bold(unclosed", {
 详见 [待弃用 API wiki 页面](https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%BE%85%E5%BC%83%E7%94%A8-API)
 ：签名、替代方案及迁移指南。
 
-如果你喜欢 `createPassthroughTags` 的“最短声明”体验，直接写：
-
-```ts
-const handlers = {
-    bold: {},
-    italic: {},
-};
-```
-
-被待弃用的是 helper，不是这种空对象 handler 写法。
-
 ---
 
 ## 更新日志

@@ -772,17 +772,6 @@ The following exported compatibility APIs will be removed in a future major vers
 See the [Deprecated API wiki page](https://github.com/chiba233/yumeDSL/wiki/en-Deprecated-API) for
 signatures, replacements, and migration guide.
 
-If you liked `createPassthroughTags` because it was the shortest way to declare tags, write empty handler objects directly:
-
-```ts
-const handlers = {
-    bold: {},
-    italic: {},
-};
-```
-
-The helper is deprecated; the empty-object handler style is not.
-
 ---
 
 ## Changelog
