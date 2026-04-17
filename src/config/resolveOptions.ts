@@ -6,10 +6,10 @@ import type {
   TagForm,
   TagHandler,
   TagNameConfig,
-} from "./types.js";
+} from "../types";
 import { createSyntax } from "./syntax.js";
 import { createTagNameConfig } from "./chars.js";
-import { buildPositionTracker, localOffsetTracker, offsetTracker } from "./positions.js";
+import { buildPositionTracker, localOffsetTracker, offsetTracker } from "../internal/positions.js";
 
 // ── Gating ──
 

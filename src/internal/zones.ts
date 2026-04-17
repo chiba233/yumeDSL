@@ -1,4 +1,4 @@
-import type { StructuralNode, Zone } from "./types.js";
+import type { StructuralNode, Zone } from "../types";
 
 // ── Zone 构建器 ──
 //

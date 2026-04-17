@@ -1,17 +1,17 @@
 // ── Core API ──
-export { parseRichText, stripRichText, createParser } from "./parse.js";
-export type { Parser } from "./parse.js";
+export { parseRichText, stripRichText, createParser } from "./core/parse.js";
+export type { Parser } from "./core/parse.js";
 
 // ── Structural parse ──
-export { parseStructural } from "./structural.js";
+export { parseStructural } from "./core/structural.js";
 
 // ── Structural print ──
-export { printStructural } from "./print.js";
-export type { PrintOptions } from "./print.js";
+export { printStructural } from "./internal/print.js";
+export type { PrintOptions } from "./internal/print.js";
 
 // ── Configuration ──
-export { DEFAULT_SYNTAX, createEasySyntax, createSyntax } from "./syntax.js";
-export { DEFAULT_TAG_NAME, createTagNameConfig } from "./chars.js";
+export { DEFAULT_SYNTAX, createEasySyntax, createSyntax } from "./config/syntax.js";
+export { DEFAULT_TAG_NAME, createTagNameConfig } from "./config/chars.js";
 
 // ── Handler helpers ──
 export {
@@ -23,7 +23,7 @@ export {
   createPipeBlockHandlers,
   createPipeRawHandlers,
   declareMultilineTags,
-} from "./handlerHelpers.js";
+} from "./handlerBuilders/handlerHelpers.js";
 
 // ── Handler utilities ──
 export {
@@ -35,13 +35,13 @@ export {
   parsePipeTextArgs,
   parsePipeTextList,
   createTokenGuard,
-} from "./builders.js";
-export { unescapeInline, readEscapedSequence } from "./escape.js";
-export { createToken, resetTokenIdSeed } from "./createToken.js";
+} from "./handlerBuilders/builders.js";
+export { unescapeInline, readEscapedSequence } from "./handlerBuilders/escape.js";
+export { createToken, resetTokenIdSeed } from "./handlerBuilders/createToken.js";
 
 // ── Token traversal ──
-export { walkTokens, mapTokens } from "./walk.js";
-export type { TokenVisitContext, WalkVisitor, MapVisitor } from "./walk.js";
+export { walkTokens, mapTokens } from "./handlerBuilders/walk.js";
+export type { TokenVisitContext, WalkVisitor, MapVisitor } from "./handlerBuilders/walk.js";
 
 // ── Legacy context (compat) ──
 // These module-level context wrappers are still used in two places:
@@ -50,8 +50,8 @@ export type { TokenVisitContext, WalkVisitor, MapVisitor } from "./walk.js";
 // 2. parseStructural reads getSyntax()/getTagNameConfig() at entry to capture
 //    ambient context when no explicit overrides are provided.
 // Will be removed in a future major version — migrate to DslContext.
-export { withSyntax, getSyntax } from "./syntax.js";
-export { withTagNameConfig } from "./chars.js";
+export { withSyntax, getSyntax } from "./config/syntax.js";
+export { withTagNameConfig } from "./config/chars.js";
 
 // ── Types: core ──
 export type {
@@ -65,36 +65,39 @@ export type {
   NarrowToken,
   NarrowDraft,
   NarrowTokenUnion,
-} from "./types.js";
+} from "./types/core.js";
 
 // ── Types: configuration ──
-export type { SyntaxInput, SyntaxConfig, TagNameConfig } from "./types.js";
+export type { SyntaxInput, SyntaxConfig, TagNameConfig } from "./types/config.js";
 
 // ── Types: block tags ──
-export type { BlockTagInput, BlockTagLookup, MultilineForm } from "./types.js";
+export type { BlockTagInput, BlockTagLookup, MultilineForm } from "./types/core.js";
 
 // ── Types: errors & utilities ──
-export type { ErrorCode, ParseError, CreateId } from "./types.js";
+export type { ErrorCode, ParseError, CreateId } from "./types/core.js";
 
 // ── Position tracking ──
-export { buildPositionTracker } from "./positions.js";
-export { createEasyStableId } from "./stableId.js";
+export { buildPositionTracker } from "./internal/positions.js";
+export { createEasyStableId } from "./internal/stableId.js";
 
 // ── Types: source positions ──
-export type { PositionTracker, SourcePosition, SourceSpan } from "./types.js";
+export type { PositionTracker, SourcePosition, SourceSpan } from "./types/core.js";
 
 // ── Zone grouping ──
-export { buildZones } from "./zones.js";
+export { buildZones } from "./internal/zones.js";
 export {
   parseIncremental,
   createIncrementalSession,
-} from "./incremental.js";
+} from "./incremental/incremental.js";
 
 // ── Types: structural ──
 export type {
   StructuralNode,
   StructuralParseOptions,
   Zone,
+} from "./types/structural.js";
+
+export type {
   IncrementalParseOptions,
   IncrementalEdit,
   IncrementalDocument,
@@ -102,8 +105,8 @@ export type {
   TokenDiffResult,
   IncrementalSessionApplyResult,
   IncrementalSessionApplyWithDiffResult,
-} from "./types.js";
+} from "./types/incremental.js";
 
-export type { PipeArgs } from "./builders.js";
-export type { PipeHandlerDefinition } from "./handlerHelpers.js";
-export type { EasyStableIdOptions } from "./stableId.js";
+export type { PipeArgs } from "./handlerBuilders/builders.js";
+export type { PipeHandlerDefinition } from "./handlerBuilders/handlerHelpers.js";
+export type { EasyStableIdOptions } from "./internal/stableId.js";

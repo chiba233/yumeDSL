@@ -19,6 +19,7 @@ pnpm-workspace.yaml
 /cypress/videos/
 /cypress/screenshots/
 /.tmp*/
+/.claude/
 
 # Editor directories and files
 .vscode/*

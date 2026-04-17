@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { walkTokens, mapTokens } from "../src/walk.ts";
-import type { TextToken } from "../src/types.ts";
+import { walkTokens, mapTokens } from "yume-dsl-rich-text";
+import type { TextToken } from "../src/types/index.ts";
 import type { GoldenCase } from "./testHarness.ts";
 import { runGoldenCases } from "./testHarness.ts";
 

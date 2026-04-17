@@ -7,23 +7,23 @@ import type {
   StructuralNode,
   StructuralParseOptions,
   TextToken,
-} from "./types.js";
-import { extractText } from "./builders.js";
-import { withTagNameConfig } from "./chars.js";
-import { withCreateId } from "./createToken.js";
-import { printStructural } from "./print.js";
+} from "../types";
+import { extractText } from "../handlerBuilders/builders.js";
+import { withTagNameConfig } from "../config/chars.js";
+import { withCreateId } from "../handlerBuilders/createToken.js";
+import { printStructural } from "../internal/print.js";
 import { parseStructural, parseStructuralWithResolved } from "./structural.js";
-import { withSyntax } from "./syntax.js";
+import { withSyntax } from "../config/syntax.js";
 import { type RenderContext, renderNodes } from "./render.js";
 import {
   type BaseResolvedConfig,
   buildGatingContext,
   type GatingContext,
   resolveBaseOptions,
-} from "./resolveOptions.js";
+} from "../config/resolveOptions.js";
 
 // Re-export for backward compatibility and for structural.ts which imports from here.
-export { filterHandlersByForms } from "./resolveOptions.js";
+export { filterHandlersByForms } from "../config/resolveOptions.js";
 
 // ── Block tag resolution ──
 
@@ -52,7 +52,7 @@ const buildBlockTagLookup = (inputs: readonly BlockTagInput[]): BlockTagLookup =
 };
 
 const deriveBlockTags = (
-  handlers: Record<string, import("./types.js").TagHandler>,
+  handlers: Record<string, import("../types/index.js").TagHandler>,
 ): BlockTagLookup => {
   const rawSet = new Set<string>();
   const blockSet = new Set<string>();
@@ -77,7 +77,7 @@ const deriveBlockTags = (
  * - Tags not mentioned in `userTags` keep auto-derived behavior.
  */
 const resolveBlockTags = (
-  handlers: Record<string, import("./types.js").TagHandler>,
+  handlers: Record<string, import("../types/index.js").TagHandler>,
   userTags: readonly BlockTagInput[] | undefined,
 ): BlockTagLookup => {
   const derived = deriveBlockTags(handlers);
@@ -99,9 +99,9 @@ const resolveBlockTags = (
 
 /** Set legacy ambient state for backward-compatible handler support, suppressing deprecation warnings. */
 const withLegacyAmbientState = <T>(
-  syntax: import("./types.js").SyntaxConfig,
-  tagName: import("./types.js").TagNameConfig,
-  createId: import("./types.js").CreateId,
+  syntax: import("../types/index.js").SyntaxConfig,
+  tagName: import("../types/index.js").TagNameConfig,
+  createId: import("../types/index.js").CreateId,
   fn: () => T,
 ): T => {
   // 注意：这是 compat 隔离层，不是扩功能的入口。
@@ -132,11 +132,11 @@ interface ParsePipelineBase {
   resolved: BaseResolvedConfig;
 }
 
-import type { CreateIdWithLifecycle } from "./stableId.js";
-import { BEGIN_PARSE, END_PARSE } from "./stableId.js";
+import type { CreateIdWithLifecycle } from "../internal/stableId.js";
+import { BEGIN_PARSE, END_PARSE } from "../internal/stableId.js";
 
 const withCreateIdParseLifecycle = <T>(
-  createId: import("./types.js").CreateId,
+  createId: import("../types/index.js").CreateId,
   fn: () => T,
 ): T => {
   const lifecycle = createId as CreateIdWithLifecycle;
@@ -164,7 +164,7 @@ const resolveParsePipelineBase = (text: string, options: ParseOptions): ParsePip
 const createRenderContextFromBase = (
   text: string,
   base: ParsePipelineBase,
-  createId: import("./types.js").CreateId,
+  createId: import("../types/index.js").CreateId,
 ): RenderContext => {
   // 这里故意只拿 tracker，不拿 structural 的最终 span。
   // 同一个 tracker 只说明“坐标查表来源一样”，不说明“position 语义一样”。
@@ -240,7 +240,7 @@ export interface Parser {
   /** Parse source into structural nodes (form-preserving AST). */
   structural: (text: string, overrides?: StructuralParseOptions) => StructuralNode[];
   /** Serialize structural nodes back to DSL source. */
-  print: (nodes: StructuralNode[], overrides?: import("./print.js").PrintOptions) => string;
+  print: (nodes: StructuralNode[], overrides?: import("../internal/print.js").PrintOptions) => string;
 }
 
 /**

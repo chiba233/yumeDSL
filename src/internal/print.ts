@@ -1,5 +1,5 @@
-import type { StructuralNode, SyntaxInput } from "./types.js";
-import { createSyntax } from "./syntax.js";
+import type { StructuralNode, SyntaxInput } from "../types";
+import { createSyntax } from "../config/syntax.js";
 
 export interface PrintOptions {
   /** Override DSL syntax tokens. Must match the syntax used during parsing for round-trip fidelity. */

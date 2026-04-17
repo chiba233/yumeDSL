@@ -14,7 +14,7 @@
 import assert from "node:assert/strict";
 import type { GoldenCase } from "./testHarness.ts";
 import { runGoldenCases } from "./testHarness.ts";
-import type { ParseError } from "../src/types.ts";
+import type { ParseError } from "../src/types/index.ts";
 import {
   parseRichText,
   createSyntax,
@@ -272,7 +272,7 @@ const cases: GoldenCase[] = [
         escapeChar: "\\",
       });
 
-      const { errors, onError } = collectErrors();
+      const {  onError } = collectErrors();
       const tokens = parseRichText("$$code(js)%\nhello\n$$", {
         syntax: extremeSyntax,
         handlers: {

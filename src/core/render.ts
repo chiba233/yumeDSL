@@ -6,29 +6,29 @@ import type {
   PositionTracker,
   SyntaxConfig,
   TextToken,
-} from "./types.js";
+} from "../types/index.js";
 
 // 设计边界，后面别顺手抹平：
 // - structural parser 负责原始源码位置真相
 // - render layer 负责规范化后的渲染位置真相
 // - 允许共享 config / tracker
 // - 不允许共享最终 spans
-import { createTextToken, materializeTextTokens } from "./builders.js";
-import { supportsInlineForm } from "./resolveOptions.js";
-import { createToken } from "./createToken.js";
-import { makePosition } from "./positions.js";
-import { readEscaped } from "./escape.js";
+import { createTextToken, materializeTextTokens } from "yume-dsl-rich-text";
+import { supportsInlineForm } from "../config/resolveOptions.js";
+import { createToken } from "yume-dsl-rich-text";
+import { makePosition } from "../internal/positions.js";
+import { readEscaped } from "../handlerBuilders/escape.js";
 import {
   consumeBlockTagTrailingLineBreak,
   normalizeBlockTagContent,
-} from "./blockTagFormatting.js";
+} from "../internal/blockTagFormatting.js";
 import type { IndexedStructuralNode, TagMeta } from "./structural.js";
 
 type EscapeMode = "root" | "nested";
 
 export interface RenderContext {
   source: string;
-  handlers: Record<string, import("./types").TagHandler>;
+  handlers: Record<string, import("../types/index.js").TagHandler>;
   registeredTags: ReadonlySet<string>;
   allowInline: boolean;
   blockTagSet: BlockTagLookup;

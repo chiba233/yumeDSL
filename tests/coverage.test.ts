@@ -19,17 +19,17 @@
 import assert from "node:assert/strict";
 import type { GoldenCase } from "./testHarness.ts";
 import { runGoldenCases } from "./testHarness.ts";
-import { parseStructural } from "../src/structural.ts";
-import { parseRichText } from "../src/parse.ts";
-import { createTokenGuard } from "../src/builders.ts";
-import type { StructuralNode, TagHandler, TextToken } from "../src/types.ts";
-import { renderNodes, type RenderContext } from "../src/render.ts";
-import { parseStructuralWithResolved } from "../src/structural.ts";
-import { resolveBaseOptions } from "../src/resolveOptions.ts";
-import { DEFAULT_SYNTAX, createSyntax } from "../src/syntax.ts";
-import { DEFAULT_TAG_NAME, createTagNameConfig } from "../src/chars.ts";
-import { findInlineClose, getTagCloserType, readTagStartInfo, skipTagBoundary } from "../src/scanner.ts";
-import { fnvFeedString, fnvFeedStringBounded, fnvInit } from "../src/hash.ts";
+import { parseStructural } from "yume-dsl-rich-text";
+import { parseRichText } from "../src/core/parse.ts";
+import { createTokenGuard } from "yume-dsl-rich-text";
+import type { StructuralNode, TagHandler, TextToken } from "../src/types/index.ts";
+import { renderNodes, type RenderContext } from "../src/core/render.ts";
+import { parseStructuralWithResolved } from "../src/core/structural.ts";
+import { resolveBaseOptions } from "../src/config/resolveOptions.ts";
+import { createSyntax } from "yume-dsl-rich-text";
+import { createTagNameConfig } from "yume-dsl-rich-text";
+import { findInlineClose, getTagCloserType, readTagStartInfo, skipTagBoundary } from "../src/core/scanner.ts";
+import { fnvFeedString, fnvFeedStringBounded, fnvInit } from "../src/internal/hash.ts";
 
 // ── Helpers ──
 

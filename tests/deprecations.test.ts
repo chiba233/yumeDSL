@@ -241,7 +241,7 @@ const cases = [
     name: "[Deprecations] withCreateId -> 直接调用只应告警一次",
     run: async () => {
       const stderr = await captureWarnings(async () => {
-        const { createToken, withCreateId } = await import("../src/createToken.ts");
+        const { createToken, withCreateId } = await import("../src/handlerBuilders/createToken.ts");
         withCreateId(() => "fixed-id", () => {
           createToken({ type: "text", value: "a" });
           createToken({ type: "text", value: "b" });

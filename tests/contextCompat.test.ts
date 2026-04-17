@@ -1,3 +1,5 @@
+// noinspection DuplicatedCode
+
 import assert from "node:assert/strict";
 import {
   createParser,
@@ -16,8 +18,8 @@ import {
   unescapeInline,
   withSyntax,
 } from "../src/index.ts";
-import { withTagNameConfig } from "../src/chars.ts";
-import type { DslContext, StructuralNode, TagHandler, TextToken } from "../src/types.ts";
+import { withTagNameConfig } from "yume-dsl-rich-text";
+import type { DslContext, StructuralNode, TagHandler, TextToken } from "../src/types/index.ts";
 import { runGoldenCases } from "./testHarness.ts";
 
 const normalizeTokens = (tokens: TextToken[]): unknown[] =>

@@ -1,4 +1,4 @@
-import type { BlockTagInput, DslContext, TagHandler, TextToken, TokenDraft } from "./types.js";
+import type { BlockTagInput, DslContext, TagHandler, TextToken, TokenDraft } from "../types";
 import type { PipeArgs } from "./builders.js";
 import { materializeTextTokens, parsePipeArgs, parsePipeTextArgs } from "./builders.js";
 

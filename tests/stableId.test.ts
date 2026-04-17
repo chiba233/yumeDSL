@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createEasyStableId, createParser, type TagHandler } from "../src/index.ts";
 import type { TokenDraft } from "../src/index.ts";
-import type { DslContext, TextToken } from "../src/types.ts";
+import type { DslContext, TextToken } from "../src/types/index.ts";
 import { testHandlers } from "./handlers.ts";
 import type { GoldenCase } from "./testHarness.ts";
 import { runGoldenCases } from "./testHarness.ts";

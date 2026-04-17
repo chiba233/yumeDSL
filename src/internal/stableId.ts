@@ -1,4 +1,4 @@
-import type { CreateId, TextToken, TokenDraft } from "./types.js";
+import type { CreateId, TextToken, TokenDraft } from "../types";
 import { fnv1a, fnvFeedString, fnvFeedU32, fnvInit } from "./hash.js";
 
 /** @internal parse-lifecycle hooks — not part of public API. */

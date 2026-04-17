@@ -47,19 +47,19 @@ import type {
   StructuralParseOptions,
   SyntaxConfig,
   TagNameConfig,
-} from "./types.js";
-import { getDefaultSyntaxInstance, getSyntax } from "./syntax.js";
-import { DEFAULT_TAG_NAME, getTagNameConfig } from "./chars.js";
-import { warnDeprecated } from "./deprecations.js";
-import { readEscapedSequence, readEscapedSequenceWithTokens } from "./escape.js";
+} from "../types";
+import { getDefaultSyntaxInstance, getSyntax } from "../config/syntax.js";
+import { DEFAULT_TAG_NAME, getTagNameConfig } from "../config/chars.js";
+import { warnDeprecated } from "../internal/deprecations.js";
+import { readEscapedSequence, readEscapedSequenceWithTokens } from "../handlerBuilders/escape.js";
 import {
   type BaseResolvedConfig,
   buildGatingContext,
   type GatingContext,
   resolveBaseOptions,
   supportsInlineForm,
-} from "./resolveOptions.js";
-import { emitError } from "./errors.js";
+} from "../config/resolveOptions.js";
+import { emitError } from "../internal/errors.js";
 import {
   findBlockClose,
   findMalformedWholeLineTokenCandidate,
@@ -68,7 +68,7 @@ import {
   readTagStartInfo,
   skipTagBoundary,
 } from "./scanner.js";
-import { makePosition, type PositionTracker } from "./positions.js";
+import { makePosition, type PositionTracker } from "../internal/positions.js";
 
 const emptyBuffer = (): BufferState => ({ start: -1, end: -1, segments: null });
 

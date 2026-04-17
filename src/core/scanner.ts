@@ -1,6 +1,6 @@
-import type { SyntaxConfig, TagHead, TagNameConfig, TagStartInfo } from "./types.js";
-import { getLineEnd, isWholeLineToken } from "./chars.js";
-import { readEscapedSequence, readEscapedSequenceWithTokens } from "./escape.js";
+import type { SyntaxConfig, TagHead, TagNameConfig, TagStartInfo } from "../types/index.js";
+import { getLineEnd, isWholeLineToken } from "../config/chars.js";
+import { readEscapedSequence, readEscapedSequenceWithTokens } from "../handlerBuilders/escape.js";
 
 /**
  * Find the matching argument-close position for a tag argument region.

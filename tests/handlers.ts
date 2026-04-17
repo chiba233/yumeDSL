@@ -3,7 +3,7 @@
  * These exist solely so golden test fixtures can assert concrete token shapes.
  */
 
-import type { TagHandler, TokenDraft } from "../src/types.ts";
+import type { TagHandler, TokenDraft } from "../src/types/index.ts";
 import { parsePipeArgs, parsePipeTextArgs, createToken, materializeTextTokens } from "../src/index.ts";
 
 const LANG_MAP: Record<string, string> = {

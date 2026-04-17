@@ -9,8 +9,7 @@
     "html"
   ],
   "exclude": [
-    "src/types.ts",
-    "**/*.d.ts",
+    "src/types/**.ts",
     "tests/**",
     "dist/**",
     "coverage/**"

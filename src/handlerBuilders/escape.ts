@@ -1,5 +1,5 @@
-import type { DslContext, SyntaxConfig } from "./types.js";
-import { getSyntax } from "./syntax.js";
+import type { DslContext, SyntaxConfig } from "../types";
+import { getSyntax } from "../config/syntax.js";
 
 /** @internal Resolve syntax from DslContext, bare SyntaxConfig, or module default. */
 export const resolveSyntax = (ctx?: DslContext | SyntaxConfig): SyntaxConfig => {

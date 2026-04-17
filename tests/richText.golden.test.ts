@@ -19,7 +19,7 @@ import {
   stripRichText,
   withSyntax,
 } from "../src/index.ts";
-import type { ParseError, StructuralNode, TextToken } from "../src/types.ts";
+import type { ParseError, StructuralNode, TextToken } from "../src/types/index.ts";
 import { runGoldenCases } from "./testHarness.ts";
 import { loadTestJsonFixture } from "./testFixtures.ts";
 import { testHandlers } from "./handlers.ts";

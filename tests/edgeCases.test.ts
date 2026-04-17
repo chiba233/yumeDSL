@@ -7,8 +7,8 @@
 import assert from "node:assert/strict";
 import type { GoldenCase } from "./testHarness.ts";
 import { runGoldenCases } from "./testHarness.ts";
-import { parseRichText } from "../src/parse.ts";
-import { parseStructural } from "../src/structural.ts";
+import { parseRichText } from "../src/core/parse.ts";
+import { parseStructural } from "yume-dsl-rich-text";
 import { testHandlers } from "./handlers.ts";
 
 const parse = (text: string) =>

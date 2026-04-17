@@ -1,3 +1,5 @@
+// noinspection DuplicatedCode
+
 import assert from "node:assert/strict";
 import {
   type StructuralNode,
@@ -12,7 +14,7 @@ import {
   parseIncremental,
   parseStructural,
 } from "../src/index.ts";
-import { __setIncrementalDebugSink, tryUpdateIncremental, updateIncremental } from "../src/incremental.ts";
+import { __setIncrementalDebugSink, tryUpdateIncremental, updateIncremental } from "../src/incremental/incremental.ts";
 import { runGoldenCases, type GoldenCase } from "./testHarness.ts";
 
 type StructuralDiffOp = TokenDiffResult["ops"][number];

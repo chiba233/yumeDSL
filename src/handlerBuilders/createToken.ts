@@ -1,5 +1,5 @@
-import type { CreateId, DslContext, SourceSpan, TextToken, TokenDraft } from "./types.js";
-import { warnDeprecated } from "./deprecations.js";
+import type { CreateId, DslContext, SourceSpan, TextToken, TokenDraft } from "../types";
+import { warnDeprecated } from "../internal/deprecations.js";
 
 let tokenIdSeed = 0;
 let activeCreateId: CreateId | null = null;

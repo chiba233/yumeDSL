@@ -1,4 +1,4 @@
-import type { PositionTracker, SourcePosition, SourceSpan } from "./types.js";
+import type { PositionTracker, SourcePosition, SourceSpan } from "../types";
 
 export type { PositionTracker };
 

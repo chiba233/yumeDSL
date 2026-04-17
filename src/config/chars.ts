@@ -1,5 +1,5 @@
-import type { TagNameConfig } from "./types.js";
-import { warnDeprecated } from "./deprecations.js";
+import type { TagNameConfig } from "../types";
+import { warnDeprecated } from "../internal/deprecations.js";
 
 const defaultIsTagStartChar = (c: string) =>
   (c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || c === "_";

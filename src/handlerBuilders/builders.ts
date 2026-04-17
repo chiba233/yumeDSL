@@ -1,4 +1,4 @@
-import type { DslContext, NarrowToken, TextToken } from "./types.js";
+import type { DslContext, NarrowToken, TextToken } from "../types";
 import { readEscapedSequence, resolveSyntax, unescapeInline } from "./escape.js";
 import { createToken } from "./createToken.js";
 

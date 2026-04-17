@@ -49,9 +49,9 @@
 //  ~2309  applyEdit                    session 的编辑入口（策略门控 → 增量 → 兜底）
 // ═══════════════════════════════════════════════════════════════
 
-import { buildPositionTracker } from "./positions.js";
-import { parseStructural } from "./structural.js";
-import { fnv1a, fnvFeedStringBounded, fnvFeedU32, fnvInit } from "./hash.js";
+import { buildPositionTracker } from "../internal/positions.js";
+import { parseStructural } from "../core/structural.js";
+import { fnv1a, fnvFeedStringBounded, fnvFeedU32, fnvInit } from "../internal/hash.js";
 import type {
   IncrementalDocument,
   IncrementalEdit,
@@ -75,8 +75,8 @@ import type {
   SourcePosition,
   StructuralNode,
   Zone,
-} from "./types.js";
-import { buildZonesInternal, SOFT_ZONE_NODE_CAP } from "./zones.js";
+} from "../types";
+import { buildZonesInternal, SOFT_ZONE_NODE_CAP } from "../internal/zones.js";
 
 // 性能备忘：
 // 只重解析脏区间。右侧 zone 用 lazy delta——只存 offset 偏移量，

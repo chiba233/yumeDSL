@@ -1,4 +1,4 @@
-import type { TextToken } from "./types.js";
+import type { TextToken } from "../types";
 
 /**
  * Traversal context passed to walk/map visitors.

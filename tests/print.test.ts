@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { parseStructural, printStructural, createParser, createSimpleInlineHandlers } from "../src/index.ts";
-import type { StructuralNode } from "../src/types.ts";
+import type { StructuralNode } from "../src/types/index.ts";
 import type { GoldenCase } from "./testHarness.ts";
 import { runGoldenCases } from "./testHarness.ts";
 

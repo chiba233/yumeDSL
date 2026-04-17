@@ -1,4 +1,4 @@
-import type { BlockTagLookup, MultilineForm } from "./types.js";
+import type { BlockTagLookup, MultilineForm } from "../types/index.js";
 
 /** Length of the line break at `offset` (2 for \r\n, 1 for \n, 0 otherwise). */
 const lineBreakLen = (text: string, offset: number): number =>

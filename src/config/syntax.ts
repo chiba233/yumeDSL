@@ -1,5 +1,5 @@
-import type { SyntaxConfig, SyntaxInput } from "./types.js";
-import { warnDeprecated } from "./deprecations.js";
+import type { SyntaxConfig, SyntaxInput } from "../types";
+import { warnDeprecated } from "../internal/deprecations.js";
 
 /**
  * Default DSL syntax protocol (`$$name(...)$$` family).

@@ -4,10 +4,10 @@
 import assert from "node:assert/strict";
 import type { GoldenCase } from "./testHarness.ts";
 import { runGoldenCases } from "./testHarness.ts";
-import type { SourceSpan, StructuralNode, TextToken } from "../src/types.ts";
+import type { SourceSpan, StructuralNode, TextToken } from "../src/types/index.ts";
 import { createParser, createSyntax } from "../src/index.ts";
-import { parseRichText } from "../src/parse.ts";
-import { parseStructural } from "../src/structural.ts";
+import { parseRichText } from "../src/core/parse.ts";
+import { parseStructural } from "yume-dsl-rich-text";
 import { buildPositionTracker } from "../src/index.ts";
 import { testHandlers } from "./handlers.ts";
 
