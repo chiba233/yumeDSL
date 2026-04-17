@@ -108,6 +108,22 @@ export interface IncrementalSessionOptions {
    */
   softZoneNodeCap?: number;
   /**
+   * Session-level default options for structural diff refinement.
+   *
+   * These defaults are applied by `applyEditWithDiff(...)`, and can be
+   * overridden per call by passing the 4th `diffOptions` argument.
+   */
+  diff?: IncrementalDiffRefinementOptions;
+}
+
+/**
+ * Fine-grained budget controls for one structural diff refinement pass.
+ *
+ * Used by `applyEditWithDiff(...)` to keep diff work bounded. Session-level
+ * defaults may be configured via `IncrementalSessionOptions.diff`.
+ */
+export interface IncrementalDiffRefinementOptions {
+  /**
    * Maximum recursive refinement depth used by `applyEditWithDiff`.
    *
    * Larger values preserve more fine-grained nested diff ops on deep trees,
@@ -116,7 +132,47 @@ export interface IncrementalSessionOptions {
    *
    * @default 64
    */
-  diffRefinementDepthCap?: number;
+  refinementDepthCap?: number;
+  /**
+   * Maximum number of node comparisons allowed during one session diff refinement.
+   *
+   * Once exceeded, `applyEditWithDiff(...)` degrades to a coarser but bounded diff.
+   *
+   * @default 20000
+   */
+  maxComparedNodes?: number;
+  /**
+   * Maximum number of anchor candidates considered during one session diff refinement.
+   *
+   * Larger values allow finer multi-island matching, but raise worst-case anchor cost.
+   *
+   * @default 128
+   */
+  maxAnchorCandidates?: number;
+  /**
+   * Maximum number of structural diff ops emitted during one session diff refinement.
+   *
+   * Once exceeded, the session falls back to a root-level coarser diff shape.
+   *
+   * @default 512
+   */
+  maxOps?: number;
+  /**
+   * Maximum subtree size still eligible for nested fine-grained refinement.
+   *
+   * Larger subtrees degrade directly to coarse splice ops instead of recursing further.
+   *
+   * @default 256
+   */
+  maxSubtreeNodes?: number;
+  /**
+   * Soft wall-clock budget in milliseconds for one session diff refinement pass.
+   *
+   * Once exceeded, the session degrades to a coarser diff to keep editor latency bounded.
+   *
+   * @default 8
+   */
+  maxMilliseconds?: number;
 }
 
 /**
@@ -291,6 +347,7 @@ export interface IncrementalSession {
     edit: IncrementalEdit,
     newSource: string,
     options?: IncrementalParseOptions,
+    diffOptions?: IncrementalDiffRefinementOptions,
   ) => IncrementalSessionApplyWithDiffResult;
   /** Force a full rebuild from `newSource`. */
   rebuild: (newSource: string, options?: IncrementalParseOptions) => IncrementalDocument;

@@ -14,7 +14,7 @@ import {
   parseIncremental,
   parseStructural,
 } from "../src/index.ts";
-import { buildConservativeTokenDiff, computeTokenDiff } from "../src/incremental/diff.ts";
+import { buildConservativeTokenDiff, computeTokenDiff, computeTokenDiffWithinSourceWindow } from "../src/incremental/diff.ts";
 import { __setIncrementalDebugSink, tryUpdateIncremental, updateIncremental } from "../src/incremental/incremental.ts";
 import { buildParseOptionsFingerprint, cloneParseOptions } from "../src/incremental/options.ts";
 import { runGoldenCases, type GoldenCase } from "./testHarness.ts";
@@ -1148,6 +1148,193 @@ const cases: GoldenCase[] = [
     },
   },
   {
+    name: "[Incremental/SessionDiff] applyEditWithDiff should coarsen to root splice ops when nested diff op budget is exhausted",
+    run: () => {
+      const handlers = createSimpleBlockHandlers(["note"]);
+      const source = "$$note(old-title)*\nold-body\n*end$$";
+      const newSource = "$$note(new-title)*\nnew-body\n*end$$";
+      const session = createIncrementalSession(
+        source,
+        { handlers },
+        { strategy: "incremental-only", diff: { maxOps: 1 } },
+      );
+      const before = session.getDocument();
+      const result = session.applyEditWithDiff(
+        { startOffset: 0, oldEndOffset: source.length, newText: newSource },
+        newSource,
+      );
+
+      assert.equal(result.diff.patches.length, 1);
+      assert.equal(result.diff.patches[0]?.kind, "replace");
+      assert.equal(result.diff.ops.length, 1);
+      assert.equal(result.diff.ops[0]?.kind, "splice");
+      assert.equal(result.diff.ops[0]?.path.length, 0);
+      assertDiffRebuildsNextTree(before.tree, result.doc.tree, result.diff);
+    },
+  },
+  {
+    name: "[Incremental/SessionDiff] applyEditWithDiff should keep refinement local to the incremental dirty window",
+    run: () => {
+      const handlers = createSimpleBlockHandlers(["note"]);
+      const makeBlock = (index: number, body: string): string => `$$note(t${index})*\n${body}\n*end$$`;
+      const source = Array.from({ length: 40 }, (_, index) =>
+        index === 20 ? makeBlock(index, "old-body") : makeBlock(index, `body-${index}`),
+      ).join("\n");
+      const editStart = source.indexOf("old-body");
+      const newSource = applyEdit(source, editStart, editStart + "old-body".length, "new-body");
+      const session = createIncrementalSession(source, { handlers }, {
+        strategy: "incremental-only",
+        diff: {
+          maxComparedNodes: 12,
+          maxOps: 16,
+        },
+      });
+      const before = session.getDocument();
+      const result = session.applyEditWithDiff(
+        { startOffset: editStart, oldEndOffset: editStart + "old-body".length, newText: "new-body" },
+        newSource,
+      );
+
+      assert.equal(result.mode, "incremental");
+      assert.equal(result.doc.source, newSource);
+      assert.ok(result.diff.unchangedRanges.some((range) => range.oldRange.start > 0));
+      assert.ok(result.diff.unchangedRanges.some((range) => range.oldRange.end < before.tree.length));
+      assert.ok(result.diff.dirtySpanOld.startOffset > 0);
+      assert.ok(result.diff.dirtySpanOld.endOffset < source.length);
+      assertDiffRebuildsNextTree(before.tree, result.doc.tree, result.diff);
+    },
+  },
+  {
+    name: "[Incremental/SessionDiff] computeTokenDiffWithinSourceWindow should fallback to full diff when old/new window starts map to different root token indexes",
+    run: () => {
+      const source = "$$bold(a)$$$$bold(mid)$$$$bold(c)$$";
+      const editStart = source.indexOf("a");
+      const editEnd = editStart + 1;
+      const newSource = applyEdit(source, editStart, editEnd, "x");
+      const edit = { startOffset: editStart, oldEndOffset: editEnd, newText: "x" };
+
+      const previousTree = parseIncremental(source).tree;
+      const nextTree = parseIncremental(newSource).tree;
+      assert.ok(previousTree[1]?.position);
+      assert.ok(nextTree[0]?.position);
+
+      const full = computeTokenDiff(previousTree, nextTree, edit, 8);
+      const windowed = computeTokenDiffWithinSourceWindow(
+        previousTree,
+        nextTree,
+        edit,
+        8,
+        undefined,
+        {
+          oldRange: {
+            startOffset: previousTree[1].position.start.offset,
+            endOffset: previousTree[1].position.end.offset,
+          },
+          newRange: {
+            startOffset: nextTree[0].position.start.offset,
+            endOffset: nextTree[0].position.end.offset,
+          },
+        },
+      );
+
+      assert.deepEqual(windowed, full);
+    },
+  },
+  {
+    name: "[Incremental/SessionDiff] computeTokenDiffWithinSourceWindow should fallback to full diff when old/new window suffix lengths diverge",
+    run: () => {
+      const source = "$$bold(a)$$$$bold(mid)$$$$bold(c)$$";
+      const editStart = source.indexOf("a");
+      const editEnd = editStart + 1;
+      const newSource = applyEdit(source, editStart, editEnd, "x");
+      const edit = { startOffset: editStart, oldEndOffset: editEnd, newText: "x" };
+
+      const previousTree = parseIncremental(source).tree;
+      const nextTree = parseIncremental(newSource).tree;
+      const previousHead = previousTree[0];
+      const nextHead = nextTree[0];
+      const nextSecond = nextTree[1];
+      assert.ok(previousHead?.position);
+      assert.ok(nextHead?.position);
+      assert.ok(nextSecond?.position);
+
+      const full = computeTokenDiff(previousTree, nextTree, edit, 8);
+      const windowed = computeTokenDiffWithinSourceWindow(
+        previousTree,
+        nextTree,
+        edit,
+        8,
+        undefined,
+        {
+          oldRange: {
+            startOffset: previousHead.position.start.offset,
+            endOffset: previousHead.position.end.offset,
+          },
+          newRange: {
+            startOffset: nextHead.position.start.offset,
+            endOffset: nextSecond.position.end.offset,
+          },
+        },
+      );
+
+      assert.deepEqual(windowed, full);
+    },
+  },
+  {
+    name: "[Incremental/SessionDiff] computeTokenDiffWithinSourceWindow should fallback to full diff when root nodes have no positions",
+    run: () => {
+      const source = "$$bold(a)$$$$bold(b)$$";
+      const newSource = "$$bold(x)$$$$bold(b)$$";
+      const editStart = source.indexOf("a");
+      const edit = { startOffset: editStart, oldEndOffset: editStart + 1, newText: "x" };
+
+      const previousTree = stripTreePositions(parseStructural(source));
+      const nextTree = stripTreePositions(parseStructural(newSource));
+      const full = computeTokenDiff(previousTree, nextTree, edit, 8);
+      const windowed = computeTokenDiffWithinSourceWindow(
+        previousTree,
+        nextTree,
+        edit,
+        8,
+        undefined,
+        {
+          oldRange: { startOffset: 0, endOffset: 1 },
+          newRange: { startOffset: 0, endOffset: 1 },
+        },
+      );
+
+      assert.deepEqual(windowed, full);
+    },
+  },
+  {
+    name: "[Incremental/SessionDiff] computeTokenDiffWithinSourceWindow should fallback to full diff for zero-width boundary insert windows",
+    run: () => {
+      const source = "$$bold(a)$$$$bold(c)$$";
+      const insertAt = source.indexOf("$$bold(c)$$");
+      const inserted = "$$bold(b)$$";
+      const newSource = applyEdit(source, insertAt, insertAt, inserted);
+      const edit = { startOffset: insertAt, oldEndOffset: insertAt, newText: inserted };
+
+      const previousTree = parseIncremental(source).tree;
+      const nextTree = parseIncremental(newSource).tree;
+      const full = computeTokenDiff(previousTree, nextTree, edit, 8);
+      const windowed = computeTokenDiffWithinSourceWindow(
+        previousTree,
+        nextTree,
+        edit,
+        8,
+        undefined,
+        {
+          oldRange: { startOffset: insertAt, endOffset: insertAt },
+          newRange: { startOffset: insertAt, endOffset: insertAt },
+        },
+        { oldEndOffset: source.length, newEndOffset: newSource.length },
+      );
+
+      assert.deepEqual(windowed, full);
+    },
+  },
+  {
     name: "[Incremental/SessionDiff] computeTokenDiff should emit insert patch and fallback dirty span without positions",
     run: () => {
       const next = stripTreePositions(parseStructural("tail"));
@@ -1173,6 +1360,51 @@ const cases: GoldenCase[] = [
       assert.equal(diff.dirtySpanOld.endOffset, 4);
       assert.equal(diff.dirtySpanNew.startOffset, 0);
       assert.equal(diff.dirtySpanNew.endOffset, 0);
+    },
+  },
+  {
+    name: "[Incremental/SessionDiff] computeTokenDiff should use full document spans for conservative whole-tree fallback without positions",
+    run: () => {
+      const previous = stripTreePositions(parseStructural("abc def"));
+      const next = stripTreePositions(parseStructural("abc xyz def"));
+      const diff = computeTokenDiff(
+        previous,
+        next,
+        { startOffset: 4, oldEndOffset: 7, newText: "xyz" },
+        8,
+        { maxComparedNodes: 1 },
+        { oldEndOffset: "abc def".length, newEndOffset: "abc xyz def".length },
+      );
+
+      assert.equal(diff.patches.length, 1);
+      assert.equal(diff.patches[0]?.kind, "replace");
+      assert.equal(diff.ops.length, 1);
+      assert.equal(diff.ops[0]?.kind, "splice");
+      assert.equal(diff.dirtySpanOld.startOffset, 0);
+      assert.equal(diff.dirtySpanOld.endOffset, "abc def".length);
+      assert.equal(diff.dirtySpanNew.startOffset, 0);
+      assert.equal(diff.dirtySpanNew.endOffset, "abc xyz def".length);
+    },
+  },
+  {
+    name: "[Incremental/SessionDiff] computeTokenDiff should degrade without throwing when compare budget is exceeded",
+    run: () => {
+      const previous = stripTreePositions(parseStructural("$$bold(a)$$$$bold(b)$$"));
+      const next = stripTreePositions(parseStructural("$$bold(x)$$$$bold(y)$$"));
+
+      const diff = computeTokenDiff(
+        previous,
+        next,
+        { startOffset: 0, oldEndOffset: 1, newText: "next" },
+        8,
+        { maxComparedNodes: 1 },
+      );
+
+      assert.equal(diff.patches.length, 1);
+      assert.equal(diff.patches[0]?.kind, "replace");
+      assert.equal(diff.ops.length, 1);
+      assert.equal(diff.ops[0]?.kind, "splice");
+      assertDiffRebuildsNextTree(previous, next, diff);
     },
   },
   {
@@ -1253,6 +1485,51 @@ const cases: GoldenCase[] = [
       assert.equal(diff.isNoop, false);
       assert.equal(setTextOps.length, 2);
       assert.deepEqual(fields, ["args", "children"]);
+      assertDiffRebuildsNextTree(previous, next, diff);
+    },
+  },
+  {
+    name: "[Incremental/SessionDiff] computeTokenDiff should coarsen oversized nested subtrees to root splice ops",
+    run: () => {
+      const previous: StructuralNode[] = [
+        {
+          type: "block",
+          tag: "note",
+          args: [{ type: "text", value: "old-title" }],
+          children: [
+            {
+              type: "inline",
+              tag: "bold",
+              children: [{ type: "text", value: "old-body" }],
+            },
+          ],
+        },
+      ];
+      const next: StructuralNode[] = [
+        {
+          type: "block",
+          tag: "note",
+          args: [{ type: "text", value: "new-title" }],
+          children: [
+            {
+              type: "inline",
+              tag: "bold",
+              children: [{ type: "text", value: "new-body" }],
+            },
+          ],
+        },
+      ];
+      const diff = computeTokenDiff(
+        previous,
+        next,
+        { startOffset: 0, oldEndOffset: 1, newText: "next" },
+        8,
+        { maxSubtreeNodes: 2 },
+      );
+
+      assert.equal(diff.ops.length, 1);
+      assert.equal(diff.ops[0]?.kind, "splice");
+      assert.equal(diff.ops[0]?.path.length, 0);
       assertDiffRebuildsNextTree(previous, next, diff);
     },
   },

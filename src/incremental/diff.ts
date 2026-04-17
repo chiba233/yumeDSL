@@ -1,6 +1,7 @@
 import type {
   IncrementalDocument,
   IncrementalEdit,
+  SourceOffsetRange,
   StructuralDiffContainerField,
   StructuralDiffOp,
   StructuralDiffPath,
@@ -83,6 +84,168 @@ export const MAX_DIFF_RECURSIVE_REFINEMENT_DEPTH = 64;
 /** Full-fallback documents above this size skip expensive deep diff refinement. */
 export const MAX_FULL_FALLBACK_DIFF_REFINEMENT_SOURCE_LENGTH = 20_000;
 
+export interface TokenDiffBudgetOptions {
+  maxComparedNodes?: number;
+  maxAnchorCandidates?: number;
+  maxOps?: number;
+  maxSubtreeNodes?: number;
+  maxMilliseconds?: number;
+}
+
+export interface TokenDiffSourceWindow {
+  oldRange: SourceOffsetRange;
+  newRange: SourceOffsetRange;
+}
+
+interface TokenDiffFullDocumentSpans {
+  oldEndOffset: number;
+  newEndOffset: number;
+}
+
+export const DEFAULT_DIFF_MAX_COMPARED_NODES = 20_000;
+export const DEFAULT_DIFF_MAX_ANCHOR_CANDIDATES = 128;
+export const DEFAULT_DIFF_MAX_OPS = 512;
+export const DEFAULT_DIFF_MAX_SUBTREE_NODES = 256;
+export const DEFAULT_DIFF_MAX_MILLISECONDS = 8;
+
+type DiffBudgetState = {
+  maxComparedNodes: number;
+  comparedNodes: number;
+  maxAnchorCandidates: number;
+  anchorCandidates: number;
+  maxOps: number;
+  maxSubtreeNodes: number;
+  deadline: number | undefined;
+  exceeded: boolean;
+};
+
+const diffNow: () => number =
+  typeof performance !== "undefined" ? () => performance.now() : () => Date.now();
+
+const normalizePositiveInteger = (value: number | undefined, fallback: number): number => {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return Math.max(1, Math.floor(value));
+};
+
+const normalizePositiveMilliseconds = (value: number | undefined, fallback: number): number => {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return Math.max(0.1, value);
+};
+
+const createDiffBudgetState = (options: TokenDiffBudgetOptions | undefined): DiffBudgetState | undefined => {
+  if (!options) return undefined;
+  return {
+    maxComparedNodes: normalizePositiveInteger(options.maxComparedNodes, DEFAULT_DIFF_MAX_COMPARED_NODES),
+    comparedNodes: 0,
+    maxAnchorCandidates: normalizePositiveInteger(options.maxAnchorCandidates, DEFAULT_DIFF_MAX_ANCHOR_CANDIDATES),
+    anchorCandidates: 0,
+    maxOps: normalizePositiveInteger(options.maxOps, DEFAULT_DIFF_MAX_OPS),
+    maxSubtreeNodes: normalizePositiveInteger(options.maxSubtreeNodes, DEFAULT_DIFF_MAX_SUBTREE_NODES),
+    deadline:
+      options.maxMilliseconds === undefined
+        ? undefined
+        : diffNow() + normalizePositiveMilliseconds(options.maxMilliseconds, DEFAULT_DIFF_MAX_MILLISECONDS),
+    exceeded: false,
+  };
+};
+
+const markDiffBudgetExceeded = (budgetState: DiffBudgetState | undefined): boolean => {
+  if (!budgetState) return false;
+  budgetState.exceeded = true;
+  return true;
+};
+
+const hasDiffBudgetExceeded = (budgetState: DiffBudgetState | undefined): boolean => {
+  if (!budgetState) return false;
+  if (budgetState.exceeded) return true;
+  if (budgetState.comparedNodes > budgetState.maxComparedNodes) {
+    return markDiffBudgetExceeded(budgetState);
+  }
+  if (budgetState.anchorCandidates > budgetState.maxAnchorCandidates) {
+    return markDiffBudgetExceeded(budgetState);
+  }
+  if (budgetState.deadline !== undefined && diffNow() > budgetState.deadline) {
+    return markDiffBudgetExceeded(budgetState);
+  }
+  return false;
+};
+
+const consumeComparedNodes = (budgetState: DiffBudgetState | undefined, count = 1): boolean => {
+  if (!budgetState) return true;
+  budgetState.comparedNodes += count;
+  return !hasDiffBudgetExceeded(budgetState);
+};
+
+const reserveAnchorCandidate = (budgetState: DiffBudgetState | undefined): boolean => {
+  if (!budgetState) return true;
+  if (hasDiffBudgetExceeded(budgetState)) return false;
+  if (budgetState.anchorCandidates >= budgetState.maxAnchorCandidates) {
+    markDiffBudgetExceeded(budgetState);
+    return false;
+  }
+  budgetState.anchorCandidates += 1;
+  return !hasDiffBudgetExceeded(budgetState);
+};
+
+const pushDiffOp = (
+  accumulator: SequenceDiffAccumulator,
+  op: StructuralDiffOp,
+  budgetState: DiffBudgetState | undefined,
+): boolean => {
+  if (budgetState) {
+    if (accumulator.ops.length >= budgetState.maxOps) {
+      markDiffBudgetExceeded(budgetState);
+      return false;
+    }
+    if (hasDiffBudgetExceeded(budgetState)) return false;
+  }
+  accumulator.ops.push(op);
+  return true;
+};
+
+const subtreeSizeExceedsLimit = (node: StructuralNode, limit: number): boolean => {
+  const stack: StructuralNode[] = [node];
+  let visited = 0;
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) break;
+    visited += 1;
+    if (visited > limit) return true;
+    if (current.type === "inline") {
+      for (let i = current.children.length - 1; i >= 0; i--) {
+        stack.push(current.children[i]);
+      }
+    } else if (current.type === "raw") {
+      for (let i = current.args.length - 1; i >= 0; i--) {
+        stack.push(current.args[i]);
+      }
+    } else if (current.type === "block") {
+      for (let i = current.children.length - 1; i >= 0; i--) {
+        stack.push(current.children[i]);
+      }
+      for (let i = current.args.length - 1; i >= 0; i--) {
+        stack.push(current.args[i]);
+      }
+    }
+  }
+  return false;
+};
+
+const shouldCoarsenSubtreeDiff = (
+  previousNode: StructuralNode,
+  nextNode: StructuralNode,
+  budgetState: DiffBudgetState | undefined,
+): boolean => {
+  if (!budgetState) return false;
+  if (previousNode.type !== "raw" && previousNode.type !== "inline" && previousNode.type !== "block") {
+    return false;
+  }
+  return (
+    subtreeSizeExceedsLimit(previousNode, budgetState.maxSubtreeNodes) ||
+    subtreeSizeExceedsLimit(nextNode, budgetState.maxSubtreeNodes)
+  );
+};
+
 /**
  * Normalize the user-provided diff refinement depth cap.
  *
@@ -147,22 +310,27 @@ const emitSplice = (
   oldEnd: number,
   newStart: number,
   newEnd: number,
-): void => {
+  budgetState?: DiffBudgetState,
+): boolean => {
   // root patch / unchangedRanges 只应记录一次。
   // 某些分支会先把区间标成 change，随后又决定退化成 splice；
   // 那种情况下调用方必须传 recordSegments=false，避免重复记同一段 root patch。
   if (recordSegments) {
     appendDiffSegment(accumulator.segments, "change", oldStart, oldEnd, newStart, newEnd);
   }
-  accumulator.ops.push({
-    kind: "splice",
-    path: materializeDiffPath(path),
-    field,
-    oldRange: { start: oldStart, end: oldEnd },
-    newRange: { start: newStart, end: newEnd },
-    oldNodes: previousNodes.slice(oldStart, oldEnd),
-    newNodes: nextNodes.slice(newStart, newEnd),
-  });
+  return pushDiffOp(
+    accumulator,
+    {
+      kind: "splice",
+      path: materializeDiffPath(path),
+      field,
+      oldRange: { start: oldStart, end: oldEnd },
+      newRange: { start: newStart, end: newEnd },
+      oldNodes: previousNodes.slice(oldStart, oldEnd),
+      newNodes: nextNodes.slice(newStart, newEnd),
+    },
+    budgetState,
+  );
 };
 
 const appendTrailingEqualSegments = (
@@ -206,8 +374,10 @@ const emitSpliceAndTrailingEquals = (
   trailingOldEnd: number,
   trailingNewStart: number,
   trailingNewEnd: number,
-): void => {
-  emitSplice(
+  budgetState?: DiffBudgetState,
+): boolean => {
+  if (
+    !emitSplice(
     accumulator,
     recordSegments,
     path,
@@ -218,7 +388,11 @@ const emitSpliceAndTrailingEquals = (
     spliceOldEnd,
     spliceNewStart,
     spliceNewEnd,
-  );
+    budgetState,
+    )
+  ) {
+    return false;
+  }
   appendTrailingEqualSegments(
     accumulator,
     recordSegments,
@@ -227,6 +401,7 @@ const emitSpliceAndTrailingEquals = (
     trailingNewStart,
     trailingNewEnd,
   );
+  return true;
 };
 
 const appendPathSegment = (
@@ -244,9 +419,14 @@ const signaturesMatch = (previousNode: StructuralNode, nextNode: StructuralNode)
   nodeSignature(previousNode) === nodeSignature(nextNode);
 
 // 结构相等判断走显式栈，避免极深嵌套时递归爆栈。
-const areNodesStructurallyEqual = (previousNode: StructuralNode, nextNode: StructuralNode): boolean => {
+const areNodesStructurallyEqual = (
+  previousNode: StructuralNode,
+  nextNode: StructuralNode,
+  budgetState?: DiffBudgetState,
+): boolean => {
   if (previousNode === nextNode) return true;
   // signature 只负责快速剪枝；命中后仍要逐字段确认，不能把 hash 相等当成真相。
+  if (!consumeComparedNodes(budgetState)) return false;
   if (!signaturesMatch(previousNode, nextNode)) return false;
 
   const pending: Array<{ previousNode: StructuralNode; nextNode: StructuralNode }> = [
@@ -254,8 +434,10 @@ const areNodesStructurallyEqual = (previousNode: StructuralNode, nextNode: Struc
   ];
 
   while (pending.length > 0) {
+    if (hasDiffBudgetExceeded(budgetState)) return false;
     const frame = pending.pop();
     if (!frame) break;
+    if (!consumeComparedNodes(budgetState)) return false;
     const currentPrevious = frame.previousNode;
     const currentNext = frame.nextNode;
     if (currentPrevious.type !== currentNext.type) return false;
@@ -347,13 +529,15 @@ const findAnchors = (
   oldEnd: number,
   newStart: number,
   newEnd: number,
-): AnchorCandidate[] => {
+  budgetState?: DiffBudgetState,
+): AnchorCandidate[] | undefined => {
   // anchor 必须是唯一节点。
   // 如果重复内容也拿来当锚点，diff 很容易被切到错误位置，最终比整段 splice 更难消费。
   const oldEntries = new Map<number, { count: number; index: number }>();
   const newEntries = new Map<number, { count: number; index: number }>();
 
   for (let i = oldStart; i < oldEnd; i++) {
+    if (!consumeComparedNodes(budgetState)) return undefined;
     const signature = nodeSignature(previousNodes[i]);
     if (signature === undefined) continue;
     const current = oldEntries.get(signature);
@@ -364,6 +548,7 @@ const findAnchors = (
     }
   }
   for (let i = newStart; i < newEnd; i++) {
+    if (!consumeComparedNodes(budgetState)) return undefined;
     const signature = nodeSignature(nextNodes[i]);
     if (signature === undefined) continue;
     const current = newEntries.get(signature);
@@ -379,7 +564,11 @@ const findAnchors = (
     if (oldEntry.count !== 1) continue;
     const newEntry = newEntries.get(signature);
     if (!newEntry || newEntry.count !== 1) continue;
-    if (!areNodesStructurallyEqual(previousNodes[oldEntry.index], nextNodes[newEntry.index])) continue;
+    if (!reserveAnchorCandidate(budgetState)) return undefined;
+    if (!areNodesStructurallyEqual(previousNodes[oldEntry.index], nextNodes[newEntry.index], budgetState)) {
+      if (hasDiffBudgetExceeded(budgetState)) return undefined;
+      continue;
+    }
     candidates.push({ oldIndex: oldEntry.index, newIndex: newEntry.index });
   }
   if (candidates.length <= 1) return candidates;
@@ -487,13 +676,14 @@ const diffNodeArrays = (
   field: StructuralDiffContainerField,
   accumulator: SequenceDiffAccumulator,
   diffRefinementDepthCap: number,
+  budgetState: DiffBudgetState | undefined,
   oldStart = 0,
   oldEnd = previousNodes.length,
   newStart = 0,
   newEnd = nextNodes.length,
   recordSegments = !path && field === "root",
   nestedTasks: NestedNodeArrayDiffTask[] = [],
-): void => {
+): boolean => {
   // recordSegments 只在 root 层开启，因为 patches / unchangedRanges 只描述 root token 序列。
   // 子树变化全部交给 ops 表达；两边都记会让消费者拿到互相冲突的两套信息。
   const workStack: NodeArrayDiffWorkItem[] = [
@@ -512,6 +702,7 @@ const diffNodeArrays = (
   ];
 
   while (workStack.length > 0) {
+    if (hasDiffBudgetExceeded(budgetState)) return true;
     const work = workStack.pop();
     if (!work) break;
 
@@ -535,7 +726,7 @@ const diffNodeArrays = (
     while (
       oldCursor < suffixOldEnd &&
       newCursor < suffixNewEnd &&
-      areNodesStructurallyEqual(work.previousNodes[oldCursor], work.nextNodes[newCursor])
+      areNodesStructurallyEqual(work.previousNodes[oldCursor], work.nextNodes[newCursor], budgetState)
     ) {
       if (work.recordSegments) {
         appendDiffSegment(accumulator.segments, "equal", oldCursor, oldCursor + 1, newCursor, newCursor + 1);
@@ -543,15 +734,21 @@ const diffNodeArrays = (
       oldCursor += 1;
       newCursor += 1;
     }
+    if (hasDiffBudgetExceeded(budgetState)) return true;
 
     while (
       oldCursor < suffixOldEnd &&
       newCursor < suffixNewEnd &&
-      areNodesStructurallyEqual(work.previousNodes[suffixOldEnd - 1], work.nextNodes[suffixNewEnd - 1])
+      areNodesStructurallyEqual(
+        work.previousNodes[suffixOldEnd - 1],
+        work.nextNodes[suffixNewEnd - 1],
+        budgetState,
+      )
     ) {
       suffixOldEnd -= 1;
       suffixNewEnd -= 1;
     }
+    if (hasDiffBudgetExceeded(budgetState)) return true;
 
     if (oldCursor === suffixOldEnd && newCursor === suffixNewEnd) {
       appendTrailingEqualSegments(
@@ -566,26 +763,39 @@ const diffNodeArrays = (
     }
 
     if (oldCursor === suffixOldEnd || newCursor === suffixNewEnd) {
-      emitSpliceAndTrailingEquals(
-        accumulator,
-        work.recordSegments,
-        work.path,
-        work.field,
-        work.previousNodes,
-        work.nextNodes,
-        oldCursor,
-        suffixOldEnd,
-        newCursor,
-        suffixNewEnd,
-        suffixOldEnd,
-        work.oldEnd,
-        suffixNewEnd,
-        work.newEnd,
-      );
+      if (
+        !emitSpliceAndTrailingEquals(
+          accumulator,
+          work.recordSegments,
+          work.path,
+          work.field,
+          work.previousNodes,
+          work.nextNodes,
+          oldCursor,
+          suffixOldEnd,
+          newCursor,
+          suffixNewEnd,
+          suffixOldEnd,
+          work.oldEnd,
+          suffixNewEnd,
+          work.newEnd,
+        )
+      ) {
+        return true;
+      }
       continue;
     }
 
-    const anchors = findAnchors(work.previousNodes, work.nextNodes, oldCursor, suffixOldEnd, newCursor, suffixNewEnd);
+    const anchors = findAnchors(
+      work.previousNodes,
+      work.nextNodes,
+      oldCursor,
+      suffixOldEnd,
+      newCursor,
+      suffixNewEnd,
+      budgetState,
+    );
+    if (!anchors) return true;
     if (anchors.length > 0) {
       workStack.push({
         kind: "equal",
@@ -637,11 +847,12 @@ const diffNodeArrays = (
     const newLength = suffixNewEnd - newCursor;
     if (oldLength === newLength) {
       for (let i = 0; i < oldLength; i++) {
+        if (hasDiffBudgetExceeded(budgetState)) return true;
         const previousIndex = oldCursor + i;
         const nextIndex = newCursor + i;
         const previousNode = work.previousNodes[previousIndex];
         const nextNode = work.nextNodes[nextIndex];
-        if (areNodesStructurallyEqual(previousNode, nextNode)) {
+        if (areNodesStructurallyEqual(previousNode, nextNode, budgetState)) {
           if (work.recordSegments) {
             appendDiffSegment(
               accumulator.segments,
@@ -654,6 +865,7 @@ const diffNodeArrays = (
           }
           continue;
         }
+        if (hasDiffBudgetExceeded(budgetState)) return true;
         if (canDiffNodesRecursively(previousNode, nextNode)) {
           if (work.recordSegments) {
             appendDiffSegment(
@@ -669,55 +881,92 @@ const diffNodeArrays = (
           const refineNested = nextPath.depth <= diffRefinementDepthCap;
           const supportsNestedRefinement =
             previousNode.type === "raw" || previousNode.type === "inline" || previousNode.type === "block";
-          if (!refineNested && supportsNestedRefinement) {
+          if ((!refineNested && supportsNestedRefinement) || shouldCoarsenSubtreeDiff(previousNode, nextNode, budgetState)) {
             // 深度上限一到就立刻收手。
             // 不要继续往下追 set-text / set-raw-content，否则深树会把 diff 成本重新拉爆。
-            emitSplice(
-              accumulator,
-              false,
-              work.path,
-              work.field,
-              work.previousNodes,
-              work.nextNodes,
-              previousIndex,
-              previousIndex + 1,
-              nextIndex,
-              nextIndex + 1,
-            );
+            if (
+              !emitSplice(
+                accumulator,
+                false,
+                work.path,
+                work.field,
+                work.previousNodes,
+                work.nextNodes,
+                previousIndex,
+                previousIndex + 1,
+                nextIndex,
+                nextIndex + 1,
+                budgetState,
+              )
+            ) {
+              return true;
+            }
             continue;
           }
           if (previousNode.type === "text" && nextNode.type === "text") {
-            accumulator.ops.push({
-              kind: "set-text",
-              path: materializeDiffPath(nextPath),
-              oldValue: previousNode.value,
-              newValue: nextNode.value,
-            });
+            if (
+              !pushDiffOp(
+                accumulator,
+                {
+                  kind: "set-text",
+                  path: materializeDiffPath(nextPath),
+                  oldValue: previousNode.value,
+                  newValue: nextNode.value,
+                },
+                budgetState,
+              )
+            ) {
+              return true;
+            }
           } else if (previousNode.type === "escape" && nextNode.type === "escape") {
-            accumulator.ops.push({
-              kind: "set-escape",
-              path: materializeDiffPath(nextPath),
-              oldValue: previousNode.raw,
-              newValue: nextNode.raw,
-            });
+            if (
+              !pushDiffOp(
+                accumulator,
+                {
+                  kind: "set-escape",
+                  path: materializeDiffPath(nextPath),
+                  oldValue: previousNode.raw,
+                  newValue: nextNode.raw,
+                },
+                budgetState,
+              )
+            ) {
+              return true;
+            }
           } else if (previousNode.type === "raw" && nextNode.type === "raw") {
             if (previousNode.content !== nextNode.content) {
-              accumulator.ops.push({
-                kind: "set-raw-content",
-                path: materializeDiffPath(nextPath),
-                oldValue: previousNode.content,
-                newValue: nextNode.content,
-              });
+              if (
+                !pushDiffOp(
+                  accumulator,
+                  {
+                    kind: "set-raw-content",
+                    path: materializeDiffPath(nextPath),
+                    oldValue: previousNode.content,
+                    newValue: nextNode.content,
+                  },
+                  budgetState,
+                )
+              ) {
+                return true;
+              }
             }
             queueNestedNodeArrayDiff(nestedTasks, previousNode.args, nextNode.args, nextPath, "args");
           } else if (previousNode.type === "inline" && nextNode.type === "inline") {
             if (!!previousNode.implicitInlineShorthand !== !!nextNode.implicitInlineShorthand) {
-              accumulator.ops.push({
-                kind: "set-implicit-inline-shorthand",
-                path: materializeDiffPath(nextPath),
-                oldValue: previousNode.implicitInlineShorthand,
-                newValue: nextNode.implicitInlineShorthand,
-              });
+              if (
+                !pushDiffOp(
+                  accumulator,
+                  {
+                    kind: "set-implicit-inline-shorthand",
+                    path: materializeDiffPath(nextPath),
+                    oldValue: previousNode.implicitInlineShorthand,
+                    newValue: nextNode.implicitInlineShorthand,
+                  },
+                  budgetState,
+                )
+              ) {
+                return true;
+              }
             }
             queueNestedNodeArrayDiff(
               nestedTasks,
@@ -737,18 +986,23 @@ const diffNodeArrays = (
             );
           }
         } else {
-          emitSplice(
-            accumulator,
-            work.recordSegments,
-            work.path,
-            work.field,
-            work.previousNodes,
-            work.nextNodes,
-            previousIndex,
-            previousIndex + 1,
-            nextIndex,
-            nextIndex + 1,
-          );
+          if (
+            !emitSplice(
+              accumulator,
+              work.recordSegments,
+              work.path,
+              work.field,
+              work.previousNodes,
+              work.nextNodes,
+              previousIndex,
+              previousIndex + 1,
+              nextIndex,
+              nextIndex + 1,
+              budgetState,
+            )
+          ) {
+            return true;
+          }
         }
       }
       appendTrailingEqualSegments(
@@ -762,48 +1016,61 @@ const diffNodeArrays = (
       continue;
     }
 
-    emitSpliceAndTrailingEquals(
-      accumulator,
-      work.recordSegments,
-      work.path,
-      work.field,
-      work.previousNodes,
-      work.nextNodes,
-      oldCursor,
-      suffixOldEnd,
-      newCursor,
-      suffixNewEnd,
-      suffixOldEnd,
-      work.oldEnd,
-      suffixNewEnd,
-      work.newEnd,
-    );
+    if (
+      !emitSpliceAndTrailingEquals(
+        accumulator,
+        work.recordSegments,
+        work.path,
+        work.field,
+        work.previousNodes,
+        work.nextNodes,
+        oldCursor,
+        suffixOldEnd,
+        newCursor,
+        suffixNewEnd,
+        suffixOldEnd,
+        work.oldEnd,
+        suffixNewEnd,
+        work.newEnd,
+        budgetState,
+      )
+    ) {
+      return true;
+    }
   }
+  return false;
 };
 
 const processNestedNodeArrayDiffs = (
   nestedTasks: NestedNodeArrayDiffTask[],
   accumulator: SequenceDiffAccumulator,
   diffRefinementDepthCap: number,
-): void => {
+  budgetState: DiffBudgetState | undefined,
+): boolean => {
   while (nestedTasks.length > 0) {
     const task = nestedTasks.pop();
     if (!task) break;
-    diffNodeArrays(
-      task.previousNodes,
-      task.nextNodes,
-      task.path,
-      task.field,
-      accumulator,
-      diffRefinementDepthCap,
-      0,
-      task.previousNodes.length,
-      0,
-      task.nextNodes.length,
-      false,
-      nestedTasks,
-    );
+    if (
+      diffNodeArrays(
+        task.previousNodes,
+        task.nextNodes,
+        task.path,
+        task.field,
+        accumulator,
+        diffRefinementDepthCap,
+        budgetState,
+        0,
+        task.previousNodes.length,
+        0,
+        task.nextNodes.length,
+        false,
+        nestedTasks,
+      )
+    ) {
+      return true;
+    }
   }
+  return false;
 };
 
 // dirty span 是 best-effort：优先从节点 position 推导，取不到再退回 edit span。
@@ -885,46 +1152,70 @@ export const buildConservativeTokenDiff = (
   };
 };
 
-/**
- * Compute the patch/unchanged/op triple for one structural tree update.
- *
- * This prefers fine-grained nested ops when possible, but degrades toward
- * container-level splices when node shapes diverge or refinement hits the
- * configured depth cap.
- */
-export const computeTokenDiff = (
+const buildConservativeTreeTokenDiff = (
   previousTree: readonly StructuralNode[],
   nextTree: readonly StructuralNode[],
   edit: IncrementalEdit,
-  diffRefinementDepthCap: number,
+  fullDocumentSpans?: TokenDiffFullDocumentSpans,
 ): TokenDiffResult => {
-  // diff 是锦上添花，不是 session 正确性的前提。
-  // 所以策略始终是：能细就细，细不动就保守，绝不为了 diff 反过来拖垮主更新流程。
-  const accumulator: SequenceDiffAccumulator = { segments: [], ops: [] };
-  const nestedTasks: NestedNodeArrayDiffTask[] = [];
-  diffNodeArrays(
-    previousTree,
-    nextTree,
-    undefined,
-    "root",
-    accumulator,
-    diffRefinementDepthCap,
-    0,
-    previousTree.length,
-    0,
-    nextTree.length,
-    true,
-    nestedTasks,
-  );
-  processNestedNodeArrayDiffs(nestedTasks, accumulator, diffRefinementDepthCap);
+  const previousCount = previousTree.length;
+  const nextCount = nextTree.length;
+  const patches: TokenDiffPatch[] = [];
+  if (!(previousCount === 0 && nextCount === 0)) {
+    patches.push({
+      kind: previousCount === 0 ? "insert" : nextCount === 0 ? "remove" : "replace",
+      oldRange: { start: 0, end: previousCount },
+      newRange: { start: 0, end: nextCount },
+    });
+  }
+  return {
+    isNoop: previousCount === 0 && nextCount === 0,
+    patches,
+    unchangedRanges: [],
+    ops:
+      previousCount === 0 && nextCount === 0
+        ? []
+        : [
+            {
+              kind: "splice",
+              path: [],
+              field: "root",
+              oldRange: { start: 0, end: previousCount },
+              newRange: { start: 0, end: nextCount },
+              oldNodes: previousTree.slice(),
+              newNodes: nextTree.slice(),
+            },
+          ],
+    dirtySpanOld:
+      fullDocumentSpans
+        ? { startOffset: 0, endOffset: fullDocumentSpans.oldEndOffset }
+        : resolveDirtySpan(previousTree, 0, previousTree.length, edit.startOffset, edit.oldEndOffset),
+    dirtySpanNew:
+      fullDocumentSpans
+        ? { startOffset: 0, endOffset: fullDocumentSpans.newEndOffset }
+        : resolveDirtySpan(
+            nextTree,
+            0,
+            nextTree.length,
+            edit.startOffset,
+            edit.startOffset + edit.newText.length,
+          ),
+  };
+};
 
+const buildDiffShapeFromSegments = (
+  segments: readonly SequenceDiffSegment[],
+  previousTree: readonly StructuralNode[],
+  nextTree: readonly StructuralNode[],
+  edit: IncrementalEdit,
+  ops: readonly StructuralDiffOp[],
+): TokenDiffResult => {
   const unchangedRanges: TokenDiffUnchangedRange[] = [];
   const patches: TokenDiffPatch[] = [];
-  const ops = accumulator.ops.slice().sort(compareStructuralDiffOpsDescending);
   let firstChangedSegment: SequenceDiffSegment | undefined;
   let lastChangedSegment: SequenceDiffSegment | undefined;
 
-  for (const segment of accumulator.segments) {
+  for (const segment of segments) {
     if (segment.kind === "equal") {
       unchangedRanges.push({
         oldRange: { start: segment.oldRange.start, end: segment.oldRange.end },
@@ -965,27 +1256,269 @@ export const computeTokenDiff = (
   const newChangedStart = firstChangedSegment ? firstChangedSegment.newRange.start : 0;
   const newChangedEnd = lastChangedSegment ? lastChangedSegment.newRange.end : 0;
 
-  const dirtySpanOld = resolveDirtySpan(
-    previousTree,
-    oldChangedStart,
-    oldChangedEnd,
-    edit.startOffset,
-    edit.oldEndOffset,
-  );
-  const dirtySpanNew = resolveDirtySpan(
-    nextTree,
-    newChangedStart,
-    newChangedEnd,
-    edit.startOffset,
-    edit.startOffset + edit.newText.length,
-  );
-
   return {
     isNoop: patches.length === 0 && ops.length === 0,
     patches,
     unchangedRanges,
-    ops,
-    dirtySpanOld,
-    dirtySpanNew,
+    ops: ops.slice().sort(compareStructuralDiffOpsDescending),
+    dirtySpanOld: resolveDirtySpan(
+      previousTree,
+      oldChangedStart,
+      oldChangedEnd,
+      edit.startOffset,
+      edit.oldEndOffset,
+    ),
+    dirtySpanNew: resolveDirtySpan(
+      nextTree,
+      newChangedStart,
+      newChangedEnd,
+      edit.startOffset,
+      edit.startOffset + edit.newText.length,
+    ),
   };
+};
+
+const buildRootSpliceOpsFromSegments = (
+  segments: readonly SequenceDiffSegment[],
+  previousTree: readonly StructuralNode[],
+  nextTree: readonly StructuralNode[],
+  maxOps: number | undefined,
+): StructuralDiffOp[] | undefined => {
+  const ops: StructuralDiffOp[] = [];
+  for (const segment of segments) {
+    if (segment.kind !== "change") continue;
+    if (maxOps !== undefined && ops.length >= maxOps) {
+      return undefined;
+    }
+    ops.push({
+      kind: "splice",
+      path: [],
+      field: "root",
+      oldRange: { start: segment.oldRange.start, end: segment.oldRange.end },
+      newRange: { start: segment.newRange.start, end: segment.newRange.end },
+      oldNodes: previousTree.slice(segment.oldRange.start, segment.oldRange.end),
+      newNodes: nextTree.slice(segment.newRange.start, segment.newRange.end),
+    });
+  }
+  return ops;
+};
+
+const findRootTokenRangeForSourceWindow = (
+  nodes: readonly StructuralNode[],
+  sourceWindow: SourceOffsetRange,
+): { start: number; end: number } | undefined => {
+  let firstOverlap = -1;
+  let lastOverlap = -1;
+  let insertionIndex = nodes.length;
+  let insertionFound = false;
+  const isInsertionWindow = sourceWindow.startOffset === sourceWindow.endOffset;
+
+  for (let i = 0; i < nodes.length; i++) {
+    const position = nodes[i].position;
+    if (!position) return undefined;
+    const nodeStart = position.start.offset;
+    const nodeEnd = position.end.offset;
+    const overlaps = isInsertionWindow
+      ? nodeStart < sourceWindow.startOffset && nodeEnd > sourceWindow.endOffset
+      : nodeEnd > sourceWindow.startOffset && nodeStart < sourceWindow.endOffset;
+    if (overlaps) {
+      if (firstOverlap === -1) firstOverlap = i;
+      lastOverlap = i;
+    }
+    if (!insertionFound && nodeStart >= sourceWindow.startOffset) {
+      insertionIndex = i;
+      insertionFound = true;
+    }
+  }
+
+  if (firstOverlap !== -1) {
+    return { start: firstOverlap, end: lastOverlap + 1 };
+  }
+  return { start: insertionIndex, end: insertionIndex };
+};
+
+const computeTokenDiffInRootRange = (
+  previousTree: readonly StructuralNode[],
+  nextTree: readonly StructuralNode[],
+  edit: IncrementalEdit,
+  diffRefinementDepthCap: number,
+  budgetOptions: TokenDiffBudgetOptions | undefined,
+  fullDocumentSpans: TokenDiffFullDocumentSpans | undefined,
+  rootRange:
+    | {
+        oldRange: { start: number; end: number };
+        newRange: { start: number; end: number };
+      }
+    | undefined,
+): TokenDiffResult => {
+  const accumulator: SequenceDiffAccumulator = { segments: [], ops: [] };
+  const nestedTasks: NestedNodeArrayDiffTask[] = [];
+  const budgetState = createDiffBudgetState(budgetOptions);
+  const oldStart = rootRange?.oldRange.start ?? 0;
+  const oldEnd = rootRange?.oldRange.end ?? previousTree.length;
+  const newStart = rootRange?.newRange.start ?? 0;
+  const newEnd = rootRange?.newRange.end ?? nextTree.length;
+
+  if (oldStart > 0 || newStart > 0) {
+    appendDiffSegment(accumulator.segments, "equal", 0, oldStart, 0, newStart);
+  }
+
+  if (
+    diffNodeArrays(
+      previousTree,
+      nextTree,
+      undefined,
+      "root",
+      accumulator,
+      diffRefinementDepthCap,
+      budgetState,
+      oldStart,
+      oldEnd,
+      newStart,
+      newEnd,
+      true,
+      nestedTasks,
+    )
+  ) {
+    return buildConservativeTreeTokenDiff(previousTree, nextTree, edit, fullDocumentSpans);
+  }
+
+  if (oldEnd < previousTree.length || newEnd < nextTree.length) {
+    appendDiffSegment(accumulator.segments, "equal", oldEnd, previousTree.length, newEnd, nextTree.length);
+  }
+
+  const nestedBudgetExceeded = processNestedNodeArrayDiffs(
+    nestedTasks,
+    accumulator,
+    diffRefinementDepthCap,
+    budgetState,
+  );
+  if (nestedBudgetExceeded) {
+    const rootSpliceOps = buildRootSpliceOpsFromSegments(
+      accumulator.segments,
+      previousTree,
+      nextTree,
+      budgetState?.maxOps,
+    );
+    if (!rootSpliceOps) {
+      return buildConservativeTreeTokenDiff(previousTree, nextTree, edit, fullDocumentSpans);
+    }
+    return buildDiffShapeFromSegments(accumulator.segments, previousTree, nextTree, edit, rootSpliceOps);
+  }
+  return buildDiffShapeFromSegments(accumulator.segments, previousTree, nextTree, edit, accumulator.ops);
+};
+
+export const computeTokenDiffWithinSourceWindow = (
+  previousTree: readonly StructuralNode[],
+  nextTree: readonly StructuralNode[],
+  edit: IncrementalEdit,
+  diffRefinementDepthCap: number,
+  budgetOptions?: TokenDiffBudgetOptions,
+  sourceWindow?: TokenDiffSourceWindow,
+  fullDocumentSpans?: TokenDiffFullDocumentSpans,
+): TokenDiffResult => {
+  if (!sourceWindow) {
+    return computeTokenDiffInRootRange(
+      previousTree,
+      nextTree,
+      edit,
+      diffRefinementDepthCap,
+      budgetOptions,
+      fullDocumentSpans,
+      undefined,
+    );
+  }
+  const oldRange = findRootTokenRangeForSourceWindow(previousTree, sourceWindow.oldRange);
+  const newRange = findRootTokenRangeForSourceWindow(nextTree, sourceWindow.newRange);
+  if (!oldRange || !newRange) {
+    return computeTokenDiffInRootRange(
+      previousTree,
+      nextTree,
+      edit,
+      diffRefinementDepthCap,
+      budgetOptions,
+      fullDocumentSpans,
+      undefined,
+    );
+  }
+  if (oldRange.start !== newRange.start) {
+    return computeTokenDiffInRootRange(
+      previousTree,
+      nextTree,
+      edit,
+      diffRefinementDepthCap,
+      budgetOptions,
+      fullDocumentSpans,
+      undefined,
+    );
+  }
+  const oldSuffixLength = previousTree.length - oldRange.end;
+  const newSuffixLength = nextTree.length - newRange.end;
+  if (oldSuffixLength !== newSuffixLength) {
+    return computeTokenDiffInRootRange(
+      previousTree,
+      nextTree,
+      edit,
+      diffRefinementDepthCap,
+      budgetOptions,
+      fullDocumentSpans,
+      undefined,
+    );
+  }
+  if (
+    edit.startOffset === edit.oldEndOffset &&
+    edit.newText.length > 0 &&
+    oldRange.start === oldRange.end &&
+    newRange.start === newRange.end
+  ) {
+    return computeTokenDiffInRootRange(
+      previousTree,
+      nextTree,
+      edit,
+      diffRefinementDepthCap,
+      budgetOptions,
+      fullDocumentSpans,
+      undefined,
+    );
+  }
+  return computeTokenDiffInRootRange(
+    previousTree,
+    nextTree,
+    edit,
+    diffRefinementDepthCap,
+    budgetOptions,
+    fullDocumentSpans,
+    {
+      oldRange,
+      newRange,
+    },
+  );
+};
+
+/**
+ * Compute the patch/unchanged/op triple for one structural tree update.
+ *
+ * This prefers fine-grained nested ops when possible, but degrades toward
+ * container-level splices when node shapes diverge or refinement hits the
+ * configured depth cap.
+ */
+export const computeTokenDiff = (
+  previousTree: readonly StructuralNode[],
+  nextTree: readonly StructuralNode[],
+  edit: IncrementalEdit,
+  diffRefinementDepthCap: number,
+  budgetOptions?: TokenDiffBudgetOptions,
+  fullDocumentSpans?: TokenDiffFullDocumentSpans,
+): TokenDiffResult => {
+  // diff 是锦上添花，不是 session 正确性的前提。
+  // 所以策略始终是：能细就细，细不动就保守，绝不为了 diff 反过来拖垮主更新流程。
+  return computeTokenDiffInRootRange(
+    previousTree,
+    nextTree,
+    edit,
+    diffRefinementDepthCap,
+    budgetOptions,
+    fullDocumentSpans,
+    undefined,
+  );
 };

@@ -7,10 +7,12 @@
 - **相较 1.3.x：增量集成现在已进入 stable**
   - `parseIncremental`、`updateIncremental`、`tryUpdateIncremental` 与 `createIncrementalSession` 不再只是“暂时可用的内部能力”，而是可按稳定集成面理解的公开能力。
   - session 的回退语义与 diff 返回预期，现在可以按版本契约来理解和升级。
-- **相较 1.3.x：大编辑与深层结构下的行为更可预期**
-  - 当细粒度精化成本过高或存在风险时，增量更新与 `applyEditWithDiff(...)` 会更保守地选择安全路径。
-  - 默认 `diffRefinementDepthCap` 现已调低，深层嵌套 diff 会更早退化为较粗粒度的 splice。
-  - 对接入方来说，这意味着极端输入下更少的意外失败，以及更清晰的 fallback 预期。
+- **相较 1.3.x：`applyEditWithDiff(...)` 现在优先保证有界、可预期**
+  - 细粒度 diff 精化现在受全局预算约束（比较数 / 锚点 / op / 子树规模 / wall-clock），一旦继续细化不划算，就会直接退化为 coarse splice 或保守整树 diff。
+  - 当这次编辑实际命中增量路径时，root 级精细 diff 会先局部化到增量 dirty window，而不是继续对整棵 root tree 细化。
+- **相较 1.3.x：保守 diff 的语义更清晰**
+  - 当调用方能提供完整快照长度时，整树保守 fallback 现在会报告整文档 dirty span，避免在无 position 回退场景下把脏区误报得过小。
+  - 默认 `diffRefinementDepthCap` 已调低，深层嵌套 diff 会更早退化，极端树输入下的行为也更一致。
 - **升级说明**
   - `1.4.0` 没有破坏性公共 API 变更。
   - 现有 `1.3.x` 集成代码可直接升级到 `1.4.x`。

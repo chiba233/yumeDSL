@@ -102,6 +102,7 @@ export type {
   IncrementalEdit,
   IncrementalDocument,
   IncrementalSessionOptions,
+  IncrementalDiffRefinementOptions,
   TokenDiffResult,
   IncrementalSessionApplyResult,
   IncrementalSessionApplyWithDiffResult,

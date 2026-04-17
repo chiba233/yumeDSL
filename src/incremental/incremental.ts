@@ -2,6 +2,7 @@ import { buildPositionTracker } from "../internal/positions.js";
 import { buildZonesInternal, SOFT_ZONE_NODE_CAP } from "../internal/zones.js";
 import type {
   IncrementalDocument,
+  IncrementalDiffRefinementOptions,
   IncrementalEdit,
   IncrementalParseOptions,
   IncrementalSession,
@@ -20,6 +21,12 @@ import type {
 import {
   buildConservativeTokenDiff,
   computeTokenDiff,
+  computeTokenDiffWithinSourceWindow,
+  DEFAULT_DIFF_MAX_ANCHOR_CANDIDATES,
+  DEFAULT_DIFF_MAX_COMPARED_NODES,
+  DEFAULT_DIFF_MAX_MILLISECONDS,
+  DEFAULT_DIFF_MAX_OPS,
+  DEFAULT_DIFF_MAX_SUBTREE_NODES,
   MAX_FULL_FALLBACK_DIFF_REFINEMENT_SOURCE_LENGTH,
   normalizeDiffRefinementDepthCap,
 } from "./diff.js";
@@ -75,7 +82,15 @@ type IncrementalDebugStats = {
 
 type IncrementalDebugSink = (stats: IncrementalDebugStats) => void;
 type InternalUpdateMode = "incremental" | "internal-full-rebuild";
-type InternalUpdateObserver = (mode: InternalUpdateMode) => void;
+type InternalDiffSourceWindow = {
+  oldRange: { startOffset: number; endOffset: number };
+  newRange: { startOffset: number; endOffset: number };
+};
+type InternalUpdateTelemetry = {
+  mode: InternalUpdateMode;
+  diffSourceWindow?: InternalDiffSourceWindow;
+};
+type InternalUpdateObserver = (telemetry: InternalUpdateTelemetry) => void;
 
 let incrementalDebugSink: IncrementalDebugSink | undefined;
 
@@ -309,7 +324,7 @@ const updateIncrementalInternal = (
   const earlyFullRebuild = (): IncrementalDocument => {
     emitDebug(true);
     const rebuilt = parseIncrementalInternal(newSource, runtimeParseOptions, zoneCap);
-    internalObserver?.("internal-full-rebuild");
+    internalObserver?.({ mode: "internal-full-rebuild" });
     return rebuilt;
   };
 
@@ -331,7 +346,7 @@ const updateIncrementalInternal = (
   const fullRebuild = (): IncrementalDocument => {
     emitDebug(true);
     const rebuilt = parseIncrementalInternal(newSource, runtimeParseOptions, zoneCap, newTracker);
-    internalObserver?.("internal-full-rebuild");
+    internalObserver?.({ mode: "internal-full-rebuild" });
     return rebuilt;
   };
   const cumulativeBudget = Math.max(newSource.length * 2, 1024);
@@ -382,6 +397,16 @@ const updateIncrementalInternal = (
   // seam probe 通过之前，右侧一律视为不安全。
   // "看起来没动"不算证据，闭合边界轻微漂移就是最难查的那类增量 bug。
   const rightZones = oldRightZones.map((zone) => deferShiftZone(zone, delta));
+  const diffSourceWindow: InternalDiffSourceWindow = {
+    oldRange: {
+      startOffset: prevZones[dirty.from].startOffset,
+      endOffset: prevZones[dirtyTo].endOffset,
+    },
+    newRange: {
+      startOffset: mapOldOffsetToNew(edit, delta, prevZones[dirty.from].startOffset),
+      endOffset: mapOldOffsetToNew(edit, delta, prevZones[dirtyTo].endOffset),
+    },
+  };
 
   const nextRawZones = [...leftZones, ...dirtyZones, ...rightZones];
   // 确定走增量路径，此时才 clone parseOptions（避免 fullRebuild 白做一次）。
@@ -396,7 +421,7 @@ const updateIncrementalInternal = (
   installLazyDocument(updated, nextRawZones, newTracker);
   setCachedOptionsFingerprint(updated, nextOptionsFingerprint);
   emitDebug(false);
-  internalObserver?.("incremental");
+  internalObserver?.({ mode: "incremental", diffSourceWindow });
   return updated;
 };
 
@@ -483,7 +508,31 @@ export const createIncrementalSession = (
   // session 层的第一目标永远是推进到正确的新快照。
   // 增量命中率、diff 精细度、性能优化都只能在这个前提下排队。
   const zoneCap = normalizeSoftZoneNodeCap(sessionOptions?.softZoneNodeCap);
-  const diffRefinementDepthCap = normalizeDiffRefinementDepthCap(sessionOptions?.diffRefinementDepthCap);
+  const sessionDiffOptions = sessionOptions?.diff;
+  const defaultDiffRefinementOptions = {
+    refinementDepthCap: normalizeDiffRefinementDepthCap(sessionDiffOptions?.refinementDepthCap),
+    budgetOptions: {
+      maxComparedNodes: sessionDiffOptions?.maxComparedNodes ?? DEFAULT_DIFF_MAX_COMPARED_NODES,
+      maxAnchorCandidates: sessionDiffOptions?.maxAnchorCandidates ?? DEFAULT_DIFF_MAX_ANCHOR_CANDIDATES,
+      maxOps: sessionDiffOptions?.maxOps ?? DEFAULT_DIFF_MAX_OPS,
+      maxSubtreeNodes: sessionDiffOptions?.maxSubtreeNodes ?? DEFAULT_DIFF_MAX_SUBTREE_NODES,
+      maxMilliseconds: sessionDiffOptions?.maxMilliseconds ?? DEFAULT_DIFF_MAX_MILLISECONDS,
+    },
+  };
+  const resolveDiffRefinementOptions = (override?: IncrementalDiffRefinementOptions) => {
+    if (!override) return defaultDiffRefinementOptions;
+    const effective = override ? { ...sessionDiffOptions, ...override } : sessionDiffOptions;
+    return {
+      refinementDepthCap: normalizeDiffRefinementDepthCap(effective?.refinementDepthCap),
+      budgetOptions: {
+        maxComparedNodes: effective?.maxComparedNodes ?? DEFAULT_DIFF_MAX_COMPARED_NODES,
+        maxAnchorCandidates: effective?.maxAnchorCandidates ?? DEFAULT_DIFF_MAX_ANCHOR_CANDIDATES,
+        maxOps: effective?.maxOps ?? DEFAULT_DIFF_MAX_OPS,
+        maxSubtreeNodes: effective?.maxSubtreeNodes ?? DEFAULT_DIFF_MAX_SUBTREE_NODES,
+        maxMilliseconds: effective?.maxMilliseconds ?? DEFAULT_DIFF_MAX_MILLISECONDS,
+      },
+    };
+  };
   let currentDoc = parseIncrementalInternal(source, options, zoneCap);
   const strategy: IncrementalSessionStrategy = sessionOptions?.strategy ?? "auto";
   const sampleWindowSize = Math.max(4, sessionOptions?.sampleWindowSize ?? 24);
@@ -581,9 +630,14 @@ export const createIncrementalSession = (
     edit: IncrementalEdit,
     newSource: string,
     nextOptions?: IncrementalParseOptions,
-  ): { previousDoc: IncrementalDocument; result: IncrementalSessionApplyResult } => {
+  ): {
+    previousDoc: IncrementalDocument;
+    result: IncrementalSessionApplyResult;
+    diffSourceWindow?: InternalDiffSourceWindow;
+  } => {
     const previousDoc = currentDoc;
     let result: IncrementalSessionApplyResult;
+    let diffSourceWindow: InternalDiffSourceWindow | undefined;
     if (strategy === "full-only") {
       result = runRebuild(newSource, nextOptions, "FULL_ONLY_STRATEGY");
       return { previousDoc, result };
@@ -613,14 +667,14 @@ export const createIncrementalSession = (
     }
 
     const incrementalStart = now();
-    let mode: InternalUpdateMode | undefined;
+    let telemetry: InternalUpdateTelemetry | undefined;
     const updateResult = tryUpdateIncrementalInternal(
       currentDoc,
       edit,
       newSource,
       nextOptions,
       (nextTelemetry) => {
-        mode = nextTelemetry;
+        telemetry = nextTelemetry;
       },
       zoneCap,
     );
@@ -629,7 +683,7 @@ export const createIncrementalSession = (
 
     if (updateResult.ok) {
       currentDoc = updateResult.value;
-      const internalFullRebuild = mode === "internal-full-rebuild";
+      const internalFullRebuild = telemetry?.mode === "internal-full-rebuild";
       recordBounded(fallbackMarks, internalFullRebuild ? 1 : 0);
       maybeAdaptPolicy();
       if (internalFullRebuild) {
@@ -641,11 +695,12 @@ export const createIncrementalSession = (
         };
         return { previousDoc, result };
       }
+      diffSourceWindow = telemetry?.diffSourceWindow;
       result = {
         doc: currentDoc,
         mode: "incremental",
       };
-      return { previousDoc, result };
+      return { previousDoc, result, diffSourceWindow };
     }
 
     recordBounded(fallbackMarks, 1);
@@ -672,8 +727,10 @@ export const createIncrementalSession = (
     edit: IncrementalEdit,
     newSource: string,
     nextOptions?: IncrementalParseOptions,
+    diffOptions?: IncrementalDiffRefinementOptions,
   ): IncrementalSessionApplyWithDiffResult => {
-    const { previousDoc, result } = applyEditCore(edit, newSource, nextOptions);
+    const { previousDoc, result, diffSourceWindow } = applyEditCore(edit, newSource, nextOptions);
+    const refinement = resolveDiffRefinementOptions(diffOptions);
     let diff: TokenDiffResult;
     try {
       const skipRefinementForLargeFallback =
@@ -684,7 +741,31 @@ export const createIncrementalSession = (
         // full-fallback 且文档很大时，深挖细粒度 diff 的性价比通常很差。
         diff = buildConservativeTokenDiff(previousDoc, result.doc);
       } else {
-        diff = computeTokenDiff(previousDoc.tree, result.doc.tree, edit, diffRefinementDepthCap);
+        diff =
+          result.mode === "incremental"
+            ? computeTokenDiffWithinSourceWindow(
+                previousDoc.tree,
+                result.doc.tree,
+                edit,
+                refinement.refinementDepthCap,
+                refinement.budgetOptions,
+                diffSourceWindow,
+                {
+                  oldEndOffset: previousDoc.source.length,
+                  newEndOffset: result.doc.source.length,
+                },
+              )
+            : computeTokenDiff(
+                previousDoc.tree,
+                result.doc.tree,
+                edit,
+                refinement.refinementDepthCap,
+                refinement.budgetOptions,
+                {
+                  oldEndOffset: previousDoc.source.length,
+                  newEndOffset: result.doc.source.length,
+                },
+              );
       }
     } catch (_error) {
       // diff 降级不能影响 session 结果；新快照已经是对的，只是 diff 不够细。

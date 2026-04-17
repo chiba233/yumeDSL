@@ -432,7 +432,7 @@ Use these when you are not parsing once, but keeping a document alive across man
 This incremental API set is part of the stable public surface in `1.4.x`.
 In particular, session-level fallback is a documented contract rather than an exceptional edge case:
 `applyEdit(...)` / `applyEditWithDiff(...)` may return `mode: "full-fallback"` with a `fallbackReason`,
-and `sessionOptions.diffRefinementDepthCap` lets you trade nested diff granularity for cost on very deep trees.
+and diff refinement knobs now live under `sessionOptions.diff` (or per-call `applyEditWithDiff(..., diffOptions)`).
 
 - `parseIncremental(source, options?)` — build and return the **first** incremental snapshot (`IncrementalDocument`)
 - `createIncrementalSession(source, options?, sessionOptions?)` — create a **long-lived session** for repeated edits

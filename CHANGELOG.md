@@ -7,10 +7,12 @@
 - **Compared with 1.3.x: incremental integration is now stable**
   - `parseIncremental`, `updateIncremental`, `tryUpdateIncremental`, and `createIncrementalSession` are now presented as stable integration surfaces rather than provisional internals.
   - Session fallback behavior and diff payload expectations are now treated as versioned guarantees for host applications.
-- **Compared with 1.3.x: large or deeply nested edits are more predictable to integrate**
-  - Incremental updates and `applyEditWithDiff(...)` now behave more conservatively when fine-grained refinement would be too costly or unsafe.
-  - The default `diffRefinementDepthCap` is now lower, so deep nested diff refinement degrades to coarse splice ops earlier by default.
-  - For downstream consumers, this means fewer surprising edge-case failures and clearer upgrade expectations around fallback behavior.
+- **Compared with 1.3.x: `applyEditWithDiff(...)` now prefers bounded, predictable diff behavior**
+  - Fine-grained diff refinement is now budgeted (`compare` / `anchor` / `op` / subtree-size / wall-clock caps) and degrades directly to coarse splice or conservative whole-tree diff when the cost stops being worthwhile.
+  - When the edit stays on the incremental path, root-level fine diff is localized to the incremental dirty window instead of continuing to refine the entire root tree.
+- **Compared with 1.3.x: conservative diff semantics are clearer**
+  - Whole-tree conservative fallback now reports whole-document dirty spans when the caller provides full snapshot lengths, avoiding misleadingly small dirty-span reports in no-position fallback cases.
+  - The default `diffRefinementDepthCap` is lower, so deeply nested refinement degrades earlier by default and extreme trees behave more consistently across edits.
 - **Upgrade note**
   - No breaking public API changes in `1.4.0`.
   - Existing `1.3.x` integrations can upgrade directly to `1.4.x`.
