@@ -1,44 +1,36 @@
 # Security Policy
 
-> **For detailed security considerations and a safe UGC tutorial, see the [Security wiki page](https://github.com/chiba233/yumeDSL/wiki/en-Security) and [Safe UGC Chat tutorial](https://github.com/chiba233/yumeDSL/wiki/en-Tutorial-Safe-UGC).**
+This file is the short entry point for `yume-dsl-rich-text` security reporting.
+For the full policy, trust boundaries, and deployment guidance, see:
+
+- **中文**: <https://github.com/chiba233/yumeDSL/wiki/zh-CN-%E5%AE%89%E5%85%A8%E7%AD%96%E7%95%A5>
+- **English**: <https://github.com/chiba233/yumeDSL/wiki/en-Security>
 
 ## Supported versions
 
-| Version | Supported          |
-|---------|--------------------|
-| 1.x     | Yes                |
-| 0.x     | No (development)   |
+| Version | Supported |
+| --- | --- |
+| 1.x | Yes |
+| 0.x | No (development) |
 
 ## Reporting a vulnerability
 
 **Please do not open a public issue for security vulnerabilities.**
 
-Instead, report them privately via one of the following:
+Report them privately via one of the following:
 
-- **GitHub private vulnerability reporting**: Go to the [Security](https://github.com/chiba233/yumeDSL/security/advisories/new) tab and click "Report a vulnerability".
-- **Email**: Send details to the repository maintainer (see GitHub profile).
+- **GitHub private vulnerability reporting**: <https://github.com/chiba233/yumeDSL/security/advisories/new>
+- **Email**: Contact the repository maintainer via the address listed on GitHub
 
-### What to include
+Include:
 
-1. Description of the vulnerability
-2. Steps to reproduce
-3. Affected version
-4. Impact assessment (if known)
+1. A clear description of the issue
+2. Reproduction steps or a minimal reproduction
+3. Affected package version
+4. Impact assessment if known
 
-### What to expect
+Expected response:
 
 - Acknowledgment within **48 hours**
 - Status update within **7 days**
 - A fix or mitigation plan for confirmed vulnerabilities
-
-## Scope
-
-This policy covers `yume-dsl-rich-text`. It does **not** cover:
-
-- Vulnerabilities in rendering layers you build on top of the parser (that's your application code)
-- Denial of service via extremely large input — use `depthLimit` and input size limits in your application
-
-## Known security considerations
-
-- **URL sanitization**: The parser does not validate URLs. If you render `link` tags as `<a>` elements, sanitize the `url` field in your rendering layer (see the Vue 3 example in the README for a `normalizeUrl` reference implementation).
-- **Raw content**: `raw` tag content is passed through as-is. If you render it as HTML, escape it appropriately.
