@@ -5,7 +5,8 @@
 ### 1.4.3
 
 - **结构解析器：主扫描循环新增快速文本跳跃**
-  - 逐字符主循环现在会提前扫描到下一个边界字符（`tagPrefix`、`tagClose`、`tagDivider`、`escapeChar`、`inlineCloseToken`），对纯文本区段进行批量推进，大幅减少文本密集输入下的逐字符开销。
+  - 主循环现在对纯文本区段逐字符扫描边界首字符（`tagPrefix`、`tagClose`、`tagDivider`、`escapeChar`、`inlineCloseToken`），跳过非边界字符的完整分支树，减少每字符判定开销。
+  - 边界首字符集按帧缓存，通过位掩码脏检查键（`insideArgs` / `canReadEscaped` / `inlineCloseToken`）控制重建，仅在帧状态组合实际变化时重算。
   - 当 inline shorthand 启用时，所有 inline 帧保守回退到逐字符扫描，避免漏过非固定 token 的 shorthand 入口。
 - **转义 token 查找：首字符分桶与缓存 token 集合**
   - `readEscapedSequenceWithTokens` 现在先按首字符短路再调用 `startsWith`，并按首字符对候选 token 分桶，只测试相关 token。

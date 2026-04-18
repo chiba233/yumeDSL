@@ -255,28 +255,49 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
   };
 
   const findNextBoundaryChar = (frame: ParseFrame, from: number): number => {
-    let boundary = frame.textEnd;
-    const updateBoundary = (lead: string): void => {
-      if (!lead) return;
-      const next = frame.text.indexOf(lead, from);
-      if (next !== -1 && next < boundary && next < frame.textEnd) {
-        boundary = next;
-      }
-    };
+    const hasInlineCloseToken = frame.inlineCloseToken !== null;
+    const canReadEscaped = canReadEscapedForFrame(frame);
+    const boundaryKey =
+      (frame.insideArgs ? 1 : 0) |
+      (canReadEscaped ? 1 << 1 : 0) |
+      (hasInlineCloseToken ? 1 << 2 : 0);
 
-    updateBoundary(tagPrefix[0]);
-    // `endTag` 约束为以 `tagClose` 开头（见下方 assert），所以 `tagClose[0]` 已覆盖 `endTag[0]`。
-    updateBoundary(tagClose[0]);
-    if (frame.inlineCloseToken !== null) {
-      updateBoundary(frame.inlineCloseToken[0]);
+    if (frame.boundaryKey !== boundaryKey) {
+      const boundaryLeads: string[] = [];
+      const addBoundaryLead = (lead: string): void => {
+        if (!lead) return;
+        if (boundaryLeads.includes(lead)) return;
+        boundaryLeads.push(lead);
+      };
+
+      addBoundaryLead(tagPrefix[0]);
+      // `endTag` 约束为以 `tagClose` 开头（见下方 assert），所以 `tagClose[0]` 已覆盖 `endTag[0]`。
+      addBoundaryLead(tagClose[0]);
+      if (hasInlineCloseToken) {
+        addBoundaryLead(frame.inlineCloseToken![0]);
+      }
+      if (frame.insideArgs) {
+        addBoundaryLead(tagDivider[0]);
+      }
+      if (canReadEscaped) {
+        addBoundaryLead(escapeChar[0]);
+      }
+
+      frame.boundaryLeads = boundaryLeads;
+      frame.boundaryKey = boundaryKey;
     }
-    if (frame.insideArgs) {
-      updateBoundary(tagDivider[0]);
+
+    const leads = frame.boundaryLeads;
+    if (leads.length === 0) return frame.textEnd;
+    for (let cursor = from; cursor < frame.textEnd; cursor++) {
+      const current = frame.text[cursor];
+      for (let index = 0; index < leads.length; index++) {
+        if (current === leads[index]) {
+          return cursor;
+        }
+      }
     }
-    if (canReadEscapedForFrame(frame)) {
-      updateBoundary(escapeChar[0]);
-    }
-    return boundary;
+    return frame.textEnd;
   };
 
   if (!endTag.startsWith(tagClose)) {
@@ -333,6 +354,10 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     shorthandProbeStartI: number; // 最近一次前探起点
     shorthandProbeBoundaryI: number; // 最近一次前探命中的首个边界位置（tagClose / full tag start / EOF）
     shorthandProbeReject: boolean; // 该边界是否表示“会误吃父级 endTag，需拒绝 shorthand”
+
+    // ── fast-skip 边界缓存 ──
+    boundaryLeads: string[];
+    boundaryKey: number;
   }
 
   const makeFrame = (
@@ -369,6 +394,8 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     shorthandProbeStartI: -1,
     shorthandProbeBoundaryI: -1,
     shorthandProbeReject: false,
+    boundaryLeads: [],
+    boundaryKey: -1,
   });
 
   // ── 缓冲区 ──

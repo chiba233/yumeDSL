@@ -5,7 +5,8 @@
 ### 1.4.3
 
 - **Structural parser: fast text skip in main scan loop**
-  - The character-by-character main loop now bulk-advances over plain text spans by scanning ahead to the next boundary character (`tagPrefix`, `tagClose`, `tagDivider`, `escapeChar`, `inlineCloseToken`), significantly reducing per-character overhead on text-heavy input.
+  - The main loop now skips plain text spans by scanning character-by-character for the next boundary lead (`tagPrefix`, `tagClose`, `tagDivider`, `escapeChar`, `inlineCloseToken`), bypassing the full per-character branch tree for non-boundary characters.
+  - Boundary lead sets are cached per frame via a bitmask dirty key, so the set is only rebuilt when the frame's state combination (`insideArgs` / `canReadEscaped` / `inlineCloseToken`) actually changes.
   - When inline shorthand is enabled, inline frames conservatively fall back to per-character scanning to avoid missing non-fixed-token shorthand entry points.
 - **Escape token lookup: first-character bucketing and cached token sets**
   - `readEscapedSequenceWithTokens` now short-circuits on the first character before calling `startsWith`, and groups candidate tokens by leading character so only relevant tokens are tested.
