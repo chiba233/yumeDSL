@@ -278,17 +278,19 @@ export interface StructuralDiffSpliceOp {
 }
 
 /** Scalar text update on a `text` node. */
-export interface StructuralDiffTextOp extends StructuralDiffValueOpBase<"set-text", string> {}
+export type StructuralDiffTextOp = StructuralDiffValueOpBase<"set-text", string>;
 
 /** Scalar raw update on an `escape` node. */
-export interface StructuralDiffEscapeOp extends StructuralDiffValueOpBase<"set-escape", string> {}
+export type StructuralDiffEscapeOp = StructuralDiffValueOpBase<"set-escape", string>;
 
 /** Scalar content update on a `raw` node. */
-export interface StructuralDiffRawContentOp extends StructuralDiffValueOpBase<"set-raw-content", string> {}
+export type StructuralDiffRawContentOp = StructuralDiffValueOpBase<"set-raw-content", string>;
 
 /** Flag update on an `inline` node. */
-export interface StructuralDiffInlineFlagOp
-  extends StructuralDiffValueOpBase<"set-implicit-inline-shorthand", boolean | undefined> {}
+export type StructuralDiffInlineFlagOp = StructuralDiffValueOpBase<
+  "set-implicit-inline-shorthand",
+  boolean | undefined
+>;
 
 /** Path-aware structural operations emitted alongside range-based token diff. */
 export type StructuralDiffOp =

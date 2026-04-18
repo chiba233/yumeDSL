@@ -2,11 +2,12 @@ import { fnvFeedU32, fnvInit, fnv1a } from "../internal/hash.js";
 import type { IncrementalParseOptions } from "../types";
 
 type SnapshotPrimitive = string | number | boolean | bigint | symbol | null | undefined;
-type SnapshotReference = object | Function;
+type SnapshotFunction = (...args: never[]) => unknown;
+type SnapshotReference = object | SnapshotFunction;
 interface SnapshotObject {
   [key: string]: SnapshotValue;
 }
-interface SnapshotArray extends Array<SnapshotValue> {}
+type SnapshotArray = SnapshotValue[];
 type SnapshotValue = SnapshotPrimitive | SnapshotReference | SnapshotObject | SnapshotArray;
 type SnapshotContainer = SnapshotObject | SnapshotArray;
 

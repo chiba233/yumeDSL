@@ -73,13 +73,6 @@ const resolveSyntaxFields = <K extends keyof SyntaxInput>(
   return resolved;
 };
 
-// `closeMiddle` belongs to the easy builder's base input model, but it is not a
-// `SyntaxInput` key, so it cannot flow through `resolveSyntaxFields(...)`.
-const resolveEasySyntaxBase = (overrides?: EasySyntaxOverrides): EasySyntaxBase => ({
-  ...resolveSyntaxFields(EASY_SYNTAX_BASE_KEYS, overrides),
-  closeMiddle: overrides?.closeMiddle ?? DEFAULT_DERIVATION_PARTS.closeMiddle,
-});
-
 // Derivation contract for the convenience syntax builder:
 // given the base tokens, these rules define the implied compound tokens.
 const EASY_SYNTAX_DERIVATION_RULES: readonly EasySyntaxCompoundRule[] = [
@@ -141,8 +134,11 @@ const deriveEasySyntaxCompounds = (
 export const createEasySyntax = (
   overrides?: Partial<SyntaxInput> & { closeMiddle?: string },
 ): SyntaxConfig => {
-  const base = resolveEasySyntaxBase(overrides);
-  const { closeMiddle: _closeMiddle, ...syntaxBase } = base;
+  const syntaxBase = resolveSyntaxFields(EASY_SYNTAX_BASE_KEYS, overrides);
+  const base: EasySyntaxBase = {
+    ...syntaxBase,
+    closeMiddle: overrides?.closeMiddle ?? DEFAULT_DERIVATION_PARTS.closeMiddle,
+  };
 
   return createSyntax({
     ...syntaxBase,

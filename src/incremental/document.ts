@@ -179,12 +179,12 @@ export const nodeSignature = (node: StructuralNode, budget?: SignatureBudget): n
         continue;
       }
       if (current.type === "text") {
-        let hash = fnvFeedU32(fnvFeedU32(fnvInit(), NODE_TAG_TEXT), current.value.length);
+        const hash = fnvFeedU32(fnvFeedU32(fnvInit(), NODE_TAG_TEXT), current.value.length);
         valueStack.push(hashTextBounded(hash, current.value) >>> 0);
         continue;
       }
       if (current.type === "escape") {
-        let hash = fnvFeedU32(fnvFeedU32(fnvInit(), NODE_TAG_ESCAPE), current.raw.length);
+        const hash = fnvFeedU32(fnvFeedU32(fnvInit(), NODE_TAG_ESCAPE), current.raw.length);
         valueStack.push(hashTextBounded(hash, current.raw) >>> 0);
         continue;
       }

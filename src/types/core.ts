@@ -83,7 +83,7 @@ export interface TokenDraft {
  */
 export type NarrowToken<
   TType extends string,
-  TExtra extends Record<string, unknown> = {},
+  TExtra extends Record<string, unknown> = Record<never, never>,
 > = TextToken & { type: TType } & TExtra;
 
 /**
@@ -105,7 +105,7 @@ export type NarrowToken<
  */
 export type NarrowDraft<
   TType extends string,
-  TExtra extends Record<string, unknown> = {},
+  TExtra extends Record<string, unknown> = Record<never, never>,
 > = TokenDraft & { type: TType } & TExtra;
 
 /**
