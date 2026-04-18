@@ -29,6 +29,7 @@ import {
   createTokenGuard,
   extractText,
   parseStructural,
+  printStructural,
   splitTokensByPipe,
 } from "../src/index.ts";
 import { parseRichText } from "../src/core/parse.ts";
@@ -259,6 +260,56 @@ const cases: GoldenCase[] = [
       assert.equal(outer.children[1]?.type, "text");
       if (outer.children[1]?.type === "text") {
         assert.equal(outer.children[1].value, "z");
+      }
+    },
+  },
+  {
+    name: "[Coverage/Structural] shorthand fast-skip should stop at tag-start char in inline frame",
+    run() {
+      const handlers: Record<string, TagHandler> = {
+        bold: { inline: (tokens) => ({ type: "bold", value: tokens }) },
+        link: { inline: (tokens) => ({ type: "link", value: tokens }) },
+      };
+      const longText = "a".repeat(256);
+      const input = `$$bold(${longText}link(x)z)$$`;
+      const nodes = parseStructural(input, {
+        handlers,
+        implicitInlineShorthand: true,
+      });
+
+      assert.equal(nodes.length, 1);
+      const outer = nodes[0] as Extract<StructuralNode, { type: "inline" }>;
+      assert.equal(outer.type, "inline");
+      assert.equal(outer.tag, "bold");
+      assert.equal(outer.children.length, 3);
+      assert.equal(outer.children[0]?.type, "text");
+      if (outer.children[0]?.type === "text") {
+        assert.equal(outer.children[0].value, longText);
+      }
+      assert.equal(outer.children[1]?.type, "inline");
+      if (outer.children[1]?.type === "inline") {
+        assert.equal(outer.children[1].tag, "link");
+      }
+      assert.equal(outer.children[2]?.type, "text");
+      if (outer.children[2]?.type === "text") {
+        assert.equal(outer.children[2].value, "z");
+      }
+    },
+  },
+  {
+    name: "[Coverage/Structural] short-window closer classification should still preserve nested arg parens",
+    run() {
+      const input = "$$raw-code(lang(a(b)c))%\nconst x = 1;\n%end$$";
+      const nodes = parseStructural(input);
+      assert.equal(printStructural(nodes), input);
+      assert.equal(nodes.length, 1);
+      assert.equal(nodes[0]?.type, "raw");
+      if (nodes[0]?.type === "raw") {
+        const argText = nodes[0].args
+          .filter((node): node is Extract<StructuralNode, { type: "text" }> => node.type === "text")
+          .map((node) => node.value)
+          .join("");
+        assert.equal(argText, "lang(a(b)c)");
       }
     },
   },
