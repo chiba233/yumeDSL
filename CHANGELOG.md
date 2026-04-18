@@ -5,14 +5,15 @@
 ### 1.4.3
 
 - **Structural parser: fast text skip in main scan loop**
-  - The main loop now skips plain text spans by scanning character-by-character for the next boundary lead (`tagPrefix`, `tagClose`, `tagDivider`, `escapeChar`, `inlineCloseToken`), bypassing the full per-character branch tree for non-boundary characters.
-  - Boundary lead sets are cached per frame via a bitmask dirty key, so the set is only rebuilt when the frame's state combination (`insideArgs` / `canReadEscaped` / `inlineCloseToken`) actually changes.
-  - When inline shorthand is enabled, inline frames conservatively fall back to per-character scanning to avoid missing non-fixed-token shorthand entry points.
+  - The main loop now skips plain text spans by scanning character-by-character for the next boundary lead (`tagPrefix`, `tagClose`, `tagDivider`, `escapeChar`, `inlineCloseToken`), bypassing the full per-character branch tree for non-boundary characters. All boundary lead codes are pre-computed as `charCodeAt` constants at parse entry.
+  - When inline shorthand is enabled, the boundary scan additionally stops at tag-name start characters (`isTagStartChar`), so shorthand `name(...)` entry points are never skipped.
 - **Escape token lookup: first-character bucketing and cached token sets**
   - `readEscapedSequenceWithTokens` now short-circuits on the first character before calling `startsWith`, and groups candidate tokens by leading character so only relevant tokens are tested.
   - Escapable token sets (`arg`, `root`, `blockContent`) are now computed once per `SyntaxConfig` and cached via `WeakMap`, eliminating repeated `filter` / `Set` / `sort` allocations across scan calls.
-- **Scanner: `getTagCloserTypeWithCache` added**
-  - A new cached variant of `getTagCloserType` shares `argClose` scan results across calls within one parse, avoiding redundant bracket-matching work on the same tag-open positions.
+- **Scanner: `getTagCloserTypeWithCache` for large frames**
+  - A cached variant of `getTagCloserType` shares `argClose` scan results across calls within one parse. The cache is only created when the remaining text exceeds 256 characters; shorter frames use the uncached path directly to avoid `Map` overhead.
+- **Internal: `ParseFrame` slimmed down**
+  - Shorthand probe state (`shorthandProbe`) is now a lazily created object instead of four always-present fields, reducing per-frame allocation cost on deep nesting.
 - No breaking public API changes
 
 ### 1.4.2

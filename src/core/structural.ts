@@ -70,6 +70,7 @@ import {
   findBlockClose,
   findMalformedWholeLineTokenCandidate,
   findRawClose,
+  getTagCloserType,
   getTagCloserTypeWithCache,
   readTagStartInfo,
   skipTagBoundary,
@@ -215,7 +216,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
   const emittedErrorKeys = new Set<string>();
   const rootEscapableTokens = getRootEscapableTokens(syntax);
   const blockContentEscapableTokens = getBlockContentEscapableTokens(syntax);
-  const tagArgCloseCache = new Map<number, number>();
+  let tagArgCloseCache: Map<number, number> | null = null;
 
   const isRootFrame = (frame: ParseFrame): boolean =>
     frame.parentIndex < 0 &&
@@ -249,53 +250,31 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
   };
 
   const shouldEnableFastTextSkip = (frame: ParseFrame): boolean => {
-    // shorthand 入口不是固定 token，且可出现在任意 inline 帧参数区。
-    // 因此 shorthand 开启时，需要对所有 inline 帧保留逐字符判定避免漏检。
-    return !(frame.inlineCloseToken !== null && gating?.inlineShorthandEnabled);
+    // fast-skip 始终开启；当 shorthand 开启时，边界扫描会额外停在 tag-name 起始字符处，
+    // 避免跨过 `name(...)` 入口。
+    return frame.i < frame.textEnd;
   };
+
+  const tagPrefixLeadCode = tagPrefix.charCodeAt(0);
+  // `endTag` 约束为以 `tagClose` 开头（见下方 assert），所以 `tagClose[0]` 已覆盖 `endTag[0]`。
+  const tagCloseLeadCode = tagClose.charCodeAt(0);
+  const tagDividerLeadCode = tagDivider.charCodeAt(0);
+  const escapeLeadCode = escapeChar.charCodeAt(0);
 
   const findNextBoundaryChar = (frame: ParseFrame, from: number): number => {
     const hasInlineCloseToken = frame.inlineCloseToken !== null;
     const canReadEscaped = canReadEscapedForFrame(frame);
-    const boundaryKey =
-      (frame.insideArgs ? 1 : 0) |
-      (canReadEscaped ? 1 << 1 : 0) |
-      (hasInlineCloseToken ? 1 << 2 : 0);
-
-    if (frame.boundaryKey !== boundaryKey) {
-      const boundaryLeads: string[] = [];
-      const addBoundaryLead = (lead: string): void => {
-        if (!lead) return;
-        if (boundaryLeads.includes(lead)) return;
-        boundaryLeads.push(lead);
-      };
-
-      addBoundaryLead(tagPrefix[0]);
-      // `endTag` 约束为以 `tagClose` 开头（见下方 assert），所以 `tagClose[0]` 已覆盖 `endTag[0]`。
-      addBoundaryLead(tagClose[0]);
-      if (hasInlineCloseToken) {
-        addBoundaryLead(frame.inlineCloseToken![0]);
-      }
-      if (frame.insideArgs) {
-        addBoundaryLead(tagDivider[0]);
-      }
-      if (canReadEscaped) {
-        addBoundaryLead(escapeChar[0]);
-      }
-
-      frame.boundaryLeads = boundaryLeads;
-      frame.boundaryKey = boundaryKey;
-    }
-
-    const leads = frame.boundaryLeads;
-    if (leads.length === 0) return frame.textEnd;
+    const watchShorthandStart = Boolean(gating?.inlineShorthandEnabled && hasInlineCloseToken);
+    const inlineCloseLeadCode = hasInlineCloseToken
+      ? frame.inlineCloseToken!.charCodeAt(0)
+      : Number.NaN;
     for (let cursor = from; cursor < frame.textEnd; cursor++) {
-      const current = frame.text[cursor];
-      for (let index = 0; index < leads.length; index++) {
-        if (current === leads[index]) {
-          return cursor;
-        }
-      }
+      const currentCode = frame.text.charCodeAt(cursor);
+      if (watchShorthandStart && tagName.isTagStartChar(frame.text[cursor])) return cursor;
+      if (currentCode === tagPrefixLeadCode || currentCode === tagCloseLeadCode) return cursor;
+      if (frame.insideArgs && currentCode === tagDividerLeadCode) return cursor;
+      if (canReadEscaped && currentCode === escapeLeadCode) return cursor;
+      if (hasInlineCloseToken && currentCode === inlineCloseLeadCode) return cursor;
     }
     return frame.textEnd;
   };
@@ -318,6 +297,12 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
   // 没有 resume 闭包。子帧完成后由 completeChild 按 returnKind 分发。
 
   type ReturnKind = "inline" | "rawArgs" | "blockArgs" | "blockContent";
+  interface ShorthandProbeState {
+    textEnd: number;
+    startI: number;
+    boundaryI: number;
+    reject: boolean;
+  }
 
   interface ParseFrame {
     text: string;
@@ -350,14 +335,8 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     contentEndI: number; // block/raw content 结束位置
 
     // ── shorthand 前探缓存（仅父 inline endTag 模式使用） ──
-    shorthandProbeTextEnd: number; // 缓存建立时的 frame.textEnd 版本
-    shorthandProbeStartI: number; // 最近一次前探起点
-    shorthandProbeBoundaryI: number; // 最近一次前探命中的首个边界位置（tagClose / full tag start / EOF）
-    shorthandProbeReject: boolean; // 该边界是否表示“会误吃父级 endTag，需拒绝 shorthand”
-
-    // ── fast-skip 边界缓存 ──
-    boundaryLeads: string[];
-    boundaryKey: number;
+    // 按需创建，避免每个帧常驻 4 个探测字段。
+    shorthandProbe: ShorthandProbeState | null;
   }
 
   const makeFrame = (
@@ -390,12 +369,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     pendingArgs: null,
     contentStartI: 0,
     contentEndI: 0,
-    shorthandProbeTextEnd: -1,
-    shorthandProbeStartI: -1,
-    shorthandProbeBoundaryI: -1,
-    shorthandProbeReject: false,
-    boundaryLeads: [],
-    boundaryKey: -1,
+    shorthandProbe: null,
   });
 
   // ── 缓冲区 ──
@@ -709,12 +683,12 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
 
       if (frame.inlineCloseToken !== endTag) return "allow";
 
+      const shorthandProbe = frame.shorthandProbe;
       const canReuseProbe =
-        frame.shorthandProbeTextEnd === frame.textEnd &&
-        frame.shorthandProbeStartI >= 0 &&
-        frame.shorthandProbeBoundaryI >= 0 &&
-        info.argStart >= frame.shorthandProbeStartI &&
-        info.argStart <= frame.shorthandProbeBoundaryI;
+        shorthandProbe !== null &&
+        shorthandProbe.textEnd === frame.textEnd &&
+        info.argStart >= shorthandProbe.startI &&
+        info.argStart <= shorthandProbe.boundaryI;
 
       if (!canReuseProbe) {
         let boundary = frame.textEnd;
@@ -739,13 +713,15 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
           probe++;
         }
 
-        frame.shorthandProbeTextEnd = frame.textEnd;
-        frame.shorthandProbeStartI = info.argStart;
-        frame.shorthandProbeBoundaryI = boundary;
-        frame.shorthandProbeReject = reject;
+        frame.shorthandProbe = {
+          textEnd: frame.textEnd,
+          startI: info.argStart,
+          boundaryI: boundary,
+          reject,
+        };
       }
 
-      return frame.shorthandProbeReject ? "defer-parent" : "allow";
+      return frame.shorthandProbe?.reject ? "defer-parent" : "allow";
     }
 
     if (input.phase === "close") {
@@ -1052,12 +1028,16 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     }
 
     // ── 确定标签形态（仅非 inline 帧需要）──
-    const closerInfo = getTagCloserTypeWithCache(
-      frameText,
-      info.tagNameEnd + tagOpen.length,
-      syntax,
-      tagArgCloseCache,
-    );
+    const tagOpenIndex = info.tagNameEnd + tagOpen.length;
+    const closerInfo =
+      frame.textEnd - tagOpenIndex <= 256
+        ? getTagCloserType(frameText, tagOpenIndex, syntax)
+        : getTagCloserTypeWithCache(
+            frameText,
+            tagOpenIndex,
+            syntax,
+            (tagArgCloseCache ??= new Map<number, number>()),
+          );
     if (!closerInfo) {
       // findTagArgClose 因内容括号不配对返回 -1。
       // 进入 lazy inline 模式：子帧逐字符扫描 endTag，不依赖括号配对。

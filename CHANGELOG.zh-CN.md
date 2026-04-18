@@ -5,14 +5,15 @@
 ### 1.4.3
 
 - **结构解析器：主扫描循环新增快速文本跳跃**
-  - 主循环现在对纯文本区段逐字符扫描边界首字符（`tagPrefix`、`tagClose`、`tagDivider`、`escapeChar`、`inlineCloseToken`），跳过非边界字符的完整分支树，减少每字符判定开销。
-  - 边界首字符集按帧缓存，通过位掩码脏检查键（`insideArgs` / `canReadEscaped` / `inlineCloseToken`）控制重建，仅在帧状态组合实际变化时重算。
-  - 当 inline shorthand 启用时，所有 inline 帧保守回退到逐字符扫描，避免漏过非固定 token 的 shorthand 入口。
+  - 主循环现在对纯文本区段逐字符扫描边界首字符（`tagPrefix`、`tagClose`、`tagDivider`、`escapeChar`、`inlineCloseToken`），跳过非边界字符的完整分支树，减少每字符判定开销。所有边界首字符码在解析入口预算为 `charCodeAt` 常量。
+  - 当 inline shorthand 启用时，边界扫描会额外停在 tag-name 起始字符处（`isTagStartChar`），确保 shorthand `name(...)` 入口不会被跳过。
 - **转义 token 查找：首字符分桶与缓存 token 集合**
   - `readEscapedSequenceWithTokens` 现在先按首字符短路再调用 `startsWith`，并按首字符对候选 token 分桶，只测试相关 token。
   - 可转义 token 集合（`arg`、`root`、`blockContent`）现在按 `SyntaxConfig` 计算一次并通过 `WeakMap` 缓存，消除了扫描调用间重复的 `filter` / `Set` / `sort` 分配。
-- **Scanner：新增 `getTagCloserTypeWithCache`**
-  - `getTagCloserType` 的带缓存变体，在单次解析内共享 `argClose` 扫描结果，避免对相同 tag-open 位置重复进行括号配平。
+- **Scanner：大帧使用 `getTagCloserTypeWithCache`**
+  - `getTagCloserType` 的带缓存变体，在单次解析内共享 `argClose` 扫描结果。缓存仅在剩余文本超过 256 字符时创建；短帧直接走无缓存路径，避免 `Map` 开销。
+- **内部：`ParseFrame` 瘦身**
+  - shorthand 前探状态（`shorthandProbe`）改为按需创建的对象，替代原来常驻的四个字段，减少深嵌套场景下的帧分配成本。
 - 无破坏性公共 API 变化
 
 ### 1.4.2
