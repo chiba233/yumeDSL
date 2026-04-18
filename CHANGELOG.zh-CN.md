@@ -2,6 +2,18 @@
 
 # 更新日志
 
+### 1.4.3
+
+- **结构解析器：主扫描循环新增快速文本跳跃**
+  - 逐字符主循环现在会提前扫描到下一个边界字符（`tagPrefix`、`tagClose`、`tagDivider`、`escapeChar`、`inlineCloseToken`），对纯文本区段进行批量推进，大幅减少文本密集输入下的逐字符开销。
+  - 当 inline shorthand 启用时，所有 inline 帧保守回退到逐字符扫描，避免漏过非固定 token 的 shorthand 入口。
+- **转义 token 查找：首字符分桶与缓存 token 集合**
+  - `readEscapedSequenceWithTokens` 现在先按首字符短路再调用 `startsWith`，并按首字符对候选 token 分桶，只测试相关 token。
+  - 可转义 token 集合（`arg`、`root`、`blockContent`）现在按 `SyntaxConfig` 计算一次并通过 `WeakMap` 缓存，消除了扫描调用间重复的 `filter` / `Set` / `sort` 分配。
+- **Scanner：新增 `getTagCloserTypeWithCache`**
+  - `getTagCloserType` 的带缓存变体，在单次解析内共享 `argClose` 扫描结果，避免对相同 tag-open 位置重复进行括号配平。
+- 无破坏性公共 API 变化
+
 ### 1.4.2
 
 - **内部：incremental / internal 模块的类型级清理**

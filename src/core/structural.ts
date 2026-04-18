@@ -51,7 +51,13 @@ import type {
 import { getDefaultSyntaxInstance, getSyntax } from "../config/syntax.js";
 import { DEFAULT_TAG_NAME, getTagNameConfig } from "../config/chars.js";
 import { warnDeprecated } from "../internal/deprecations.js";
-import { readEscapedSequence, readEscapedSequenceWithTokens } from "../handlerBuilders/escape.js";
+import {
+  getArgEscapableTokens,
+  getBlockContentEscapableTokens,
+  getRootEscapableTokens,
+  readEscapedSequence,
+  readEscapedSequenceWithTokens,
+} from "../handlerBuilders/escape.js";
 import {
   type BaseResolvedConfig,
   buildGatingContext,
@@ -64,7 +70,7 @@ import {
   findBlockClose,
   findMalformedWholeLineTokenCandidate,
   findRawClose,
-  getTagCloserType,
+  getTagCloserTypeWithCache,
   readTagStartInfo,
   skipTagBoundary,
 } from "./scanner.js";
@@ -204,17 +210,21 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
   //
   // 两条路径共用这一个扫描主循环，避免维护两套 form 判定规则。
   const { depthLimit, gating, tracker, syntax, tagName, onError } = ctx;
-  const { tagClose, tagDivider, tagOpen, endTag, rawClose, blockClose } = syntax;
-  const argEscapableTokens = syntax.escapableTokens.filter(
-    token => token !== syntax.rawClose && token !== syntax.blockClose,
-  );
+  const { escapeChar, tagClose, tagDivider, tagOpen, tagPrefix, endTag, rawClose } = syntax;
+  const argEscapableTokens = getArgEscapableTokens(syntax);
   const emittedErrorKeys = new Set<string>();
-  const rootEscapableTokens = [...new Set([endTag, tagOpen, tagClose])].sort(
-    (a, b) => b.length - a.length,
-  );
-  const blockContentEscapableTokens = [...new Set([...rootEscapableTokens, blockClose])].sort(
-    (a, b) => b.length - a.length,
-  );
+  const rootEscapableTokens = getRootEscapableTokens(syntax);
+  const blockContentEscapableTokens = getBlockContentEscapableTokens(syntax);
+  const tagArgCloseCache = new Map<number, number>();
+
+  const isRootFrame = (frame: ParseFrame): boolean =>
+    frame.parentIndex < 0 &&
+    frame.returnKind === null &&
+    frame.inlineCloseToken === null &&
+    !frame.insideArgs;
+
+  const canReadEscapedForFrame = (frame: ParseFrame): boolean =>
+    frame.insideArgs || frame.returnKind === "blockContent" || isRootFrame(frame);
 
   const readEscapedForFrame = (
     frameText: string,
@@ -232,15 +242,41 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         blockContentEscapableTokens,
       );
     }
-    const isRootFrame =
-      frame.parentIndex < 0 &&
-      frame.returnKind === null &&
-      frame.inlineCloseToken === null &&
-      !frame.insideArgs;
-    if (isRootFrame) {
+    if (isRootFrame(frame)) {
       return readEscapedSequenceWithTokens(frameText, index, syntax, rootEscapableTokens);
     }
     return [null, index];
+  };
+
+  const shouldEnableFastTextSkip = (frame: ParseFrame): boolean => {
+    // shorthand 入口不是固定 token，且可出现在任意 inline 帧参数区。
+    // 因此 shorthand 开启时，需要对所有 inline 帧保留逐字符判定避免漏检。
+    return !(frame.inlineCloseToken !== null && gating?.inlineShorthandEnabled);
+  };
+
+  const findNextBoundaryChar = (frame: ParseFrame, from: number): number => {
+    let boundary = frame.textEnd;
+    const updateBoundary = (lead: string): void => {
+      if (!lead) return;
+      const next = frame.text.indexOf(lead, from);
+      if (next !== -1 && next < boundary && next < frame.textEnd) {
+        boundary = next;
+      }
+    };
+
+    updateBoundary(tagPrefix[0]);
+    // `endTag` 约束为以 `tagClose` 开头（见下方 assert），所以 `tagClose[0]` 已覆盖 `endTag[0]`。
+    updateBoundary(tagClose[0]);
+    if (frame.inlineCloseToken !== null) {
+      updateBoundary(frame.inlineCloseToken[0]);
+    }
+    if (frame.insideArgs) {
+      updateBoundary(tagDivider[0]);
+    }
+    if (canReadEscapedForFrame(frame)) {
+      updateBoundary(escapeChar[0]);
+    }
+    return boundary;
   };
 
   if (!endTag.startsWith(tagClose)) {
@@ -989,7 +1025,12 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     }
 
     // ── 确定标签形态（仅非 inline 帧需要）──
-    const closerInfo = getTagCloserType(frameText, info.tagNameEnd + tagOpen.length, syntax);
+    const closerInfo = getTagCloserTypeWithCache(
+      frameText,
+      info.tagNameEnd + tagOpen.length,
+      syntax,
+      tagArgCloseCache,
+    );
     if (!closerInfo) {
       // findTagArgClose 因内容括号不配对返回 -1。
       // 进入 lazy inline 模式：子帧逐字符扫描 endTag，不依赖括号配对。
@@ -1170,6 +1211,15 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
 
     const frameText = frame.text;
     const i = frame.i;
+
+    if (shouldEnableFastTextSkip(frame)) {
+      const boundary = findNextBoundaryChar(frame, i);
+      if (boundary > i) {
+        appendBuf(frame, i, boundary);
+        frame.i = boundary;
+        continue;
+      }
+    }
 
     // ── 转义序列 ──
     const [escaped, next] = readEscapedForFrame(frameText, i, frame);

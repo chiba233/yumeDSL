@@ -2,6 +2,18 @@
 
 # Changelog
 
+### 1.4.3
+
+- **Structural parser: fast text skip in main scan loop**
+  - The character-by-character main loop now bulk-advances over plain text spans by scanning ahead to the next boundary character (`tagPrefix`, `tagClose`, `tagDivider`, `escapeChar`, `inlineCloseToken`), significantly reducing per-character overhead on text-heavy input.
+  - When inline shorthand is enabled, inline frames conservatively fall back to per-character scanning to avoid missing non-fixed-token shorthand entry points.
+- **Escape token lookup: first-character bucketing and cached token sets**
+  - `readEscapedSequenceWithTokens` now short-circuits on the first character before calling `startsWith`, and groups candidate tokens by leading character so only relevant tokens are tested.
+  - Escapable token sets (`arg`, `root`, `blockContent`) are now computed once per `SyntaxConfig` and cached via `WeakMap`, eliminating repeated `filter` / `Set` / `sort` allocations across scan calls.
+- **Scanner: `getTagCloserTypeWithCache` added**
+  - A new cached variant of `getTagCloserType` shares `argClose` scan results across calls within one parse, avoiding redundant bracket-matching work on the same tag-open positions.
+- No breaking public API changes
+
 ### 1.4.2
 
 - **Internal: type-level cleanup across incremental and internal modules**

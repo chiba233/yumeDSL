@@ -1,11 +1,76 @@
 import type { DslContext, SyntaxConfig } from "../types";
 import { getSyntax } from "../config/syntax.js";
 
+interface EscapableTokenCacheEntry {
+  arg: readonly string[];
+  root: readonly string[];
+  blockContent: readonly string[];
+}
+
+const syntaxEscapableTokenCache = new WeakMap<SyntaxConfig, EscapableTokenCacheEntry>();
+// Keyed by token-array identity. Callers should keep token-array references stable
+// to maximize matcher-cache hits (e.g. reuse arrays from syntax-level caches).
+const tokenLeadMatcherCache = new WeakMap<readonly string[], Map<string, readonly string[]>>();
+
+const sortUniqueByLengthDesc = (tokens: readonly string[]): readonly string[] =>
+  [...new Set(tokens)].sort((a, b) => b.length - a.length);
+
+const getTokenLeadMatcher = (tokens: readonly string[]): Map<string, readonly string[]> => {
+  const cached = tokenLeadMatcherCache.get(tokens);
+  if (cached) return cached;
+
+  const buckets = new Map<string, string[]>();
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    const lead = token[0];
+    if (!lead) continue;
+    const bucket = buckets.get(lead);
+    if (bucket) {
+      bucket.push(token);
+    } else {
+      buckets.set(lead, [token]);
+    }
+  }
+
+  const matcher = new Map<string, readonly string[]>();
+  for (const [lead, bucket] of buckets) {
+    matcher.set(lead, bucket);
+  }
+  tokenLeadMatcherCache.set(tokens, matcher);
+  return matcher;
+};
+
+const getCachedEscapableTokenSets = (syntax: SyntaxConfig): EscapableTokenCacheEntry => {
+  const cached = syntaxEscapableTokenCache.get(syntax);
+  if (cached) return cached;
+
+  const arg = syntax.escapableTokens.filter(
+    token => token !== syntax.rawClose && token !== syntax.blockClose,
+  );
+  const root = sortUniqueByLengthDesc([syntax.endTag, syntax.tagOpen, syntax.tagClose]);
+  const blockContent = sortUniqueByLengthDesc([...root, syntax.blockClose]);
+  const entry: EscapableTokenCacheEntry = { arg, root, blockContent };
+  syntaxEscapableTokenCache.set(syntax, entry);
+  return entry;
+};
+
 /** @internal Resolve syntax from DslContext, bare SyntaxConfig, or module default. */
 export const resolveSyntax = (ctx?: DslContext | SyntaxConfig): SyntaxConfig => {
   if (!ctx) return getSyntax();
   return "syntax" in ctx ? ctx.syntax : ctx;
 };
+
+/** @internal Escapable tokens valid in tag arg scanning context. */
+export const getArgEscapableTokens = (syntax: SyntaxConfig): readonly string[] =>
+  getCachedEscapableTokenSets(syntax).arg;
+
+/** @internal Escapable tokens valid at root structural scanning context. */
+export const getRootEscapableTokens = (syntax: SyntaxConfig): readonly string[] =>
+  getCachedEscapableTokenSets(syntax).root;
+
+/** @internal Escapable tokens valid in block-content structural scanning context. */
+export const getBlockContentEscapableTokens = (syntax: SyntaxConfig): readonly string[] =>
+  getCachedEscapableTokenSets(syntax).blockContent;
 
 /**
  * 只尝试识别“当前位置是不是一个合法转义序列”。
@@ -38,11 +103,16 @@ export const readEscapedSequenceWithTokens = (
 ): [string | null, number] => {
   const { escapeChar } = resolveSyntax(ctx);
   if (escapableTokens.length === 0) return [null, i];
-  if (!text.startsWith(escapeChar, i)) {
+  if (i >= text.length || text[i] !== escapeChar[0] || !text.startsWith(escapeChar, i)) {
     return [null, i];
   }
   const start = i + escapeChar.length;
-  for (const token of escapableTokens) {
+  const startChar = text[start];
+  if (!startChar) return [null, i];
+  const candidates = getTokenLeadMatcher(escapableTokens).get(startChar);
+  if (!candidates) return [null, i];
+  for (let index = 0; index < candidates.length; index++) {
+    const token = candidates[index];
     if (text.startsWith(token, start)) {
       return [token, start + token.length];
     }
