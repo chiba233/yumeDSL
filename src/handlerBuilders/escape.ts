@@ -40,6 +40,14 @@ const getTokenLeadMatcher = (tokens: readonly string[]): Map<string, readonly st
   return matcher;
 };
 
+/**
+ * 按 `SyntaxConfig` 对象身份缓存不同上下文下的可转义 token 列表。
+ *
+ * 约定：
+ * - 进入 parse 流程后，调用方应将 `SyntaxConfig` 视为不可变对象。
+ * - 如需调整 syntax，请创建新对象（例如通过 `createSyntax`），
+ *   不要在原对象上原地修改。
+ */
 const getCachedEscapableTokenSets = (syntax: SyntaxConfig): EscapableTokenCacheEntry => {
   const cached = syntaxEscapableTokenCache.get(syntax);
   if (cached) return cached;

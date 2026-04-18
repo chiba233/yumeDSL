@@ -1362,6 +1362,8 @@ export const parseStructuralWithResolved = (
 ): IndexedStructuralNode[] => {
   if (!text) return [];
 
+  // 注意：本次 parse 调用内应将 `resolved.syntax` 视为不可变对象。
+  // escape token 的缓存以 syntax 对象身份作为键。
   const ctx: ScanContext = {
     depthLimit: resolved.depthLimit,
     gating,
