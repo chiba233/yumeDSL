@@ -225,26 +225,6 @@ const complexTagPosition = (
 // structural 负责"识别边界"，这里负责"调 handler 产出 token"。
 // 如果你只改了一边而没检查另一边，退化行为和 position 映射大概率会分叉。
 
-const renderTextLikeNode = (
-  node: Extract<IndexedStructuralNode, { type: "text" | "escape" | "separator" }>,
-  tokens: TextToken[],
-  ctx: RenderContext,
-  dslCtx: DslContext,
-  escapeMode: EscapeMode,
-): void => {
-  if (node.type === "text") {
-    mergeTextToken(tokens, node.value, node.position, dslCtx);
-  } else if (node.type === "escape") {
-    // 注意：root 层解转义（\| → |），nested 层保留原始 escape（\| 原样传给 handler）。
-    // nested 不能解是因为 parsePipeArgs 等 handler 工具需要先看到原始 \|，
-    // 否则会把它误当分隔符。这个不是 bug，是刻意语义。
-    const value = escapeMode === "root" ? readEscaped(node.raw, 0, ctx.syntax)[0] : node.raw;
-    mergeTextToken(tokens, value, node.position, dslCtx);
-  } else if (node.type === "separator") {
-    mergeTextToken(tokens, ctx.syntax.tagDivider, node.position, dslCtx);
-  }
-};
-
 // 注意：inline 有三条路径，顺序不能乱：
 // 1. 不支持 inline form → 退化回源码
 // 2. handler 不存在（unknown tag passthrough）→ 去壳保留子节点
@@ -379,7 +359,39 @@ export const renderNodes = (
     tokens: TextToken[];
     consumeNextLB: boolean;
     resume: ((childTokens: TextToken[]) => void) | null;
+    // ── 文本合并缓冲 ──
+    // 连续 text-like 节点先把字符串攒进 textBuf，遇到非文本节点或帧结束时
+    // 一次 join 写入 tokens，避免逐段 += 产生中间字符串。
+    textBuf: string[] | null;
+    // 与 mergeTextToken 的旧语义保持一致：
+    // - 首段无 position => 整段无 position
+    // - 首段有、后段无 => 保持首段 position
+    // - 首段有、后段有 => 仅扩展 end
+    textBufPosition: TextToken["position"];
   }
+
+  const flushTextBuf = (frame: RenderFrame): void => {
+    const buf = frame.textBuf;
+    if (!buf) return;
+    const value = buf.length === 1 ? buf[0] : buf.join("");
+    const position = frame.textBufPosition;
+    frame.textBuf = null;
+    frame.textBufPosition = undefined;
+    mergeTextToken(frame.tokens, value, position, dslCtx);
+  };
+
+  const bufferText = (frame: RenderFrame, value: string, position: TextToken["position"]): void => {
+    if (!value) return;
+    if (frame.textBuf) {
+      frame.textBuf.push(value);
+      if (frame.textBufPosition && position) {
+        frame.textBufPosition = { start: frame.textBufPosition.start, end: position.end };
+      }
+    } else {
+      frame.textBuf = [value];
+      frame.textBufPosition = position;
+    }
+  };
 
   const stack: RenderFrame[] = [
     {
@@ -389,12 +401,15 @@ export const renderNodes = (
       tokens: [],
       consumeNextLB: false,
       resume: null,
+      textBuf: null,
+      textBufPosition: undefined,
     },
   ];
 
   while (stack.length > 0) {
     const frame = stack[stack.length - 1];
     if (frame.index >= frame.nodes.length) {
+      flushTextBuf(frame);
       const childTokens = frame.tokens;
       const resume = frame.resume;
       stack.pop();
@@ -411,11 +426,10 @@ export const renderNodes = (
         const [trimmed, removed] = trimLeadingLineBreak(node.value);
         if (removed > 0) {
           if (trimmed) {
-            mergeTextToken(
-              frame.tokens,
+            bufferText(
+              frame,
               trimmed,
               shiftPosition(node.position, ctx.tracker, "start", removed),
-              dslCtx,
             );
           }
           continue;
@@ -424,8 +438,15 @@ export const renderNodes = (
     }
 
     if (node.type === "text" || node.type === "escape" || node.type === "separator") {
-      renderTextLikeNode(node, frame.tokens, ctx, dslCtx, frame.escapeMode);
+      const textValue =
+        node.type === "text"
+          ? node.value
+          : node.type === "escape"
+            ? (frame.escapeMode === "root" ? readEscaped(node.raw, 0, ctx.syntax)[0] : node.raw)
+            : ctx.syntax.tagDivider;
+      bufferText(frame, textValue, node.position);
     } else if (node.type === "inline") {
+      flushTextBuf(frame);
       stack.push({
         nodes: node.children,
         index: 0,
@@ -435,10 +456,14 @@ export const renderNodes = (
         resume: (childTokens) => {
           frame.consumeNextLB = renderInlineNode(node, childTokens, frame.tokens, ctx, dslCtx);
         },
+        textBuf: null,
+        textBufPosition: undefined,
       });
     } else if (node.type === "raw") {
+      flushTextBuf(frame);
       frame.consumeNextLB = renderRawNode(node, frame.tokens, ctx, dslCtx);
     } else if (node.type === "block") {
+      flushTextBuf(frame);
       stack.push({
         nodes: node.children,
         index: 0,
@@ -448,6 +473,8 @@ export const renderNodes = (
         resume: (childTokens) => {
           frame.consumeNextLB = renderBlockNode(node, childTokens, frame.tokens, ctx, dslCtx);
         },
+        textBuf: null,
+        textBufPosition: undefined,
       });
     }
   }

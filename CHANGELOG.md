@@ -2,6 +2,12 @@
 
 # Changelog
 
+### 1.4.4
+
+- **Renderer: text merge buffer replaces per-segment string concatenation**
+  - Consecutive text-like nodes (`text`, `escape`, `separator`) now accumulate into an array buffer on each render frame. The buffer is flushed via a single `join("")` call at non-text boundaries (before inline/raw/block processing or frame completion), replacing per-segment `+=` concatenation that produced O(N²) intermediate strings on text-heavy input.
+- No breaking public API changes
+
 ### 1.4.3
 
 - **Structural parser: fast text skip in main scan loop**

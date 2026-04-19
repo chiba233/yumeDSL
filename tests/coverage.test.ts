@@ -35,9 +35,17 @@ import {
 import { parseRichText } from "../src/core/parse.ts";
 import type { StructuralNode, TagHandler, TextToken } from "../src/types/index.ts";
 import { renderNodes, type RenderContext } from "../src/core/render.ts";
-import { parseStructuralWithResolved } from "../src/core/structural.ts";
+import { parseStructuralWithResolved, type IndexedStructuralNode } from "../src/core/structural.ts";
 import { resolveBaseOptions } from "../src/config/resolveOptions.ts";
-import { findInlineClose, getTagCloserType, readTagStartInfo, skipTagBoundary } from "../src/core/scanner.ts";
+import {
+  findBlockClose,
+  findInlineClose,
+  getTagCloserType,
+  getTagCloserTypeWithCache,
+  readTagStartInfo,
+  skipDegradedInline,
+  skipTagBoundary,
+} from "../src/core/scanner.ts";
 import { fnvFeedString, fnvFeedStringBounded, fnvInit } from "../src/internal/hash.ts";
 
 // ── Helpers ──
@@ -494,6 +502,89 @@ const cases: GoldenCase[] = [
       ]);
     },
   },
+  {
+    name: "[Coverage/Render] empty block content should stay empty after boundary trim",
+    run() {
+      const source = "$$info(title)*\n*end$$";
+      const resolved = resolveBaseOptions(source, { trackPositions: true });
+      const nodes = parseStructuralWithResolved(source, resolved, null);
+
+      let seed = 0;
+      const ctx: RenderContext = {
+        source,
+        handlers: {
+          info: {
+            block: (_arg, children) => ({ type: "info", value: children }),
+          },
+        },
+        registeredTags: new Set(["info"]),
+        allowInline: true,
+        blockTagSet: { has: (tag, form) => tag === "info" && form === "block" },
+        tracker: resolved.tracker,
+        syntax: resolved.syntax,
+        createId: () => `t-${seed++}`,
+      };
+
+      assert.deepEqual(normalizeTokens(renderNodes(nodes, ctx, "root")), [
+        {
+          type: "info",
+          value: [],
+        },
+      ]);
+    },
+  },
+  {
+    name: "[Coverage/Render] block children without boundary line breaks should be reused as-is",
+    run() {
+      const source = "hello";
+      const resolved = resolveBaseOptions(source, { trackPositions: true });
+      const nodes: IndexedStructuralNode[] = [
+        {
+          type: "block",
+          tag: "info",
+          args: [],
+          children: [
+            {
+              type: "text",
+              value: "hello",
+              _meta: { start: 0, end: 5 },
+            },
+          ],
+          _meta: {
+            start: 0,
+            end: 5,
+            argStart: 0,
+            argEnd: 0,
+            contentStart: 0,
+            contentEnd: 5,
+          },
+        },
+      ];
+
+      let seed = 0;
+      const ctx: RenderContext = {
+        source,
+        handlers: {
+          info: {
+            block: (_arg, children) => ({ type: "info", value: children }),
+          },
+        },
+        registeredTags: new Set(["info"]),
+        allowInline: true,
+        blockTagSet: { has: (tag, form) => tag === "info" && form === "block" },
+        tracker: resolved.tracker,
+        syntax: resolved.syntax,
+        createId: () => `t-${seed++}`,
+      };
+
+      assert.deepEqual(normalizeTokens(renderNodes(nodes, ctx, "root")), [
+        {
+          type: "info",
+          value: [{ type: "text", value: "hello" }],
+        },
+      ]);
+    },
+  },
 
   // ═══════════════════════════════════════════════════════════
   // builders.ts — createTokenGuard / extractText / splitTokensByPipe
@@ -684,6 +775,54 @@ const cases: GoldenCase[] = [
     },
   },
   {
+    name: "[Coverage/Scanner] skipDegradedInline should return close end when a degraded inline later closes",
+    run() {
+      const syntax = createSyntax();
+      const tagName = createTagNameConfig();
+      const input = "$$bold(oops $$code(x)$$ more)$$tail";
+      const info = readTagStartInfo(input, 0, syntax, tagName);
+      assert.ok(info);
+
+      const boundary = skipDegradedInline(input, info.argStart, syntax, tagName);
+      assert.equal(boundary, input.indexOf(")$$tail") + syntax.endTag.length);
+    },
+  },
+  {
+    name: "[Coverage/Scanner] skipDegradedInline should fall back to text end when no closer exists",
+    run() {
+      const syntax = createSyntax();
+      const tagName = createTagNameConfig();
+      const input = "$$bold(oops $$code(x)";
+      const info = readTagStartInfo(input, 0, syntax, tagName);
+      assert.ok(info);
+
+      assert.equal(skipDegradedInline(input, info.argStart, syntax, tagName), input.length);
+    },
+  },
+  {
+    name: "[Coverage/Scanner] getTagCloserTypeWithCache should stay null for unclosed args across repeated lookups",
+    run() {
+      const syntax = createSyntax();
+      const cache = new Map<number, number>();
+      const input = "$$bold(a(b)";
+      const argStart = input.indexOf("(") + syntax.tagOpen.length;
+
+      assert.equal(getTagCloserTypeWithCache(input, argStart, syntax, cache), null);
+      assert.equal(getTagCloserTypeWithCache(input, argStart, syntax, cache), null);
+    },
+  },
+  {
+    name: "[Coverage/Scanner] findBlockClose should skip nested inline islands inside block content",
+    run() {
+      const syntax = createSyntax();
+      const tagName = createTagNameConfig();
+      const input = "$$panel(x)*\nhead $$bold(a $$code(b)$$ c)$$ tail\n*end$$";
+      const contentStart = input.indexOf("\n") + 1;
+
+      assert.equal(findBlockClose(input, contentStart, syntax, tagName), input.indexOf("*end$$"));
+    },
+  },
+  {
     name: "[Coverage/Hash] fnvFeedStringBounded should hash head+tail for long inputs",
     run() {
       const long = "H".repeat(32) + "MIDDLE-IGNORED" + "T".repeat(32);
@@ -706,6 +845,100 @@ const cases: GoldenCase[] = [
       const b = `${head}middle-two${tail}`;
       assert.ok(a.length > 64 && b.length > 64);
       assert.equal(fnvFeedStringBounded(fnvInit(), a), fnvFeedStringBounded(fnvInit(), b));
+    },
+  },
+  {
+    name: "[Coverage/Structural] gated raw inside inline frame should merge surrounding text through segmented buffer",
+    run() {
+      const handlers: Record<string, TagHandler> = {
+        bold: {
+          inline: (tokens) => ({ type: "bold", value: tokens }),
+        },
+        code: {
+          inline: (tokens) => ({ type: "code", value: tokens }),
+        },
+      };
+      const input = "$$bold(left $$code(ts)%\nraw\n%end$$ right)$$";
+      const nodes = parseStructural(input, { handlers });
+
+      assert.equal(nodes.length, 1);
+      assert.equal(nodes[0]?.type, "inline");
+      if (nodes[0]?.type === "inline") {
+        assert.deepEqual(normalizeStructuralNodes(nodes[0].children), [
+          { type: "text", value: "left " },
+          { type: "text", value: "$$code(ts)%\nraw\n%end$$ right" },
+        ]);
+      }
+    },
+  },
+  {
+    name: "[Coverage/Structural] multiple gated multiline forms should produce segmented text nodes",
+    run() {
+      const handlers: Record<string, TagHandler> = {
+        bold: {
+          inline: (tokens) => ({ type: "bold", value: tokens }),
+        },
+        code: {
+          inline: (tokens) => ({ type: "code", value: tokens }),
+        },
+        panel: {
+          inline: (tokens) => ({ type: "panel", value: tokens }),
+        },
+      };
+      const input = "$$bold(left $$code(ts)%\nraw\n%end$$ mid $$panel(x)*\nbody\n*end$$ right)$$";
+      const nodes = parseStructural(input, { handlers });
+
+      assert.equal(nodes.length, 1);
+      assert.equal(nodes[0]?.type, "inline");
+      if (nodes[0]?.type === "inline") {
+        assert.deepEqual(normalizeStructuralNodes(nodes[0].children), [
+          { type: "text", value: "left " },
+          { type: "text", value: "$$code(ts)%\nraw\n%end$$ mid " },
+          { type: "text", value: "$$panel(x)*\nbody\n*end$$ right" },
+        ]);
+      }
+    },
+  },
+  {
+    name: "[Coverage/Structural] malformed raw close should report RAW_CLOSE_MALFORMED with candidate span",
+    run() {
+      const errors: Array<{ code: string; snippet: string }> = [];
+      const input = "$$code(ts)%\nraw\n  %end$$ trailing";
+      const tokens = parseRichText(input, {
+        handlers: {
+          code: {
+            raw: (_arg, content) => ({ type: "code", value: content }),
+          },
+        },
+        onError: (error) => errors.push({ code: error.code, snippet: error.snippet }),
+      });
+
+      assert.equal(extractText(tokens), input);
+      assert.equal(
+        errors.some((error) => error.code === "RAW_CLOSE_MALFORMED" && error.snippet.length > 0),
+        true,
+      );
+    },
+  },
+  {
+    name: "[Coverage/Structural] malformed block close should report BLOCK_CLOSE_MALFORMED with candidate span",
+    run() {
+      const errors: Array<{ code: string; snippet: string }> = [];
+      const input = "$$panel(x)*\nbody\n  *end$$ trailing";
+      const tokens = parseRichText(input, {
+        handlers: {
+          panel: {
+            block: (_arg, children) => ({ type: "panel", value: children }),
+          },
+        },
+        onError: (error) => errors.push({ code: error.code, snippet: error.snippet }),
+      });
+
+      assert.equal(extractText(tokens), input);
+      assert.equal(
+        errors.some((error) => error.code === "BLOCK_CLOSE_MALFORMED" && error.snippet.length > 0),
+        true,
+      );
     },
   },
 ];
