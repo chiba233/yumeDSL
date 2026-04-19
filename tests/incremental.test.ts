@@ -10,11 +10,19 @@ import {
   createIncrementalSession,
   createSimpleInlineHandlers,
   createSimpleRawHandlers,
+  buildPositionTracker,
   buildZones,
   parseIncremental,
   parseStructural,
 } from "../src/index.ts";
 import { buildConservativeTokenDiff, computeTokenDiff, computeTokenDiffWithinSourceWindow } from "../src/incremental/diff.ts";
+import {
+  hasUnsafeZoneCoverageTailGap,
+  isSafeRightReuse,
+  mapOldOffsetToNew,
+  nodeSignature,
+  normalizeSoftZoneNodeCap,
+} from "../src/incremental/document.ts";
 import { __setIncrementalDebugSink, tryUpdateIncremental, updateIncremental } from "../src/incremental/incremental.ts";
 import { buildParseOptionsFingerprint, cloneParseOptions } from "../src/incremental/options.ts";
 import { runGoldenCases, type GoldenCase } from "./testHarness.ts";
@@ -1997,6 +2005,14 @@ const cases: GoldenCase[] = [
     },
   },
   {
+    name: "[Incremental/Session] normalizeSoftZoneNodeCap should clamp tiny finite values to 2",
+    run: () => {
+      assert.equal(normalizeSoftZoneNodeCap(0), 2);
+      assert.equal(normalizeSoftZoneNodeCap(1.9), 2);
+      assert.equal(normalizeSoftZoneNodeCap(-8), 2);
+    },
+  },
+  {
     name: "[Incremental/Session] large edit in auto mode should fallback",
     run: () => {
       const source = "abcdef";
@@ -2153,6 +2169,14 @@ const cases: GoldenCase[] = [
       assert.ok(stats.probeSliceBytes > 0);
       assert.deepEqual(next.tree, full.tree);
       assert.deepEqual(next.zones, full.zones);
+    },
+  },
+  {
+    name: "[Incremental/Probe] empty right-zone set should trivially allow reuse",
+    run: () => {
+      const tracker = buildPositionTracker("abc");
+      const result = isSafeRightReuse([], "abc", 0, 0, tracker, undefined, 64);
+      assert.deepEqual(result, { ok: true, probeSliceBytes: 0 });
     },
   },
   {
@@ -2318,6 +2342,36 @@ const cases: GoldenCase[] = [
       assert.ok(stats);
       const touchedBytes = stats.cumulativeReparsedBytes + stats.probeSliceBytes;
       assert.ok(touchedBytes < source.length / 4, `touched=${touchedBytes}, source=${source.length}`);
+    },
+  },
+  {
+    name: "[Incremental/Probe] exhausted signature budget should make nodeSignature return undefined",
+    run: () => {
+      const [node] = parseStructural("$$bold(x)$$");
+      assert.ok(node);
+      const signature = nodeSignature(node, { remaining: 0 });
+      assert.equal(signature, undefined);
+    },
+  },
+  {
+    name: "[Incremental/Document] mapOldOffsetToNew should collapse replaced interior offsets to insert tail",
+    run: () => {
+      const edit = { startOffset: 3, oldEndOffset: 8, newText: "XYZ" };
+      const delta = edit.newText.length - (edit.oldEndOffset - edit.startOffset);
+      assert.equal(mapOldOffsetToNew(edit, delta, 2), 2);
+      assert.equal(mapOldOffsetToNew(edit, delta, 8), 6);
+      assert.equal(mapOldOffsetToNew(edit, delta, 5), 6);
+    },
+  },
+  {
+    name: "[Incremental/Document] hasUnsafeZoneCoverageTailGap should be false when snapshot has no zones",
+    run: () => {
+      const unsafe = hasUnsafeZoneCoverageTailGap([], {
+        startOffset: 1,
+        oldEndOffset: 2,
+        newText: "x",
+      });
+      assert.equal(unsafe, false);
     },
   },
   {

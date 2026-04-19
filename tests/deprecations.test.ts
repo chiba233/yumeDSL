@@ -290,6 +290,17 @@ const cases = [
       assert.equal(stderr.includes("getSyntax() is deprecated. Use DslContext.syntax instead."), true);
     },
   },
+  {
+    name: "[Deprecations] suppress 选项 -> 应当跳过告警输出",
+    run: async () => {
+      const stderr = await captureWarnings(async () => {
+        const { warnDeprecated } = await import("../src/internal/deprecations.ts");
+        warnDeprecated("suppressed-case", "should stay quiet", { suppress: true });
+      });
+
+      assert.equal(stderr.includes("should stay quiet"), false);
+    },
+  },
 ];
 
 await runGoldenCases("Deprecations", " deprecation warning case", cases);
