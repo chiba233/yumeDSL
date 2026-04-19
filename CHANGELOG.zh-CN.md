@@ -4,6 +4,10 @@
 
 ### 1.4.4
 
+- **修复：深层嵌套 shorthand 错误抢占祖先 endTag 闭合（自 1.4.1 引入的回归）**
+  - `1.4.1` 消除未闭合 inline 帧 N² 重扫路径的重写中，将 shorthand 归属检查收窄为只看直接父帧，丢失了向祖先 endTag owner 让位的能力。输入如 `=bold<bold<bold<...>>>>>>=` 会被最内层 shorthand 抢走 full-form 闭合 token，产出错误的解析树。`1.3.9` 及更早版本行为正确。
+  - `ParseFrame` 新增预算的 `ancestorEndTagOwnerIndex`，在 push 时通过单跳继承填充（父帧是 endTag owner → 记父帧索引；否则 → 继承父帧的索引）。祖先 owner 查找变为 O(1) 索引读取。push 阶段（shorthand argStart 与祖先 endTag 重叠检测）和 close 阶段（shorthand 与祖先闭合竞争）均使用该索引。
+  - shorthand defer-parent 降级与 EOF 恢复统一为共用的 `downgradeInlineIntoParent`：tag 头回退为普通文本、子帧已解析节点保留在父帧、父帧从当前扫描位置继续。旧的内联 defer 路径会丢弃子节点并从 `argStartI` 重扫。
 - **渲染器：文本合并缓冲替代逐段字符串拼接**
   - 连续的 text-like 节点（`text`、`escape`、`separator`）现在会先攒入渲染帧上的数组缓冲。遇到非文本节点（inline/raw/block）或帧结束时，通过一次 `join("")` 写入输出，替代原来逐段 `+=` 拼接在文本密集输入上产生的 O(N²) 中间字符串。
 - **渲染器：raw 转义闭合扫描改为惰性分配 + 单趟 skip 扫描**

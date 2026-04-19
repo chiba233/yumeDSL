@@ -4,6 +4,10 @@
 
 ### 1.4.4
 
+- **Fix: deeply nested shorthand incorrectly claims ancestor endTag close (regression since 1.4.1)**
+  - The `1.4.1` EOF-recovery rewrite (which eliminated the N² re-scan path for unclosed inline frames) narrowed shorthand ownership checks to only inspect the direct parent frame. This broke deferral to ancestor endTag owners: inputs like `=bold<bold<bold<...>>>>>>=` would have the innermost shorthand steal the full-form close token, producing incorrect parse trees. Behavior was correct in `1.3.9` and earlier.
+  - `ParseFrame` gains a pre-computed `ancestorEndTagOwnerIndex`, populated once at push time via single-hop inheritance (`parent is endTag owner → record parentIndex; otherwise → inherit parent's index`). This turns ancestor-owner lookup into an O(1) index read. Both the push phase (shorthand-vs-ancestor argStart overlap) and close phase (shorthand-vs-ancestor close competition) now use this index.
+  - Shorthand defer-parent downgrade is unified with the EOF-recovery path into a shared `downgradeInlineIntoParent`: tag head reverts to plain text, already-parsed child nodes are preserved on the parent frame, and the parent resumes from the current scan position. The old inline defer path discarded child nodes and re-scanned from `argStartI`.
 - **Renderer: text merge buffer replaces per-segment string concatenation**
   - Consecutive text-like nodes (`text`, `escape`, `separator`) now accumulate into an array buffer on each render frame. The buffer is flushed via a single `join("")` call at non-text boundaries (before inline/raw/block processing or frame completion), replacing per-segment `+=` concatenation that produced O(N²) intermediate strings on text-heavy input.
 - **Renderer: raw escape close scan now uses lazy allocation + single-pass skip scan**

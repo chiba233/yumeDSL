@@ -6,6 +6,7 @@ import {
   type TagHandler,
   type TextToken,
   type TokenDiffResult,
+  createEasySyntax,
   createSimpleBlockHandlers,
   createIncrementalSession,
   createSimpleInlineHandlers,
@@ -45,6 +46,9 @@ const makeNestedInline = (depth: number): string => {
   }
   return text;
 };
+
+const makeNestedEasyShorthand = (depth: number): string =>
+  `=bold<${"bold<".repeat(depth - 1)}${">".repeat(depth - 2)}>=`;
 
 const stripNodePositions = (node: StructuralNode): StructuralNode => {
   if (node.type === "text") {
@@ -1200,6 +1204,44 @@ const cases: GoldenCase[] = [
       assert.deepEqual(result.doc.tree, full.tree);
       assert.deepEqual(result.doc.zones, full.zones);
       assert.ok(elapsedMs < 2_000, `expected nested-close deletion to finish quickly, got ${elapsedMs}ms`);
+    },
+  },
+  {
+    name: "[Incremental/Session] 10000-layer shorthand close-run deletions should stay under 200ms each",
+    run: () => {
+      const handlers = createSimpleInlineHandlers(["bold"]);
+      const syntax = createEasySyntax({ tagPrefix: "=", tagOpen: "<", tagClose: ">" });
+      const depth = 10_000;
+      const depthLimit = 9_999;
+      const deleteCount = 50;
+      const source0 = makeNestedEasyShorthand(depth);
+      const closeStart = source0.indexOf(">");
+      assert.notEqual(closeStart, -1);
+      const deleteIndex = closeStart + depthLimit - deleteCount;
+      let source = source0;
+      const session = createIncrementalSession(source, {
+        handlers,
+        syntax,
+        implicitInlineShorthand: true,
+        depthLimit,
+      });
+
+      for (let step = 0; step < deleteCount; step++) {
+        const nextSource = applyEdit(source, deleteIndex, deleteIndex + 1, "");
+        const startedAt = performance.now();
+        const result = session.applyEdit(
+          { startOffset: deleteIndex, oldEndOffset: deleteIndex + 1, newText: "" },
+          nextSource,
+        );
+        const elapsedMs = performance.now() - startedAt;
+
+        assert.equal(result.doc.source, nextSource);
+        assert.ok(
+          elapsedMs < 200,
+          `expected close-run delete step ${step + 1}/${deleteCount} to stay under 200ms, got ${elapsedMs.toFixed(3)}ms`,
+        );
+        source = nextSource;
+      }
     },
   },
   {

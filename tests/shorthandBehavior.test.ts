@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  DEFAULT_SYNTAX,
   createEasySyntax,
   createSimpleInlineHandlers,
   extractText,
@@ -113,5 +114,64 @@ const cases: GoldenCase[] = matrixCases.flatMap((item) => [
     },
   },
 ]);
+
+cases.push({
+  name: "[Shorthand/Behavior] nested shorthand should not steal ancestor full-form close",
+  run: () => {
+    const input = "=bold<bold<bold<bold<bold<bold<bold<bold<>>>>>>=";
+    const nodes = parseStructural(input, {
+      syntax,
+      handlers,
+      implicitInlineShorthand: true,
+    });
+
+    assert.equal(nodes.length, 1);
+    assert.equal(nodes[0]?.type, "inline");
+    assert.equal((nodes[0] as { tag: string }).tag, "bold");
+    assert.equal(printStructural(nodes, { syntax }), input);
+  },
+});
+
+cases.push({
+  name: "[Shorthand/Smoke] shorthand must never steal complete close",
+  run: () => {
+    const smokeInputs = [
+      { label: "default", syntax: DEFAULT_SYNTAX },
+      { label: "easy", syntax },
+    ] as const;
+
+    const makeInput = (
+      currentSyntax: { tagPrefix: string; tagOpen: string; tagClose: string; endTag: string },
+      depth: number,
+      missingShorthandCloses: number,
+    ): string =>
+      `${currentSyntax.tagPrefix}bold${currentSyntax.tagOpen}${`bold${currentSyntax.tagOpen}`.repeat(depth - 1)}${currentSyntax.tagClose.repeat(depth - missingShorthandCloses - 1)}${currentSyntax.endTag}`;
+
+    for (const item of smokeInputs) {
+      for (let depth = 2; depth <= 24; depth++) {
+        const maxMissing = Math.min(depth - 1, 6);
+        for (let missing = 1; missing <= maxMissing; missing++) {
+          const input = makeInput(item.syntax, depth, missing);
+          const nodes = parseStructural(input, {
+            syntax: item.syntax,
+            handlers,
+            implicitInlineShorthand: true,
+          });
+          const tokens = parseRichText(input, {
+            syntax: item.syntax,
+            handlers,
+            implicitInlineShorthand: true,
+          });
+
+          assert.equal(nodes.length, 1, `${item.label} depth=${depth} missing=${missing}`);
+          assert.equal(nodes[0]?.type, "inline", `${item.label} depth=${depth} missing=${missing}`);
+          assert.equal((nodes[0] as { tag: string }).tag, "bold", `${item.label} depth=${depth} missing=${missing}`);
+          assert.equal(tokens[0]?.type, "bold", `${item.label} depth=${depth} missing=${missing}`);
+          assert.equal(printStructural(nodes, { syntax: item.syntax }), input, `${item.label} depth=${depth} missing=${missing}`);
+        }
+      }
+    }
+  },
+});
 
 await runGoldenCases("Shorthand Behavior", "shorthand 行为矩阵 case", cases, { quietPasses: true });

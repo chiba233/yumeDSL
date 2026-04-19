@@ -337,6 +337,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     // ── shorthand 前探缓存（仅父 inline endTag 模式使用） ──
     // 按需创建，避免每个帧常驻 4 个探测字段。
     shorthandProbe: ShorthandProbeState | null;
+    ancestorEndTagOwnerIndex: number;
   }
 
   const makeFrame = (
@@ -370,6 +371,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     contentStartI: 0,
     contentEndI: 0,
     shorthandProbe: null,
+    ancestorEndTagOwnerIndex: -1,
   });
 
   // ── 缓冲区 ──
@@ -431,18 +433,18 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     frame.buf.end = end;
   };
 
-  const recoverUnclosedInlineIntoParent = (frame: ParseFrame): boolean => {
+  const downgradeInlineIntoParent = (frame: ParseFrame, nextParentI: number): boolean => {
     const parent = stack[frame.parentIndex];
     if (!parent) return true;
-    // EOF 上的未闭合 inline 仍然按历史语义降级：
+    // inline 子帧降级回父帧：
     // 1. tag 头回退成普通文本
-    // 2. 已经在子帧里解析出来的尾部内容直接挂回父帧
-    // 这样既保留原有输出形状，又避免把父帧游标倒回 argStart 后重扫整段尾巴。
+    // 2. 已经在子帧里解析出来的正文直接挂回父帧
+    // 3. 父帧从 nextParentI 继续，避免回退到 argStart 重扫整段尾巴。
     flushBuffer(frame);
     appendBuf(parent, frame.tagStartI, frame.argStartI);
     flushBuffer(parent);
     parent.nodes.push(...frame.nodes);
-    parent.i = frame.textEnd;
+    parent.i = nextParentI;
     return true;
   };
 
@@ -550,11 +552,14 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     meta: TagMeta | null,
     tagPosition: SourceSpan | undefined,
   ) => {
+    const parent = stack[parentIndex];
     child.returnKind = returnKind;
     child.parentIndex = parentIndex;
     child.tag = tag;
     child.meta = meta;
     child.tagPosition = tagPosition;
+    child.ancestorEndTagOwnerIndex =
+      parent.inlineCloseToken === endTag ? parentIndex : parent.ancestorEndTagOwnerIndex;
     stack.push(child);
   };
 
@@ -668,6 +673,23 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
   const resolveShorthandOwnership = (
     input: ShorthandOwnershipInput,
   ): ShorthandOwnershipDecision => {
+    const getAncestorEndTagOwner = (frame: ParseFrame | null): ParseFrame | null => {
+      if (!frame) return null;
+      const ownerIndex = frame.ancestorEndTagOwnerIndex;
+      return ownerIndex >= 0 ? (stack[ownerIndex] ?? null) : null;
+    };
+
+    const getEndTagOwner = (frame: ParseFrame | null): ParseFrame | null => {
+      if (!frame) return null;
+      if (frame.inlineCloseToken === endTag) return frame;
+      return getAncestorEndTagOwner(frame);
+    };
+
+    const hasEndTagOwnerAt = (frame: ParseFrame | null, at: number): boolean => {
+      const owner = getEndTagOwner(frame);
+      return !!owner && scanEndTagAt(owner.text, at, owner.textEnd) === "full";
+    };
+
     if (input.phase === "push") {
       const info = input.info;
       if (!info) return "allow";
@@ -678,6 +700,10 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         frame.inlineCloseToken === endTag &&
         scanEndTagAt(frame.text, info.argStart, frame.textEnd) === "full"
       ) {
+        return "defer-parent";
+      }
+
+      if (hasEndTagOwnerAt(getAncestorEndTagOwner(frame), info.argStart)) {
         return "defer-parent";
       }
 
@@ -728,11 +754,8 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       const at = input.at;
       if (at === undefined) return "allow";
       const frame = input.frame;
-      const parent = input.parent;
       if (!frame.implicitInlineShorthand) return "allow";
-      if (!parent || parent.inlineCloseToken !== endTag) return "allow";
-      if (scanEndTagAt(frame.text, at, frame.textEnd) !== "full") return "allow";
-      return "defer-parent";
+      return hasEndTagOwnerAt(input.parent, at) ? "defer-parent" : "allow";
     }
 
     // EOF 恢复统一交给父帧继续决议（历史语义：回到 argStart 重扫）。
@@ -798,12 +821,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         }) === "defer-parent"
       ) {
         stack.pop();
-        if (!parent) {
-          return true;
-        }
-        appendBuf(parent, frame.tagStartI, frame.argStartI);
-        parent.i = frame.argStartI;
-        return true;
+        return downgradeInlineIntoParent(frame, i);
       }
 
       if (!frameText.startsWith(tagClose, i)) return false;
@@ -816,12 +834,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         }) === "defer-parent"
       ) {
         stack.pop();
-        if (!parent) {
-          return true;
-        }
-        appendBuf(parent, frame.tagStartI, frame.argStartI);
-        parent.i = frame.argStartI;
-        return true;
+        return downgradeInlineIntoParent(frame, i);
       }
       flushBuffer(frame);
       frame.inlineCloseWidth = tagClose.length;
@@ -1197,7 +1210,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         emittedErrorKeys,
       );
       stack.pop();
-      return recoverUnclosedInlineIntoParent(frame);
+      return downgradeInlineIntoParent(frame, frame.textEnd);
     }
 
     flushBuffer(frame);
