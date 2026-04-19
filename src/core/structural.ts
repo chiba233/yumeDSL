@@ -527,42 +527,6 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     owner.nodes.push(node);
   };
 
-  const finalizeShorthandChainIntoOwner = (ownerIndex: number): boolean => {
-    if (ownerIndex < 0) return false;
-    const owner = stack[ownerIndex];
-    if (!owner || owner.inlineCloseToken !== endTag) return false;
-    const chain = stack.slice(ownerIndex + 1);
-    if (chain.length === 0) return false;
-    let recoveredDirectOwnerNode = false;
-    for (const frame of chain) {
-      flushBuffer(frame);
-    }
-    stack.length = ownerIndex + 1;
-    for (const frame of chain) {
-      appendBuf(owner, frame.tagStartI, frame.argStartI);
-      owner.i = frame.argStartI;
-      flushBuffer(owner);
-      for (const node of frame.nodes) {
-        if (node.type !== "text" && !isImplicitShorthandInline(node)) {
-          recoveredDirectOwnerNode = true;
-        }
-        appendRecoveredNodeIntoOwner(owner, node as TNode);
-      }
-    }
-    if (recoveredDirectOwnerNode) {
-      return downgradeEndTagOwnerScopeToParent(ownerIndex);
-    }
-    const closeStart = owner.textEnd - endTag.length;
-    if (closeStart >= owner.argStartI && scanEndTagAt(owner.text, closeStart, owner.textEnd) === "full") {
-      owner.i = closeStart;
-      owner.inlineCloseWidth = endTag.length;
-      stack.pop();
-      completeChild(owner);
-      return true;
-    }
-    return downgradeEndTagOwnerScopeToParent(ownerIndex);
-  };
-
   // ── 子帧完成分发 ──
 
   const completeChild = (child: ParseFrame) => {
@@ -1323,9 +1287,6 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         emittedErrorKeys,
       );
       const frameIndex = stack.length - 1;
-      if (frame.inlineCloseToken === tagClose && finalizeShorthandChainIntoOwner(frame.ancestorEndTagOwnerIndex)) {
-        return true;
-      }
       if (frame.inlineCloseToken === endTag && downgradeEndTagOwnerScopeToParent(frameIndex)) {
         return true;
       }
