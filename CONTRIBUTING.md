@@ -67,8 +67,11 @@ fix(rich-text): handle escaped pipe inside raw tags
 
 ## Code guidelines
 
-- **No `as any`** — fix the type instead of bypassing the checker.
-- **Avoid `any`** — use it only at clear boundaries when narrower types are exhausted.
+- **`any` and `as any` are forbidden.** ESLint enforces this. No exceptions — fix the type.
+- **No `switch` statements.** Use `if`/`else if` chains or lookup objects. `switch` introduces fall-through risk
+  and does not narrow types as precisely as `if` chains with type guards.
+- **No OOP patterns.** No `class`, no `this`-based dispatch, no inheritance hierarchies. The codebase is
+  functions + plain objects + closures. Keep it that way.
 - **Prefer type guards and union narrowing** over type assertions.
 - **Zero dependencies** — `yume-dsl-rich-text` is dependency-free by design. Don't add runtime dependencies unless
   discussed first.
@@ -106,6 +109,30 @@ Unless the maintainer explicitly asked for the work first, please avoid PRs in t
   - If you touch them, the PR must explain the semantic boundary being preserved
 
 These areas are not "never touch"; they are "maintainer-led only" unless there is a concrete bug, regression, or requested task.
+
+## Incremental parsing — complex by necessity
+
+The incremental parsing pipeline (`src/incremental/`) is one of the most complex parts of the codebase. It contains
+many layers of gating, guards, budget checks, fallback paths, and conservative-rebuild triggers. This complexity is
+**intentional and load-bearing**.
+
+Every guard exists because a real edge case was discovered where skipping it would silently produce wrong results,
+stale caches, or unbounded reparse cost. Examples include:
+- dirty-window boundary calculations that must account for mid-token edits
+- seam probes that verify structural continuity across reuse boundaries
+- budget-based coarsening that prevents pathological diff cost on adversarial input
+- zone-level signature checks that detect semantic drift invisible to byte-level diffing
+
+**Do not simplify the gating logic.** Do not remove guards because "they seem redundant" or "this branch never fires
+in my tests." Many of these guards protect against input shapes that only appear in production editing sessions —
+partial deletes, rapid undo/redo, concurrent zone invalidation.
+
+If you have a **better algorithm** that achieves the same safety guarantees with less complexity, that contribution
+is welcome — but the PR must:
+- explicitly list which existing guards are replaced and why each is no longer needed
+- pass the full incremental test suite, including adversarial / fuzzing fixtures
+- include before/after benchmarks on both short-edit and worst-case workloads
+- not regress the `onError` / recovery consistency between full-parse and incremental paths
 
 ## Dangerous paths — things that look harmless but break performance
 
