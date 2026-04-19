@@ -28,6 +28,14 @@ export const CUSTOM_SYNTAX_CASES = [
   { name: "custom: block", input: "##info()*\ncontent\n*end##" },
 ];
 
+export const SHORTHAND_CASES = [
+  { name: "simple shorthand", input: "$$bold(hello)" },
+  { name: "nested shorthand", input: "$$bold($$thin(x))" },
+  { name: "shorthand with trailing text", input: "before $$bold(hello) after" },
+  { name: "unclosed shorthand", input: "$$bold(hello" },
+  { name: "shorthand depth limit", input: "$$bold($$bold($$bold(x)))", opts: { depthLimit: 2 } },
+];
+
 export const ERROR_CASES = CORE_CASES.filter((testCase) =>
   ["unclosed inline", "unclosed block", "unknown tag", "unknown block", "depth limit hit"].includes(testCase.name),
 );

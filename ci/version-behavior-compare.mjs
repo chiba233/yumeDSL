@@ -3,7 +3,15 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
-import { CORE_CASES, CUSTOM_SYNTAX_CASES, ERROR_CASES, createCustomSyntax, makeHandlers, stripMeta } from "./shared.mjs";
+import {
+  CORE_CASES,
+  CUSTOM_SYNTAX_CASES,
+  ERROR_CASES,
+  SHORTHAND_CASES,
+  createCustomSyntax,
+  makeHandlers,
+  stripMeta,
+} from "./shared.mjs";
 
 /** @param {unknown} value */
 const isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
@@ -135,6 +143,7 @@ const collectBehaviorSnapshot = (mod) => {
   const snapshot = {
     core: {},
     custom: {},
+    shorthand: {},
     onError: {},
     parser: {},
     positions: {},
@@ -154,6 +163,15 @@ const collectBehaviorSnapshot = (mod) => {
     const options = { handlers, syntax };
     snapshot.custom[testCase.name] = {
       parseRichText: safe(() => stripMeta(mod.parseRichText(testCase.input, options))),
+      parseStructural: safe(() => stripMeta(mod.parseStructural(testCase.input, options))),
+    };
+  }
+
+  for (const testCase of SHORTHAND_CASES) {
+    const options = { handlers, ...(testCase.opts ?? {}), implicitInlineShorthand: true };
+    snapshot.shorthand[testCase.name] = {
+      parseRichText: safe(() => stripMeta(mod.parseRichText(testCase.input, options))),
+      stripRichText: safe(() => mod.stripRichText(testCase.input, options)),
       parseStructural: safe(() => stripMeta(mod.parseStructural(testCase.input, options))),
     };
   }
@@ -312,6 +330,20 @@ const knownExpectedDifferences = [
       entry.actualVersion.startsWith("1.1."),
     reason: "1.4 changed unclosed-inline structural fallback shape",
   },
+  {
+    matcher: (entry) =>
+      entry.section === "shorthand" &&
+      entry.api === "parseStructural" &&
+      entry.actualVersion.startsWith("1.3."),
+    reason: "1.4 changed shorthand structural degradation shape",
+  },
+  {
+    matcher: (entry) =>
+      entry.section === "shorthand" &&
+      entry.api === "parseStructural" &&
+      entry.actualVersion.startsWith("1.2."),
+    reason: "1.4 changed shorthand structural degradation shape",
+  },
 ];
 
 const isKnownDifference = (entry) => knownExpectedDifferences.some((rule) => rule.matcher(entry));
@@ -358,6 +390,7 @@ const compareSnapshots = (baselineVersion, baseline, actualVersion, actual) => {
 
   compareObject("core", baseline.core, actual.core);
   compareObject("custom", baseline.custom, actual.custom);
+  compareObject("shorthand", baseline.shorthand, actual.shorthand);
   compareObject("onError", baseline.onError, actual.onError);
   compareObject("parser", baseline.parser, actual.parser);
   compareObject("positions", baseline.positions, actual.positions);
