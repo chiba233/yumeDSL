@@ -140,19 +140,21 @@ The parser's constant factor has been tuned across many versions. The following 
 and are easy to introduce by accident. **Any PR that touches the main scan loop or per-frame logic must be
 benchmarked.**
 
-### No `indexOf` / native scan methods in the parser pipeline
+### No `indexOf` / native scan methods in the main scan loop
 
-The entire parser maintains explicit control flow — explicit stack, explicit `while` loops, explicit
-character-by-character or `charCodeAt` comparisons. This is intentional.
+The main scan loop in `structural.ts` (the `while` loop + `findNextBoundaryChar`) maintains fully explicit
+control flow — explicit stack, explicit character-by-character `charCodeAt` comparisons, explicit branch cascade.
+This is intentional.
 
 Do **not** introduce `indexOf`, `findIndex`, `Array.prototype.find`, `includes`-as-search, `match`, or similar
-native scan methods in parser hot paths (`structural.ts`, `scanner.ts`, `escape.ts`). These methods:
+native scan methods into the main scan loop or `findNextBoundaryChar`. These methods:
 - hide an inner linear scan behind a single call, making the real branch cost invisible
 - cannot be short-circuited or interleaved with other checks
 - produce unpredictable performance cliffs when V8 deoptimizes or when the input shape changes
 
-If you need to find the next occurrence of something, write an explicit loop with `charCodeAt` / `startsWith`, and
-make the scan boundary visible at the call site.
+Note: `indexOf` is perfectly fine in bounded-region helpers like `findBlockClose` / `findRawClose` in `scanner.ts`,
+where the scan target and boundary are already known and the call does not sit inside the per-character loop.
+The rule applies specifically to the main scan loop where every character passes through the branch cascade.
 
 ### `findNextBoundaryChar` — the fast text skip loop
 

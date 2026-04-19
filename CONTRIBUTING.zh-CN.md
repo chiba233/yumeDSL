@@ -128,16 +128,16 @@ fix(rich-text): handle escaped pipe inside raw tags
 
 解析器的常数倍率经过多个版本的调优。以下模式都曾引发过真实回归，且很容易不经意间引入。**任何触碰主扫描循环或逐帧逻辑的 PR 必须附带 benchmark。**
 
-### 禁止在解析流水线中使用 `indexOf` / 原生扫描方法
+### 禁止在主扫描循环中使用 `indexOf` / 原生扫描方法
 
-整个解析器刻意维护显式控制流 — 显式栈、显式 `while` 循环、显式逐字符或 `charCodeAt` 比较。这是设计决策，不是遗漏。
+`structural.ts` 的主扫描循环（`while` 循环 + `findNextBoundaryChar`）刻意维护完全显式的控制流 — 显式栈、显式逐字符 `charCodeAt` 比较、显式分支级联。这是设计决策，不是遗漏。
 
-**不要**在解析热路径（`structural.ts`、`scanner.ts`、`escape.ts`）中引入 `indexOf`、`findIndex`、`Array.prototype.find`、`includes` 式搜索、`match` 等原生扫描方法。原因：
+**不要**在主扫描循环或 `findNextBoundaryChar` 中引入 `indexOf`、`findIndex`、`Array.prototype.find`、`includes` 式搜索、`match` 等原生扫描方法。原因：
 - 单次调用背后隐藏了一次线性扫描，让真实分支开销不可见
 - 无法与其他检查短路交错
 - V8 deopt 或输入形状变化时会产生不可预测的性能悬崖
 
-如果需要找"下一个出现位置"，请写显式的 `charCodeAt` / `startsWith` 循环，让扫描边界在调用点可见。
+注意：在 `scanner.ts` 的 `findBlockClose` / `findRawClose` 等有界区间辅助函数中使用 `indexOf` 是完全可以的——这些场景下扫描目标和边界已经确定，调用不在逐字符循环内部。此规则专门针对主扫描循环——每个字符都要经过分支级联的那条路径。
 
 ### `findNextBoundaryChar` — 快速文本跳跃循环
 
