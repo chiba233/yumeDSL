@@ -5,16 +5,9 @@ import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { CORE_CASES, CUSTOM_SYNTAX_CASES, ERROR_CASES, createCustomSyntax, makeHandlers, stripMeta } from "./shared.mjs";
 
-/**
- * @param {unknown} value
- * @returns {value is Record<string, unknown>}
- */
+/** @param {unknown} value */
 const isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
-
-/**
- * @param {unknown} value
- * @returns {[string, unknown][]}
- */
+/** @param {unknown} value */
 const entriesOfRecord = (value) => (isRecord(value) ? Object.entries(value) : []);
 
 const parseSemver = (value) => {
@@ -61,8 +54,9 @@ const computeTargetVersions = (allVersions) => {
     return max;
   });
 
-  const latestMajorMinors = [...new Set(parsed.filter((entry) => entry.major === latest.major).map((entry) => entry.minor))]
-    .sort((a, b) => a - b);
+  const latestMajorMinors = [...new Set(parsed.filter((entry) => entry.major === latest.major).map((entry) => entry.minor))].sort(
+    (a, b) => a - b,
+  );
 
   const targetMinors = latestMajorMinors.slice(-3);
   if (targetMinors.length < 3) {
@@ -107,28 +101,60 @@ const packAndExtract = async (packageName, version, tempRoot) => {
 const collectBehaviorSnapshot = (mod) => {
   const handlers = makeHandlers(mod);
   const syntax = createCustomSyntax(mod);
+  const normalizeIncrementalDoc = (doc) => ({
+    source: doc.source,
+    tree: stripMeta(doc.tree),
+    zones: doc.zones.map((zone) => ({
+      startOffset: zone.startOffset,
+      endOffset: zone.endOffset,
+      nodes: stripMeta(zone.nodes),
+    })),
+  });
+  const buildEditedSource = (source, edit) => source.slice(0, edit.startOffset) + edit.newText + source.slice(edit.oldEndOffset);
+  const incrementalCases = [
+    {
+      name: "inline replace",
+      source: "A $$bold(hello)$$ B",
+      edit: { startOffset: 9, oldEndOffset: 14, newText: "world" },
+    },
+    {
+      name: "insert nested inline",
+      source: "start $$info(Tip)*\nline\n*end$$ end",
+      edit: { startOffset: 6, oldEndOffset: 6, newText: "$$bold(+)$$ " },
+    },
+  ];
+
+  const safe = (fn) => {
+    try {
+      return { ok: true, value: fn() };
+    } catch (error) {
+      return { ok: false, error: String(error?.message ?? error) };
+    }
+  };
+
   const snapshot = {
     core: {},
     custom: {},
     onError: {},
     parser: {},
     positions: {},
+    incremental: {},
   };
 
   for (const testCase of CORE_CASES) {
     const options = { handlers, ...testCase.opts };
     snapshot.core[testCase.name] = {
-      parseRichText: stripMeta(mod.parseRichText(testCase.input, options)),
-      stripRichText: mod.stripRichText(testCase.input, options),
-      parseStructural: stripMeta(mod.parseStructural(testCase.input, options)),
+      parseRichText: safe(() => stripMeta(mod.parseRichText(testCase.input, options))),
+      stripRichText: safe(() => mod.stripRichText(testCase.input, options)),
+      parseStructural: safe(() => stripMeta(mod.parseStructural(testCase.input, options))),
     };
   }
 
   for (const testCase of CUSTOM_SYNTAX_CASES) {
     const options = { handlers, syntax };
     snapshot.custom[testCase.name] = {
-      parseRichText: stripMeta(mod.parseRichText(testCase.input, options)),
-      parseStructural: stripMeta(mod.parseStructural(testCase.input, options)),
+      parseRichText: safe(() => stripMeta(mod.parseRichText(testCase.input, options))),
+      parseStructural: safe(() => stripMeta(mod.parseStructural(testCase.input, options))),
     };
   }
 
@@ -137,45 +163,125 @@ const collectBehaviorSnapshot = (mod) => {
     const stripRichTextCodes = [];
     const parseStructuralCodes = [];
 
-    mod.parseRichText(testCase.input, {
-      handlers,
-      ...testCase.opts,
-      onError: (error) => parseRichTextCodes.push(error.code),
-    });
-    mod.stripRichText(testCase.input, {
-      handlers,
-      ...testCase.opts,
-      onError: (error) => stripRichTextCodes.push(error.code),
-    });
-    mod.parseStructural(testCase.input, {
-      handlers,
-      ...testCase.opts,
-      onError: (error) => parseStructuralCodes.push(error.code),
-    });
+    safe(() =>
+      mod.parseRichText(testCase.input, {
+        handlers,
+        ...testCase.opts,
+        onError: (error) => parseRichTextCodes.push(error.code),
+      }),
+    );
+    safe(() =>
+      mod.stripRichText(testCase.input, {
+        handlers,
+        ...testCase.opts,
+        onError: (error) => stripRichTextCodes.push(error.code),
+      }),
+    );
+    safe(() =>
+      mod.parseStructural(testCase.input, {
+        handlers,
+        ...testCase.opts,
+        onError: (error) => parseStructuralCodes.push(error.code),
+      }),
+    );
 
     snapshot.onError[testCase.name] = {
-      parseRichText: parseRichTextCodes,
-      stripRichText: stripRichTextCodes,
-      parseStructural: parseStructuralCodes,
+      parseRichText: { ok: true, value: parseRichTextCodes },
+      stripRichText: { ok: true, value: stripRichTextCodes },
+      parseStructural: { ok: true, value: parseStructuralCodes },
     };
   }
 
   for (const testCase of CORE_CASES.slice(0, 10)) {
-    const parser = mod.createParser({ handlers });
+    const parserResult = safe(() => mod.createParser({ handlers }));
     const options = testCase.opts ?? {};
+    if (!parserResult.ok) {
+      snapshot.parser[testCase.name] = {
+        parse: parserResult,
+        strip: parserResult,
+        structural: parserResult,
+      };
+      continue;
+    }
+    const parser = parserResult.value;
     snapshot.parser[testCase.name] = {
-      parse: stripMeta(parser.parse(testCase.input, options)),
-      strip: parser.strip(testCase.input, options),
-      structural: stripMeta(parser.structural(testCase.input, options)),
+      parse: safe(() => stripMeta(parser.parse(testCase.input, options))),
+      strip: safe(() => parser.strip(testCase.input, options)),
+      structural: safe(() => stripMeta(parser.structural(testCase.input, options))),
     };
   }
 
   for (const testCase of CORE_CASES.slice(0, 8)) {
     const options = { handlers, ...(testCase.opts ?? {}), trackPositions: true };
     snapshot.positions[testCase.name] = {
-      parseRichText: stripMeta(mod.parseRichText(testCase.input, options), { keepPosition: true }),
-      parseStructural: stripMeta(mod.parseStructural(testCase.input, options), { keepPosition: true }),
+      parseRichText: safe(() => stripMeta(mod.parseRichText(testCase.input, options), { keepPosition: true })),
+      parseStructural: safe(() => stripMeta(mod.parseStructural(testCase.input, options), { keepPosition: true })),
     };
+  }
+
+  const hasIncrementalApi =
+    typeof mod.parseIncremental === "function" && typeof mod.createIncrementalSession === "function";
+  if (!hasIncrementalApi) {
+    snapshot.incremental.__unsupported__ = { ok: true, value: true };
+    return snapshot;
+  }
+
+  const supportsApplyEditWithDiff = (() => {
+    const probe = safe(() => mod.createIncrementalSession("x", { handlers }, { strategy: "incremental-only" }));
+    if (!probe.ok) return false;
+    return typeof probe.value.applyEditWithDiff === "function";
+  })();
+
+  for (const testCase of incrementalCases) {
+    const parseOptions = { handlers };
+    const newSource = buildEditedSource(testCase.source, testCase.edit);
+
+    const parseIncrementalResult = safe(() => normalizeIncrementalDoc(mod.parseIncremental(testCase.source, parseOptions)));
+    const sessionResult = safe(() =>
+      mod.createIncrementalSession(testCase.source, parseOptions, {
+        strategy: "incremental-only",
+      }),
+    );
+
+    if (!sessionResult.ok) {
+      snapshot.incremental[testCase.name] = {
+        parseIncremental: parseIncrementalResult,
+        applyEdit: sessionResult,
+      };
+      continue;
+    }
+
+    const session = sessionResult.value;
+    const applyEditResult = safe(() => session.applyEdit(testCase.edit, newSource));
+    const normalizedApplyEdit = applyEditResult.ok
+      ? {
+          ok: true,
+          value: {
+            mode: applyEditResult.value.mode,
+            fallbackReason: applyEditResult.value.fallbackReason ?? null,
+            doc: normalizeIncrementalDoc(applyEditResult.value.doc),
+          },
+        }
+      : applyEditResult;
+
+    snapshot.incremental[testCase.name] = {
+      parseIncremental: parseIncrementalResult,
+      applyEdit: normalizedApplyEdit,
+    };
+
+    if (supportsApplyEditWithDiff && typeof session.applyEditWithDiff === "function") {
+      const applyEditWithDiffResult = safe(() => session.applyEditWithDiff(testCase.edit, newSource));
+      snapshot.incremental[testCase.name].applyEditWithDiff = applyEditWithDiffResult.ok
+        ? {
+            ok: true,
+            value: {
+              mode: applyEditWithDiffResult.value.mode,
+              fallbackReason: applyEditWithDiffResult.value.fallbackReason ?? null,
+              doc: normalizeIncrementalDoc(applyEditWithDiffResult.value.doc),
+            },
+          }
+        : applyEditWithDiffResult;
+    }
   }
 
   return snapshot;
@@ -217,6 +323,7 @@ const compareSnapshots = (baselineVersion, baseline, actualVersion, actual) => {
     for (const [caseName, baselineCase] of entriesOfRecord(baselineObject)) {
       const actualCase = isRecord(actualObject) ? actualObject[caseName] : undefined;
       if (!actualCase) {
+        if (sectionName === "incremental") continue;
         diffs.push({
           section: sectionName,
           caseName,
@@ -228,7 +335,11 @@ const compareSnapshots = (baselineVersion, baseline, actualVersion, actual) => {
         });
         continue;
       }
+
       for (const [api, baselineValue] of entriesOfRecord(baselineCase)) {
+        if (sectionName === "incremental" && isRecord(actualCase) && !(api in actualCase)) {
+          continue;
+        }
         const actualValue = isRecord(actualCase) ? actualCase[api] : undefined;
         if (JSON.stringify(baselineValue) !== JSON.stringify(actualValue)) {
           diffs.push({
@@ -250,6 +361,7 @@ const compareSnapshots = (baselineVersion, baseline, actualVersion, actual) => {
   compareObject("onError", baseline.onError, actual.onError);
   compareObject("parser", baseline.parser, actual.parser);
   compareObject("positions", baseline.positions, actual.positions);
+  compareObject("incremental", baseline.incremental, actual.incremental);
 
   return diffs;
 };
@@ -269,24 +381,31 @@ const main = async () => {
   const knownDiffs = [];
 
   for (const version of selectedVersions) {
-    const modulePath = await packAndExtract(packageName, version, tempRoot);
-    const moduleUrl = pathToFileURL(modulePath).href;
-    const imported = await import(moduleUrl);
-    const snapshot = collectBehaviorSnapshot(imported);
-    const diffs = compareSnapshots("workspace-dist", baselineSnapshot, version, snapshot);
+    try {
+      const modulePath = await packAndExtract(packageName, version, tempRoot);
+      const moduleUrl = pathToFileURL(modulePath).href;
+      const imported = await import(moduleUrl);
+      const snapshot = collectBehaviorSnapshot(imported);
+      const diffs = compareSnapshots("workspace-dist", baselineSnapshot, version, snapshot);
 
-    for (const diff of diffs) {
-      if (isKnownDifference(diff)) {
-        knownDiffs.push(diff);
-      } else {
-        unknownDiffs.push(diff);
+      for (const diff of diffs) {
+        if (isKnownDifference(diff)) knownDiffs.push(diff);
+        else unknownDiffs.push(diff);
       }
-    }
 
-    reports.push({
-      version,
-      diffCount: diffs.length,
-    });
+      reports.push({ version, diffCount: diffs.length });
+    } catch (error) {
+      unknownDiffs.push({
+        section: "__runner__",
+        caseName: "import-or-collect",
+        api: "version-run",
+        baselineVersion: "workspace-dist",
+        actualVersion: version,
+        baseline: null,
+        actual: String(error?.message ?? error),
+      });
+      reports.push({ version, diffCount: 0, error: String(error?.message ?? error) });
+    }
   }
 
   const summary = {
