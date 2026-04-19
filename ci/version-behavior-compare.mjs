@@ -404,6 +404,23 @@ const main = async () => {
   const allVersions = npmViewVersions(packageName);
   const { latestPublishedVersion, selectedVersions } = computeTargetVersions(allVersions);
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "yume-dsl-version-ci-"));
+  const testedSections = [
+    { section: "core", cases: CORE_CASES.length, apis: ["parseRichText", "stripRichText", "parseStructural"] },
+    { section: "custom", cases: CUSTOM_SYNTAX_CASES.length, apis: ["parseRichText", "parseStructural"] },
+    {
+      section: "shorthand",
+      cases: SHORTHAND_CASES.length,
+      apis: ["parseRichText", "stripRichText", "parseStructural(implicitInlineShorthand=true)"],
+    },
+    { section: "onError", cases: ERROR_CASES.length, apis: ["onError(parse/strip/structural)"] },
+    { section: "parser", cases: Math.min(10, CORE_CASES.length), apis: ["createParser.parse/strip/structural"] },
+    { section: "positions", cases: Math.min(8, CORE_CASES.length), apis: ["trackPositions(parse/structural)"] },
+    { section: "incremental", cases: 2, apis: ["parseIncremental", "createIncrementalSession.applyEdit"] },
+  ];
+  const testedTotalCases = testedSections.reduce((sum, item) => sum + item.cases, 0);
+  const testedText = `已测试分区: ${testedSections
+    .map((item) => `${item.section}(${item.cases})`)
+    .join(", ")}; 总用例 ${testedTotalCases}`;
 
   const currentModulePath = new URL("../dist/index.js", import.meta.url);
   const currentModule = await import(currentModulePath);
@@ -445,10 +462,15 @@ const main = async () => {
     package: packageName,
     latestPublishedVersion,
     comparedPublishedVersions: selectedVersions,
+    testedText,
+    testedSections,
+    testedTotalCases,
     reports,
     knownDiffCount: knownDiffs.length,
     unknownDiffCount: unknownDiffs.length,
   };
+
+  console.log(`[version-behavior] ${testedText}`);
 
   if (unknownDiffs.length > 0) {
     console.error(
