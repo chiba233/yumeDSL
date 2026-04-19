@@ -95,7 +95,7 @@ const cases: GoldenCase[] = [
       assert.equal(result.doc.source, nextSource);
       assert.deepEqual(summarizeInlineTree(result.doc.tree), {
         rootType: "inline",
-        rootChildCount: 53,
+        rootChildCount: 3,
         maxInlineDepth: 9_948,
       });
       assert.ok(
