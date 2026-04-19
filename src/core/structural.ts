@@ -658,7 +658,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     return "full";
   };
 
-  type ShorthandOwnershipPhase = "push" | "close" | "eof";
+  type ShorthandOwnershipPhase = "push" | "close";
   type ShorthandOwnershipDecision = "allow" | "defer-parent";
   interface ShorthandOwnershipInput {
     phase: ShorthandOwnershipPhase;
@@ -755,8 +755,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       return hasEndTagOwnerAt(input.parent, at) ? "defer-parent" : "allow";
     }
 
-    // EOF 恢复统一交给父帧继续决议（历史语义：回到 argStart 重扫）。
-    return "defer-parent";
+    return "allow";
   };
 
   const tryPushInlineShorthandChild = (
@@ -822,17 +821,6 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       }
 
       if (!frameText.startsWith(tagClose, i)) return false;
-      if (
-        resolveShorthandOwnership({
-          phase: "close",
-          frame,
-          parent,
-          at: i,
-        }) === "defer-parent"
-      ) {
-        stack.pop();
-        return downgradeInlineIntoParent(frame, i);
-      }
       flushBuffer(frame);
       frame.inlineCloseWidth = tagClose.length;
       stack.pop();
