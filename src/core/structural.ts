@@ -533,6 +533,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     if (!owner || owner.inlineCloseToken !== endTag) return false;
     const chain = stack.slice(ownerIndex + 1);
     if (chain.length === 0) return false;
+    let recoveredDirectOwnerNode = false;
     for (const frame of chain) {
       flushBuffer(frame);
     }
@@ -542,8 +543,14 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       owner.i = frame.argStartI;
       flushBuffer(owner);
       for (const node of frame.nodes) {
+        if (node.type !== "text" && !isImplicitShorthandInline(node)) {
+          recoveredDirectOwnerNode = true;
+        }
         appendRecoveredNodeIntoOwner(owner, node as TNode);
       }
+    }
+    if (recoveredDirectOwnerNode) {
+      return downgradeEndTagOwnerScopeToParent(ownerIndex);
     }
     const closeStart = owner.textEnd - endTag.length;
     if (closeStart >= owner.argStartI && scanEndTagAt(owner.text, closeStart, owner.textEnd) === "full") {

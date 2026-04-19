@@ -348,6 +348,53 @@ cases.push({
 });
 
 cases.push({
+  name: "[Shorthand/Regression] malformed outer owner should degrade before recovered nested full-form",
+  run: () => {
+    const input = "=bold<bold<bold<bold<bold<bold<bold<=bold<bold<bold<bold<>>>>>>>>>>>=";
+    const nodes = parseStructural(input, {
+      syntax,
+      handlers,
+      implicitInlineShorthand: true,
+      trackPositions: false,
+    });
+
+    assert.deepEqual(nodes, [
+      {
+        type: "text",
+        value: "=bold<bold<bold<bold<bold<bold<bold<",
+      },
+      {
+        type: "inline",
+        tag: "bold",
+        children: [
+          {
+            type: "inline",
+            tag: "bold",
+            children: [
+              {
+                type: "inline",
+                tag: "bold",
+                children: [
+                  {
+                    type: "inline",
+                    tag: "bold",
+                    children: [],
+                    implicitInlineShorthand: true,
+                  },
+                ],
+                implicitInlineShorthand: true,
+              },
+            ],
+            implicitInlineShorthand: true,
+          },
+          { type: "text", value: ">>>>>>>" },
+        ],
+      },
+    ]);
+  },
+});
+
+cases.push({
   name: "[Shorthand/Regression] malformed shorthand should preserve escaped close tokens",
   run: () => {
     const samples = [
