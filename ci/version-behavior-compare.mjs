@@ -184,25 +184,25 @@ const collectBehaviorSnapshot = (mod) => {
 const knownExpectedDifferences = [
   {
     matcher: (entry) =>
-      entry.section === "core" &&
+      (entry.section === "core" || entry.section === "parser") &&
       entry.caseName === "unclosed inline" &&
-      entry.api === "parseStructural" &&
+      (entry.api === "parseStructural" || entry.api === "structural") &&
       entry.actualVersion.startsWith("1.3."),
     reason: "1.4 changed unclosed-inline structural fallback shape",
   },
   {
     matcher: (entry) =>
-      entry.section === "core" &&
+      (entry.section === "core" || entry.section === "parser") &&
       entry.caseName === "unclosed inline" &&
-      entry.api === "parseStructural" &&
+      (entry.api === "parseStructural" || entry.api === "structural") &&
       entry.actualVersion.startsWith("1.2."),
     reason: "1.4 changed unclosed-inline structural fallback shape",
   },
   {
     matcher: (entry) =>
-      entry.section === "core" &&
+      (entry.section === "core" || entry.section === "parser") &&
       entry.caseName === "unclosed inline" &&
-      entry.api === "parseStructural" &&
+      (entry.api === "parseStructural" || entry.api === "structural") &&
       entry.actualVersion.startsWith("1.1."),
     reason: "1.4 changed unclosed-inline structural fallback shape",
   },
