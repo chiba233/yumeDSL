@@ -6,6 +6,9 @@
 
 - **Renderer: text merge buffer replaces per-segment string concatenation**
   - Consecutive text-like nodes (`text`, `escape`, `separator`) now accumulate into an array buffer on each render frame. The buffer is flushed via a single `join("")` call at non-text boundaries (before inline/raw/block processing or frame completion), replacing per-segment `+=` concatenation that produced O(N²) intermediate strings on text-heavy input.
+- **Renderer: raw escape close scan now uses lazy allocation + single-pass skip scan**
+  - `renderRawNode` no longer allocates `parts` eagerly for every raw block. The replacement buffer is created only after the first matched escaped close sequence (`escapeChar + rawClose`).
+  - Escaped-close detection uses a character-code guarded single-pass cursor scan (no jump-style search), keeping behavior unchanged while reducing allocations in no-match paths.
 - No breaking public API changes
 
 ### 1.4.3

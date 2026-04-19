@@ -274,14 +274,26 @@ const renderRawNode = (
   // 手写单扫描替换 escapeChar+rawClose → rawClose，避免 split/join 的中间数组开销。
   const escSeq = ctx.syntax.escapeChar + ctx.syntax.rawClose;
   const escSeqLen = escSeq.length;
+  const escSeqLeadCode = escSeq.charCodeAt(0);
   const rawCloseStr = ctx.syntax.rawClose;
   let unescaped = rawContent;
   if (rawContent.length >= escSeqLen) {
-    const parts: string[] = [];
+    let parts: string[] | null = null;
     let pos = 0;
     let runStart = 0;
-    while (pos <= rawContent.length - escSeqLen) {
-      if (rawContent.charCodeAt(pos) === escSeq.charCodeAt(0) && rawContent.startsWith(escSeq, pos)) {
+    const maxStart = rawContent.length - escSeqLen;
+    while (pos <= maxStart) {
+      let matched = rawContent.charCodeAt(pos) === escSeqLeadCode;
+      if (matched) {
+        for (let j = 1; j < escSeqLen; j++) {
+          if (rawContent.charCodeAt(pos + j) !== escSeq.charCodeAt(j)) {
+            matched = false;
+            break;
+          }
+        }
+      }
+      if (matched) {
+        if (!parts) parts = [];
         if (pos > runStart) parts.push(rawContent.slice(runStart, pos));
         parts.push(rawCloseStr);
         pos += escSeqLen;
@@ -290,7 +302,7 @@ const renderRawNode = (
         pos++;
       }
     }
-    if (runStart > 0) {
+    if (parts) {
       if (runStart < rawContent.length) parts.push(rawContent.slice(runStart));
       unescaped = parts.join("");
     }
