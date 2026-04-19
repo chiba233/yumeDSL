@@ -18,6 +18,13 @@ const syntax = createEasySyntax({
   tagDivider: "|",
   escapeChar: "\\",
 });
+const tildeEscapeSyntax = createEasySyntax({
+  tagPrefix: "=",
+  tagOpen: "<",
+  tagClose: ">",
+  tagDivider: "|",
+  escapeChar: "~",
+});
 
 const handlers = createSimpleInlineHandlers(["bold", "italic", "link"]);
 
@@ -214,6 +221,176 @@ cases.push({
       assert.equal(nodes[1]?.type, "inline", input);
       assert.equal((nodes[1] as { tag: string }).tag, "bold", input);
       assert.equal(nodes[2]?.type, "text", input);
+    }
+  },
+});
+
+cases.push({
+  name: "[Shorthand/Regression] full-form container should ignore shorthand as scope boundary",
+  run: () => {
+    const input = "=bold<bold<bold<>>=";
+    const nodes = parseStructural(input, {
+      syntax,
+      handlers,
+      implicitInlineShorthand: true,
+      trackPositions: false,
+    });
+
+    assert.deepEqual(nodes, [
+      {
+        type: "inline",
+        tag: "bold",
+        children: [
+          { type: "text", value: "bold<" },
+          { type: "inline", tag: "bold", children: [], implicitInlineShorthand: true },
+        ],
+      },
+    ]);
+    assert.equal(
+      extractText(
+        parseRichText(input, {
+          syntax,
+          handlers,
+          implicitInlineShorthand: true,
+        }),
+      ),
+      "bold<",
+    );
+  },
+});
+
+cases.push({
+  name: "[Shorthand/Regression] nearest full-form container should define shorthand scope",
+  run: () => {
+    const input = "=bold<bold<bold<bold<bold<test2=bold2<bold<bold<bold<test1>>>>=>>>>>=";
+    const nestedHandlers = createSimpleInlineHandlers(["bold", "bold2"]);
+    const nodes = parseStructural(input, {
+      syntax,
+      handlers: nestedHandlers,
+      implicitInlineShorthand: true,
+      trackPositions: false,
+    });
+
+    assert.deepEqual(nodes, [
+      {
+        type: "inline",
+        tag: "bold",
+        children: [
+          {
+            type: "inline",
+            tag: "bold",
+            children: [
+              {
+                type: "inline",
+                tag: "bold",
+                children: [
+                  {
+                    type: "inline",
+                    tag: "bold",
+                    children: [
+                      {
+                        type: "inline",
+                        tag: "bold",
+                        children: [
+                          { type: "text", value: "test2" },
+                          {
+                            type: "inline",
+                            tag: "bold2",
+                            children: [
+                              {
+                                type: "inline",
+                                tag: "bold",
+                                children: [
+                                  {
+                                    type: "inline",
+                                    tag: "bold",
+                                    children: [
+                                      {
+                                        type: "inline",
+                                        tag: "bold",
+                                        children: [{ type: "text", value: "test1" }],
+                                        implicitInlineShorthand: true,
+                                      },
+                                    ],
+                                    implicitInlineShorthand: true,
+                                  },
+                                ],
+                                implicitInlineShorthand: true,
+                              },
+                            ],
+                          },
+                        ],
+                        implicitInlineShorthand: true,
+                      },
+                    ],
+                    implicitInlineShorthand: true,
+                  },
+                ],
+                implicitInlineShorthand: true,
+              },
+            ],
+            implicitInlineShorthand: true,
+          },
+        ],
+      },
+    ]);
+    assert.equal(
+      extractText(
+        parseRichText(input, {
+          syntax,
+          handlers: nestedHandlers,
+          implicitInlineShorthand: true,
+        }),
+      ),
+      "test2test1",
+    );
+  },
+});
+
+cases.push({
+  name: "[Shorthand/Regression] malformed shorthand should preserve escaped close tokens",
+  run: () => {
+    const samples = [
+      {
+        input: "=bold<~>=",
+        expectedNodes: [
+          { type: "text", value: "=bold<" },
+          { type: "escape", raw: "~>=" },
+        ],
+        expectedText: "=bold<>=",
+      },
+      {
+        input: "=bold<bold<=bold<~>=>>",
+        expectedNodes: [
+          { type: "text", value: "=bold<bold<" },
+          { type: "text", value: "=bold<" },
+          { type: "escape", raw: "~>=" },
+          { type: "text", value: ">>" },
+        ],
+        expectedText: "=bold<bold<=bold<>=>>",
+      },
+    ] as const;
+
+    for (const sample of samples) {
+      const nodes = parseStructural(sample.input, {
+        syntax: tildeEscapeSyntax,
+        handlers,
+        implicitInlineShorthand: true,
+        trackPositions: false,
+      });
+
+      assert.deepEqual(nodes, sample.expectedNodes, sample.input);
+      assert.equal(
+        extractText(
+          parseRichText(sample.input, {
+            syntax: tildeEscapeSyntax,
+            handlers,
+            implicitInlineShorthand: true,
+          }),
+        ),
+        sample.expectedText,
+        sample.input,
+      );
     }
   },
 });

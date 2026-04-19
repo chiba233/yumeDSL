@@ -4,15 +4,25 @@
 
 ### 1.4.4
 
-- **Fix: deeply nested shorthand incorrectly claims ancestor endTag close (regression since 1.4.1)**
-  - The `1.4.1` EOF-recovery rewrite (which eliminated the N² re-scan path for unclosed inline frames) narrowed shorthand ownership checks to only inspect the direct parent frame. This broke deferral to ancestor endTag owners: inputs like `=bold<bold<bold<...>>>>>>=` would have the innermost shorthand steal the full-form close token, producing incorrect parse trees. Behavior was correct in `1.3.9` and earlier.
-  - `ParseFrame` gains a pre-computed `ancestorEndTagOwnerIndex`, populated once at push time via single-hop inheritance (`parent is endTag owner → record parentIndex; otherwise → inherit parent's index`). This turns ancestor-owner lookup into an O(1) index read. Both the push phase (shorthand-vs-ancestor argStart overlap) and close phase (shorthand-vs-ancestor close competition) now use this index.
-  - Shorthand defer-parent downgrade is unified with the EOF-recovery path into a shared `downgradeInlineIntoParent`: tag head reverts to plain text, already-parsed child nodes are preserved on the parent frame, and the parent resumes from the current scan position. The old inline defer path discarded child nodes and re-scanned from `argStartI`.
-- **Renderer: text merge buffer replaces per-segment string concatenation**
-  - Consecutive text-like nodes (`text`, `escape`, `separator`) now accumulate into an array buffer on each render frame. The buffer is flushed via a single `join("")` call at non-text boundaries (before inline/raw/block processing or frame completion), replacing per-segment `+=` concatenation that produced O(N²) intermediate strings on text-heavy input.
-- **Renderer: raw escape close scan now uses lazy allocation + single-pass skip scan**
-  - `renderRawNode` no longer allocates `parts` eagerly for every raw block. The replacement buffer is created only after the first matched escaped close sequence (`escapeChar + rawClose`).
-  - Escaped-close detection uses a character-code guarded single-pass cursor scan (no jump-style search), keeping behavior unchanged while reducing allocations in no-match paths.
+- **Structural parser: fixes the deep shorthand ownership regression introduced in `1.4.1`**
+  - `ParseFrame` now carries `ancestorEndTagOwnerIndex`, and `pushChildFrame(...)` populates it by either recording the direct parent when that parent is the owner or inheriting the parent’s owner index otherwise. Deep shorthand ownership checks can now reach the nearest ancestor `endTag` owner in O(1) instead of stopping at the direct parent.
+  - `resolveShorthandOwnership(...)` was expanded on both the push and close paths:
+    - on push, it now checks whether a shorthand `argStart` overlaps the ancestor owner’s `endTag`;
+    - on close, it now checks whether the current `>` should defer to that ancestor owner;
+    - this is the change that stops inputs like `=bold<bold<bold<...>>>>>>=` from letting the innermost shorthand steal the outer full-form close token.
+  - `downgradeInlineIntoParent(...)` now preserves the malformed shorthand head and the child frame’s already-parsed nodes before handing control back to the parent frame, instead of dropping part of that state and rebuilding from a later scan point. `tryConsumeInlineCloseAtCursor(...)` and `tryFinalizeFrameAtEof(...)` now both route through the same downgrade logic, so close-token conflict recovery and EOF recovery no longer diverge.
+  - New owner-chain recovery handling (`finalizeShorthandChainIntoOwner(...)` / `appendRecoveredNodeIntoOwner(...)`) walks the shorthand chain under the owner and reattaches shorthand heads that only survive as text through the owner path. That is the piece that restores stable layering for large close-run damage near `depthLimit`: textified `bold<` heads are no longer stranded inside the surviving shorthand tail during full-fallback reparses.
+  - The type narrowing in that recovery path was also cleaned up: the broad helper aliases were removed in favor of a local shorthand-inline type guard that narrows only the node shape actually needed by owner-chain recovery.
+- **Renderer internals: tighter text merging and raw unescape handling**
+  - `renderNodes(...)` now adds `RenderFrame.textBuf` / `textBufPosition` plus dedicated `bufferText(...)` / `flushTextBuf(...)` helpers:
+    - consecutive `text`, `escape`, and `separator` output is accumulated in `textBuf`;
+    - the buffer is flushed once at inline/raw/block boundaries or frame completion via a single `join("")`;
+    - position handling stays aligned with the old `mergeTextToken` semantics, so output is unchanged while text-heavy paths do much less intermediate string work.
+  - `renderRawNode(...)` now uses lazy allocation for raw-close unescaping:
+    - it scans with a single cursor for `escapeChar + rawClose`;
+    - it does not create the `parts` buffer until the first real escaped close is found;
+    - when there is no match at all, it simply reuses the original `rawContent`;
+    - this keeps large raw blocks on the cheap path in the common no-match case.
 - No breaking public API changes
 
 ### 1.4.3

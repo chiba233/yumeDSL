@@ -4,15 +4,25 @@
 
 ### 1.4.4
 
-- **修复：深层嵌套 shorthand 错误抢占祖先 endTag 闭合（自 1.4.1 引入的回归）**
-  - `1.4.1` 消除未闭合 inline 帧 N² 重扫路径的重写中，将 shorthand 归属检查收窄为只看直接父帧，丢失了向祖先 endTag owner 让位的能力。输入如 `=bold<bold<bold<...>>>>>>=` 会被最内层 shorthand 抢走 full-form 闭合 token，产出错误的解析树。`1.3.9` 及更早版本行为正确。
-  - `ParseFrame` 新增预算的 `ancestorEndTagOwnerIndex`，在 push 时通过单跳继承填充（父帧是 endTag owner → 记父帧索引；否则 → 继承父帧的索引）。祖先 owner 查找变为 O(1) 索引读取。push 阶段（shorthand argStart 与祖先 endTag 重叠检测）和 close 阶段（shorthand 与祖先闭合竞争）均使用该索引。
-  - shorthand defer-parent 降级与 EOF 恢复统一为共用的 `downgradeInlineIntoParent`：tag 头回退为普通文本、子帧已解析节点保留在父帧、父帧从当前扫描位置继续。旧的内联 defer 路径会丢弃子节点并从 `argStartI` 重扫。
-- **渲染器：文本合并缓冲替代逐段字符串拼接**
-  - 连续的 text-like 节点（`text`、`escape`、`separator`）现在会先攒入渲染帧上的数组缓冲。遇到非文本节点（inline/raw/block）或帧结束时，通过一次 `join("")` 写入输出，替代原来逐段 `+=` 拼接在文本密集输入上产生的 O(N²) 中间字符串。
-- **渲染器：raw 转义闭合扫描改为惰性分配 + 单趟 skip 扫描**
-  - `renderRawNode` 不再为每个 raw 块预先分配 `parts`；仅在首次命中转义闭合序列（`escapeChar + rawClose`）后才创建替换缓冲。
-  - 转义闭合检测改为基于字符码前导过滤的单游标扫描（无跳转式查找），在保持语义不变的前提下减少无命中路径分配。
+- **结构解析器：修复 `1.4.1` 引入的深层 shorthand 归属回归**
+  - `ParseFrame` 新增 `ancestorEndTagOwnerIndex` 字段，并在 `pushChildFrame(...)` 里用“父帧是 owner 就记父帧，否则继承父帧索引”的方式向下传递。这样深层 shorthand 在后续判定闭合归属时，可以 O(1) 拿到最近的祖先 `endTag` owner，而不再只盯着直接父帧。
+  - `resolveShorthandOwnership(...)` 的 push / close 判定都改成读取这条祖先 owner 链：
+    - push 阶段会检查 shorthand 的 `argStart` 是否与祖先 owner 的 `endTag` 重叠；
+    - close 阶段会检查当前 `>` 是否应让位给祖先 owner；
+    - 这样像 `=bold<bold<bold<...>>>>>>=` 这类输入，最内层 shorthand 不会再错误抢走外层 full-form 的闭合 token。
+  - `downgradeInlineIntoParent(...)` 改成“保留 tag 头 + 保留已解析子节点 + 父帧从当前位置继续”，不再像 `1.4.3` 那样把一部分子状态丢掉后再从更后的扫描点补扫。`tryConsumeInlineCloseAtCursor(...)` 和 `tryFinalizeFrameAtEof(...)` 现在都统一走这条父层降级路径，所以 close 冲突和 EOF 未闭合恢复不再各走各的。
+  - `finalizeShorthandChainIntoOwner(...)` / `appendRecoveredNodeIntoOwner(...)` 负责把 owner 下面整条 shorthand 链统一回收到 owner 作用域里，并把已经退化成文本的 shorthand 头按恢复语义重新挂回。这个改动主要就是为了解掉 `depthLimit` 附近大段 close-run 损坏时的树形漂移：超过深度上限后保留下来的 `bold<` 文本头不再被困在幸存 shorthand 尾链里。
+  - 顺手把这条恢复路径上的类型收窄也补干净了：原先宽泛的 `AnyStructuralNode` / `AnyInlineNode` 辅助别名被去掉，改成局部的 shorthand-inline 类型守卫，只在这条回收路径里收窄到真正需要的节点形状。
+- **渲染器内部：文本合并和 raw 转义路径都做了收紧**
+  - `renderNodes(...)` 新增 `RenderFrame.textBuf` / `textBufPosition`，并拆出 `bufferText(...)` / `flushTextBuf(...)` 两个辅助路径：
+    - 连续的 `text`、`escape`、`separator` 先攒进 `textBuf`；
+    - 遇到 inline / raw / block 或帧结束时再一次性 `join("")` 写回 token；
+    - position 语义保持和旧版 `mergeTextToken` 一致，不改输出，只减少文本密集场景下逐段扩展字符串的中间开销。
+  - `renderRawNode(...)` 的 raw-close 还原改成“惰性创建 `parts`”：
+    - 先用单游标扫描 `escapeChar + rawClose`；
+    - 真正命中第一处 escaped close 之前都不分配缓冲；
+    - 如果整段 raw 都没命中，就直接复用原始 `rawContent`；
+    - 这样大块 raw 内容在常见无命中路径上会少很多无谓分配。
 - 无破坏性公共 API 变化
 
 ### 1.4.3

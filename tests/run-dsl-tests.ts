@@ -34,7 +34,8 @@ console.log("=== Walk / Map ===");
 await import("./walk.test.ts");
 
 console.log("=== Type Check ===");
-await import("./typecheck.test.ts");
+await import("./typecheckCore.test.ts");
+await import("./typecheckDist.test.ts");
 
 console.log("=== Print / Formatter ===");
 await import("./print.test.ts");
@@ -44,6 +45,10 @@ await import("./zones.test.ts");
 
 console.log("=== Incremental ===");
 await import("./incremental.test.ts");
+
+console.log("=== Incremental Perf ===");
+await import("./incrementalStackPerf.test.ts");
+await import("./incrementalCloseRunPerf.test.ts");
 
 console.log("=== Custom Syntax ===");
 await import("./customSyntax.test.ts");

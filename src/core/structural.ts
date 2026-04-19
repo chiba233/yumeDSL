@@ -374,22 +374,6 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     ancestorEndTagOwnerIndex: -1,
   });
 
-  interface NodeSourceRange {
-    startI: number;
-    endI: number;
-    argStartI?: number;
-  }
-  const nodeSourceRanges = new WeakMap<TNode, NodeSourceRange>();
-  const recordNodeSourceRange = (
-    node: TNode,
-    startI: number,
-    endI: number,
-    argStartI?: number,
-  ): TNode => {
-    nodeSourceRanges.set(node, { startI, endI, argStartI });
-    return node;
-  };
-
   // ── 缓冲区 ──
 
   const flushBuffer = (frame: ParseFrame) => {
@@ -418,11 +402,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     const base = frame.baseOffset;
     const startOff = base + bufStart;
     const endOff = base + frame.i;
-    pushNode(
-      frame.nodes,
-      recordNodeSourceRange(factory.text(value, startOff, endOff), bufStart, frame.i),
-      makePosition(tracker, startOff, endOff),
-    );
+    pushNode(frame.nodes, factory.text(value, startOff, endOff), makePosition(tracker, startOff, endOff));
     frame.buf.start = -1;
     frame.buf.end = -1;
     frame.buf.segments = null;
@@ -458,64 +438,122 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     // 3. 父帧从 nextParentI 继续，避免回退到 argStart 重扫整段尾巴。
     flushBuffer(frame);
     appendBuf(parent, frame.tagStartI, frame.argStartI);
+    parent.i = frame.argStartI;
     flushBuffer(parent);
-    parent.nodes.push(...frame.nodes);
+    for (const node of frame.nodes) {
+      appendRecoveredNodeIntoOwner(parent, node);
+    }
     parent.i = nextParentI;
     return true;
   };
 
-  const replayMalformedRecoveryNodeIntoParent = (node: TNode, parent: ParseFrame): void => {
-    const info = nodeSourceRanges.get(node);
-    if ((node.type === "text" || node.type === "escape" || node.type === "separator") && info) {
-      appendBuf(parent, info.startI, info.endI);
-      return;
+  const downgradeEndTagOwnerScopeToParent = (ownerIndex: number): boolean => {
+    if (ownerIndex < 0) return false;
+    const owner = stack[ownerIndex];
+    if (!owner || owner.inlineCloseToken !== endTag) return false;
+    const parent = stack[owner.parentIndex];
+    while (stack.length > ownerIndex) {
+      stack.pop();
     }
-    if (node.type !== "inline" || !node.implicitInlineShorthand || !info) {
-      flushBuffer(parent);
-      parent.nodes.push(node);
-      return;
-    }
-
-    let cursor = info.startI;
-    const argStartI = info.argStartI ?? info.startI;
-    appendBuf(parent, cursor, argStartI);
-    cursor = argStartI;
-
-    for (const child of node.children as TNode[]) {
-      const childInfo = nodeSourceRanges.get(child);
-      if (childInfo && cursor < childInfo.startI) {
-        appendBuf(parent, cursor, childInfo.startI);
-      }
-      replayMalformedRecoveryNodeIntoParent(child, parent);
-      if (childInfo) {
-        cursor = childInfo.endI;
-      }
-    }
-
-    appendBuf(parent, cursor, info.endI);
+    if (!parent) return true;
+    appendBuf(parent, owner.tagStartI, owner.argStartI);
+    parent.i = owner.argStartI;
+    return true;
   };
 
-  const recoverMalformedInlineIntoParent = (frame: ParseFrame): boolean => {
-    const parent = stack[frame.parentIndex];
-    if (!parent) return true;
-    flushBuffer(frame);
-    appendBuf(parent, frame.tagStartI, frame.argStartI);
+  type ImplicitShorthandInlineNode = TNode & {
+    type: "inline";
+    implicitInlineShorthand: true;
+    children: TNode[];
+  };
 
-    let cursor = frame.argStartI;
-    for (const node of frame.nodes) {
-      const info = nodeSourceRanges.get(node);
-      if (info && cursor < info.startI) {
-        appendBuf(parent, cursor, info.startI);
+  const isImplicitShorthandInline = (node: TNode): node is ImplicitShorthandInlineNode =>
+    node.type === "inline" && node.implicitInlineShorthand === true;
+
+  const appendRecoveredNodeIntoOwner = (owner: ParseFrame, node: TNode): void => {
+    flushBuffer(owner);
+    const pushSplitText = (text: string, baseOffset: number): number => {
+      let cursor = 0;
+      while (cursor < text.length) {
+        const shorthand = readInlineShorthandStart(text, cursor);
+        if (!shorthand || shorthand.tagOpenPos !== cursor) break;
+        const start = baseOffset + cursor;
+        const end = baseOffset + shorthand.argStart;
+        pushNode(owner.nodes, factory.text(text.slice(cursor, shorthand.argStart), start, end), makePosition(tracker, start, end));
+        cursor = shorthand.argStart;
       }
-      replayMalformedRecoveryNodeIntoParent(node, parent);
-      if (info) {
-        cursor = info.endI;
+      return cursor;
+    };
+
+    const peelLeadingMalformedShorthandText = (root: TNode): void => {
+      if (!isImplicitShorthandInline(root)) return;
+      let current: ImplicitShorthandInlineNode = root;
+      while (true) {
+        if (current.children.length !== 1) return;
+        const child = current.children[0];
+        if (isImplicitShorthandInline(child)) {
+          current = child;
+          continue;
+        }
+        if (child.type !== "text") return;
+        const childBaseOffset = child.position?.start.offset ?? 0;
+        const consumed = pushSplitText(child.value, childBaseOffset);
+        if (consumed === 0) return;
+        if (consumed >= child.value.length) {
+          current.children = [];
+          return;
+        }
+        const start = childBaseOffset + consumed;
+        const end = childBaseOffset + child.value.length;
+        current.children = [factory.text(child.value.slice(consumed), start, end)];
+        const nextChild = current.children[0];
+        nextChild.position = makePosition(tracker, start, end);
+        return;
       }
+    };
+
+    if (node.type === "text") {
+      const baseOffset = node.position?.start.offset ?? 0;
+      const consumed = pushSplitText(node.value, baseOffset);
+      if (consumed < node.value.length) {
+        const start = baseOffset + consumed;
+        const end = baseOffset + node.value.length;
+        pushNode(owner.nodes, factory.text(node.value.slice(consumed), start, end), makePosition(tracker, start, end));
+      }
+      return;
     }
 
-    appendBuf(parent, cursor, frame.textEnd);
-    parent.i = frame.textEnd;
-    return true;
+    peelLeadingMalformedShorthandText(node);
+    owner.nodes.push(node);
+  };
+
+  const finalizeShorthandChainIntoOwner = (ownerIndex: number): boolean => {
+    if (ownerIndex < 0) return false;
+    const owner = stack[ownerIndex];
+    if (!owner || owner.inlineCloseToken !== endTag) return false;
+    const chain = stack.slice(ownerIndex + 1);
+    if (chain.length === 0) return false;
+    for (const frame of chain) {
+      flushBuffer(frame);
+    }
+    stack.length = ownerIndex + 1;
+    for (const frame of chain) {
+      appendBuf(owner, frame.tagStartI, frame.argStartI);
+      owner.i = frame.argStartI;
+      flushBuffer(owner);
+      for (const node of frame.nodes) {
+        appendRecoveredNodeIntoOwner(owner, node as TNode);
+      }
+    }
+    const closeStart = owner.textEnd - endTag.length;
+    if (closeStart >= owner.argStartI && scanEndTagAt(owner.text, closeStart, owner.textEnd) === "full") {
+      owner.i = closeStart;
+      owner.inlineCloseWidth = endTag.length;
+      stack.pop();
+      completeChild(owner);
+      return true;
+    }
+    return downgradeEndTagOwnerScopeToParent(ownerIndex);
   };
 
   // ── 子帧完成分发 ──
@@ -545,26 +583,17 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       parent.i = nextI;
       pushNode(
         parent.nodes,
-        recordNodeSourceRange(
-          factory.inline(child.tag, childNodes, meta, child.implicitInlineShorthand),
-          child.tagStartI,
-          nextI,
-          child.argStartI,
-        ),
+        factory.inline(child.tag, childNodes, meta, child.implicitInlineShorthand),
         makePosition(tracker, meta.start, meta.end),
       );
     } else if (kind === "rawArgs") {
       pushNode(
         parent.nodes,
-        recordNodeSourceRange(
-          factory.raw(
-            child.tag,
-            childNodes,
-            child.text.slice(child.contentStartI, child.contentEndI),
-            child.meta!,
-          ),
-          child.tagStartI,
-          child.meta!.end - parent.baseOffset,
+        factory.raw(
+          child.tag,
+          childNodes,
+          child.text.slice(child.contentStartI, child.contentEndI),
+          child.meta!,
         ),
         child.tagPosition,
       );
@@ -590,11 +619,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     } else if (kind === "blockContent") {
       pushNode(
         parent.nodes,
-        recordNodeSourceRange(
-          factory.block(child.tag, parent.pendingArgs!, childNodes, child.meta!),
-          child.tagStartI,
-          child.meta!.end - parent.baseOffset,
-        ),
+        factory.block(child.tag, parent.pendingArgs!, childNodes, child.meta!),
         child.tagPosition,
       );
       parent.pendingArgs = null;
@@ -992,15 +1017,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       const args = frame.nodes;
       stack.pop();
       parent.i = nextI;
-      pushNode(
-        parent.nodes,
-        recordNodeSourceRange(
-          factory.raw(frame.tag, args, frameText.slice(contentStart, closeStart), meta.meta),
-          tagStartI,
-          nextI,
-        ),
-        meta.pos,
-      );
+      pushNode(parent.nodes, factory.raw(frame.tag, args, frameText.slice(contentStart, closeStart), meta.meta), meta.pos);
       return true;
     }
 
@@ -1285,8 +1302,10 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
 
     if (frame.inlineCloseToken !== null) {
       // inline 帧走到文本末尾仍未关闭 → 未闭合错误
-      // EOF 未闭合时，要按“触根作用域”做恢复：
-      // 当前 wrapper 自己降级成文本，但其中已经完整、单独在 root 也合法的子结构仍可保留。
+      // EOF 未闭合恢复按完整容器逐层上卷：
+      // 1. shorthand 落在父完整容器里时，先尝试在最近容器内完成消歧
+      // 2. 最近容器自己也无法闭合时，再把它交给更上层容器/父帧处理
+      // 3. 没有完整容器时，才按普通降级把已完成子节点挂回父帧
       emitError(
         tracker,
         onError,
@@ -1296,8 +1315,15 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         frame.argStartI - frame.tagOpenPos,
         emittedErrorKeys,
       );
+      const frameIndex = stack.length - 1;
+      if (frame.inlineCloseToken === tagClose && finalizeShorthandChainIntoOwner(frame.ancestorEndTagOwnerIndex)) {
+        return true;
+      }
+      if (frame.inlineCloseToken === endTag && downgradeEndTagOwnerScopeToParent(frameIndex)) {
+        return true;
+      }
       stack.pop();
-      return recoverMalformedInlineIntoParent(frame);
+      return downgradeInlineIntoParent(frame, frame.textEnd);
     }
 
     flushBuffer(frame);
@@ -1334,11 +1360,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       flushBuffer(frame);
       pushNode(
         frame.nodes,
-        recordNodeSourceRange(
-          factory.escape(frameText.slice(i, next), frame.baseOffset + i, frame.baseOffset + next),
-          i,
-          next,
-        ),
+        factory.escape(frameText.slice(i, next), frame.baseOffset + i, frame.baseOffset + next),
         makePosition(tracker, frame.baseOffset + i, frame.baseOffset + next),
       );
       frame.i = next;
@@ -1378,11 +1400,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       flushBuffer(frame);
       pushNode(
         frame.nodes,
-        recordNodeSourceRange(
-          factory.separator(frame.baseOffset + i, frame.baseOffset + i + tagDivider.length),
-          i,
-          i + tagDivider.length,
-        ),
+        factory.separator(frame.baseOffset + i, frame.baseOffset + i + tagDivider.length),
         makePosition(tracker, frame.baseOffset + i, frame.baseOffset + i + tagDivider.length),
       );
       frame.i += tagDivider.length;

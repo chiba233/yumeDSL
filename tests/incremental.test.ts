@@ -50,6 +50,25 @@ const makeNestedInline = (depth: number): string => {
 const makeNestedEasyShorthand = (depth: number): string =>
   `=bold<${"bold<".repeat(depth - 1)}${">".repeat(depth - 2)}>=`;
 
+const summarizeInlineTree = (tree: readonly StructuralNode[]) => {
+  const root = tree[0];
+  const summary = {
+    rootType: root?.type ?? "none",
+    rootChildCount: root?.type === "inline" ? root.children.length : -1,
+    maxInlineDepth: 0,
+  };
+  const stack = tree.map((node) => ({ node, depth: 1 }));
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current || current.node.type !== "inline") continue;
+    if (current.depth > summary.maxInlineDepth) summary.maxInlineDepth = current.depth;
+    for (let i = current.node.children.length - 1; i >= 0; i--) {
+      stack.push({ node: current.node.children[i], depth: current.depth + 1 });
+    }
+  }
+  return summary;
+};
+
 const stripNodePositions = (node: StructuralNode): StructuralNode => {
   if (node.type === "text") {
     return { type: "text", value: node.value };
@@ -1160,87 +1179,41 @@ const cases: GoldenCase[] = [
     },
   },
   {
-    name: "[Incremental/SessionDiff] applyEditWithDiff should stay stack-safe for deeply nested inline trees",
-    run: () => {
-      const handlers = createSimpleInlineHandlers(["bold"]);
-      const source = makeNestedInline(12_000);
-      const session = createIncrementalSession(source, { handlers, depthLimit: 12_100 });
-      const editAt = source.indexOf("x");
-      const newSource = applyEdit(source, editAt, editAt + 1, "y");
-
-      const result = session.applyEditWithDiff(
-        { startOffset: editAt, oldEndOffset: editAt + 1, newText: "y" },
-        newSource,
-      );
-
-      assert.equal(result.doc.source, newSource);
-      assert.ok(result.diff.patches.length > 0 || result.diff.ops.length > 0);
-    },
-  },
-  {
-    name: "[Incremental/Session] deleting many inline closes should not stall on unclosed nested tails",
-    run: () => {
-      const handlers = createSimpleInlineHandlers(["bold"]);
-      const depthLimit = 256;
-      const nested = makeNestedInline(60);
-      const source = `${nested}\n$$bold(tail)$$`;
-      const removedClosers = 30;
-      const suffix = ")$$".repeat(removedClosers);
-      const startOffset = source.indexOf(suffix);
-      assert.notEqual(startOffset, -1);
-      const oldEndOffset = startOffset + suffix.length;
-      const newSource = applyEdit(source, startOffset, oldEndOffset, "");
-      const session = createIncrementalSession(source, { handlers, depthLimit });
-      const startedAt = Date.now();
-
-      const result = session.applyEdit(
-        { startOffset, oldEndOffset, newText: "" },
-        newSource,
-      );
-      const elapsedMs = Date.now() - startedAt;
-      const full = parseFull(newSource, { handlers, depthLimit });
-
-      assert.equal(result.doc.source, newSource);
-      assert.deepEqual(result.doc.tree, full.tree);
-      assert.deepEqual(result.doc.zones, full.zones);
-      assert.ok(elapsedMs < 2_000, `expected nested-close deletion to finish quickly, got ${elapsedMs}ms`);
-    },
-  },
-  {
-    name: "[Incremental/Session] 10000-layer shorthand close-run deletions should stay under 200ms each",
+    name: "[Incremental/Session] shorthand close-run should re-legalize after deleting and re-adding trailing =",
     run: () => {
       const handlers = createSimpleInlineHandlers(["bold"]);
       const syntax = createEasySyntax({ tagPrefix: "=", tagOpen: "<", tagClose: ">" });
-      const depth = 10_000;
-      const depthLimit = 9_999;
-      const deleteCount = 50;
-      const source0 = makeNestedEasyShorthand(depth);
-      const closeStart = source0.indexOf(">");
-      assert.notEqual(closeStart, -1);
-      const deleteIndex = closeStart + depthLimit - deleteCount;
-      let source = source0;
-      const session = createIncrementalSession(source, {
-        handlers,
-        syntax,
-        implicitInlineShorthand: true,
-        depthLimit,
-      });
 
-      for (let step = 0; step < deleteCount; step++) {
-        const nextSource = applyEdit(source, deleteIndex, deleteIndex + 1, "");
-        const startedAt = performance.now();
-        const result = session.applyEdit(
-          { startOffset: deleteIndex, oldEndOffset: deleteIndex + 1, newText: "" },
-          nextSource,
-        );
-        const elapsedMs = performance.now() - startedAt;
+      for (const legalSource of [
+        "=bold<bold<bold<bold<bold<bold<bold<>>>>>>>=",
+        "=bold<bold<bold<=bold<>=>>>=",
+      ]) {
+        const illegalSource = legalSource.slice(0, -1);
+        const session = createIncrementalSession(legalSource, {
+          handlers,
+          syntax,
+          implicitInlineShorthand: true,
+        });
 
-        assert.equal(result.doc.source, nextSource);
-        assert.ok(
-          elapsedMs < 200,
-          `expected close-run delete step ${step + 1}/${deleteCount} to stay under 200ms, got ${elapsedMs.toFixed(3)}ms`,
+        const deleteResult = session.applyEdit(
+          { startOffset: legalSource.length - 1, oldEndOffset: legalSource.length, newText: "" },
+          illegalSource,
         );
-        source = nextSource;
+        assert.equal(deleteResult.doc.source, illegalSource, legalSource);
+
+        const relegalized = session.applyEdit(
+          { startOffset: illegalSource.length, oldEndOffset: illegalSource.length, newText: "=" },
+          legalSource,
+        );
+        const expectedTree = parseStructural(legalSource, {
+          handlers,
+          syntax,
+          implicitInlineShorthand: true,
+          trackPositions: true,
+        });
+
+        assert.equal(relegalized.doc.source, legalSource, legalSource);
+        assert.deepEqual(relegalized.doc.tree, expectedTree, legalSource);
       }
     },
   },
