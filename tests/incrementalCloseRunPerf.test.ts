@@ -32,6 +32,14 @@ const summarizeInlineTree = (tree: readonly StructuralNode[]) => {
   return summary;
 };
 
+const collectText = (tree: readonly StructuralNode[]): string =>
+  tree
+    .map((node) => {
+      if (node.type === "text") return node.value;
+      return "";
+    })
+    .join("");
+
 const cases: GoldenCase[] = [
   {
     name: "[Incremental/Session] single 10000-layer shorthand close-run deletion should stay under 200ms",
@@ -101,6 +109,40 @@ const cases: GoldenCase[] = [
       assert.ok(
         elapsedMs < 1_000,
         `expected depth-limit close-run deletion to stay below 1s, got ${elapsedMs}ms`,
+      );
+    },
+  },
+  {
+    name: "[Incremental/Session] deleting the entire close run should not hang when no legal close remains",
+    run: () => {
+      const handlers = createSimpleInlineHandlers(["bold"]);
+      const syntax = createEasySyntax({ tagPrefix: "=", tagOpen: "<", tagClose: ">" });
+      const depth = 10_000;
+      const depthLimit = 9_950;
+      const source0 = makeNestedEasyShorthand(depth);
+      const closeStart = source0.indexOf(">");
+      assert.notEqual(closeStart, -1);
+      const nextSource = applyEdit(source0, closeStart, source0.length - 1, "");
+      const session = createIncrementalSession(source0, {
+        handlers,
+        syntax,
+        implicitInlineShorthand: true,
+        depthLimit,
+      });
+
+      const startedAt = Date.now();
+      const result = session.applyEdit(
+        { startOffset: closeStart, oldEndOffset: source0.length - 1, newText: "" },
+        nextSource,
+      );
+      const elapsedMs = Date.now() - startedAt;
+
+      assert.equal(result.mode, "full-fallback");
+      assert.equal(result.doc.source, nextSource);
+      assert.equal(collectText(result.doc.tree), nextSource);
+      assert.ok(
+        elapsedMs < 1_000,
+        `expected full close-run deletion to stay below 1s, got ${elapsedMs}ms`,
       );
     },
   },

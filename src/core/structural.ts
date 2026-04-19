@@ -793,6 +793,39 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     return true;
   };
 
+  const emitUnclosedInlineFrameError = (frame: ParseFrame) => {
+    emitError(
+      tracker,
+      onError,
+      frame.implicitInlineShorthand ? "SHORTHAND_NOT_CLOSED" : "INLINE_NOT_CLOSED",
+      frame.text,
+      frame.tagStartI,
+      frame.argStartI - frame.tagOpenPos,
+      emittedErrorKeys,
+    );
+  };
+
+  const replayMalformedInlineChainAtEof = (frame: ParseFrame): boolean => {
+    let replayFrame: ParseFrame = frame;
+
+    while (true) {
+      emitUnclosedInlineFrameError(replayFrame);
+      stack.pop();
+
+      const parent =
+        replayFrame.parentIndex >= 0 ? (stack[replayFrame.parentIndex] ?? null) : null;
+      if (!parent) {
+        return true;
+      }
+      if (parent.inlineCloseToken === null) {
+        appendBuf(parent, replayFrame.tagStartI, replayFrame.argStartI);
+        parent.i = replayFrame.argStartI;
+        return true;
+      }
+      replayFrame = parent;
+    }
+  };
+
   // ── 主循环 ──
 
   const stack: ParseFrame[] = [makeFrame(text, depth, insideArgs, baseOffset)];
@@ -1178,28 +1211,9 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     if (frame.i < frame.textEnd) return false;
 
     if (frame.inlineCloseToken !== null) {
-      // inline 帧走到文本末尾仍未关闭 → 未闭合错误
-      // EOF 未闭合恢复现在保持最简单的父层回放语义：
-      // 1. 当前未闭合 inline/shorthand 的 tag 头回放到父帧缓冲
-      // 2. 父帧从 argStart 重新继续扫描后续文本
-      // 3. 不再做 owner-chain 上卷或额外结构回收
-      emitError(
-        tracker,
-        onError,
-        frame.implicitInlineShorthand ? "SHORTHAND_NOT_CLOSED" : "INLINE_NOT_CLOSED",
-        frame.text,
-        frame.tagStartI,
-        frame.argStartI - frame.tagOpenPos,
-        emittedErrorKeys,
-      );
-      stack.pop();
-      const parent = stack[frame.parentIndex];
-      if (!parent) {
-        return true;
-      }
-      appendBuf(parent, frame.tagStartI, frame.argStartI);
-      parent.i = frame.argStartI;
-      return true;
+      // EOF 下若连续祖先也都是未闭合 inline/shorthand，
+      // 直接整条未闭合链退到第一个非 inline 容器，再只重扫一次。
+      return replayMalformedInlineChainAtEof(frame);
     }
 
     flushBuffer(frame);
