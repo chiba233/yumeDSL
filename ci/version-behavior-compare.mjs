@@ -1,15 +1,20 @@
+// noinspection JSUnresolvedReference
+
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import {
+  COMPAT_CASES,
   CORE_CASES,
   CUSTOM_SYNTAX_CASES,
   ERROR_CASES,
   SHORTHAND_CASES,
   createCustomSyntax,
   makeHandlers,
+  normalizeDiff,
+  normalizeDoc,
   stripMeta,
 } from "./shared.mjs";
 
@@ -109,16 +114,8 @@ const packAndExtract = async (packageName, version, tempRoot) => {
 const collectBehaviorSnapshot = (mod) => {
   const handlers = makeHandlers(mod);
   const syntax = createCustomSyntax(mod);
-  const normalizeIncrementalDoc = (doc) => ({
-    source: doc.source,
-    tree: stripMeta(doc.tree),
-    zones: doc.zones.map((zone) => ({
-      startOffset: zone.startOffset,
-      endOffset: zone.endOffset,
-      nodes: stripMeta(zone.nodes),
-    })),
-  });
   const buildEditedSource = (source, edit) => source.slice(0, edit.startOffset) + edit.newText + source.slice(edit.oldEndOffset);
+  const walkSource = "A $$bold(x|y)$$ $$code(z)$$ $$thin($$underline(u)$$)$$";
   const incrementalCases = [
     {
       name: "inline replace",
@@ -130,6 +127,31 @@ const collectBehaviorSnapshot = (mod) => {
       source: "start $$info(Tip)*\nline\n*end$$ end",
       edit: { startOffset: 6, oldEndOffset: 6, newText: "$$bold(+)$$ " },
     },
+    {
+      name: "full-only strategy fallback",
+      source: "$$bold(x)$$",
+      edit: { startOffset: 7, oldEndOffset: 8, newText: "y" },
+      sessionOptions: { strategy: "full-only" },
+    },
+    {
+      name: "auto maxEditRatio fallback",
+      source: "abcdef\n$$code(ts)%\nX\n%end$$\n123456",
+      edit: { startOffset: 0, oldEndOffset: 6, newText: "ZZZZZZZZZZ" },
+      sessionOptions: { strategy: "auto", maxEditRatioForIncremental: 0.05 },
+    },
+    {
+      name: "parse option fingerprint fallback",
+      source: "$$bold(x)$$\n$$code(ts)%\nA\n%end$$",
+      edit: { startOffset: 7, oldEndOffset: 8, newText: "y" },
+      parseOptions: {
+        handlers,
+        allowForms: ["inline", "raw", "block"],
+      },
+      overrideOptions: {
+        handlers,
+        allowForms: ["inline"],
+      },
+    },
   ];
 
   const safe = (fn) => {
@@ -139,14 +161,27 @@ const collectBehaviorSnapshot = (mod) => {
       return { ok: false, error: String(error?.message ?? error) };
     }
   };
+  const parserProbe =
+    typeof mod.createParser === "function" ? safe(() => mod.createParser({ handlers })) : { ok: false, error: "unsupported" };
+  const supportsParser =
+    parserProbe.ok &&
+    typeof parserProbe.value.parse === "function" &&
+    typeof parserProbe.value.strip === "function" &&
+    typeof parserProbe.value.structural === "function";
+  const supportsExtractText = typeof mod.extractText === "function";
+  const supportsWalkTokens = typeof mod.walkTokens === "function";
+  const supportsMapTokens = typeof mod.mapTokens === "function";
+  const supportsBuildZones = typeof mod.buildZones === "function";
 
   const snapshot = {
     core: {},
+    compat: {},
     custom: {},
     shorthand: {},
     onError: {},
     parser: {},
     positions: {},
+    helpers: {},
     incremental: {},
   };
 
@@ -163,6 +198,15 @@ const collectBehaviorSnapshot = (mod) => {
     const options = { handlers, syntax };
     snapshot.custom[testCase.name] = {
       parseRichText: safe(() => stripMeta(mod.parseRichText(testCase.input, options))),
+      parseStructural: safe(() => stripMeta(mod.parseStructural(testCase.input, options))),
+    };
+  }
+
+  for (const testCase of COMPAT_CASES) {
+    const options = { handlers, ...(testCase.opts ?? {}) };
+    snapshot.compat[testCase.name] = {
+      parseRichText: safe(() => stripMeta(mod.parseRichText(testCase.input, options))),
+      stripRichText: safe(() => mod.stripRichText(testCase.input, options)),
       parseStructural: safe(() => stripMeta(mod.parseStructural(testCase.input, options))),
     };
   }
@@ -210,23 +254,16 @@ const collectBehaviorSnapshot = (mod) => {
     };
   }
 
-  for (const testCase of CORE_CASES.slice(0, 10)) {
-    const parserResult = safe(() => mod.createParser({ handlers }));
-    const options = testCase.opts ?? {};
-    if (!parserResult.ok) {
+  if (supportsParser) {
+    const parser = parserProbe.value;
+    for (const testCase of CORE_CASES.slice(0, 10)) {
+      const options = testCase.opts ?? {};
       snapshot.parser[testCase.name] = {
-        parse: parserResult,
-        strip: parserResult,
-        structural: parserResult,
+        parse: safe(() => stripMeta(parser.parse(testCase.input, options))),
+        strip: safe(() => parser.strip(testCase.input, options)),
+        structural: safe(() => stripMeta(parser.structural(testCase.input, options))),
       };
-      continue;
     }
-    const parser = parserResult.value;
-    snapshot.parser[testCase.name] = {
-      parse: safe(() => stripMeta(parser.parse(testCase.input, options))),
-      strip: safe(() => parser.strip(testCase.input, options)),
-      structural: safe(() => stripMeta(parser.structural(testCase.input, options))),
-    };
   }
 
   for (const testCase of CORE_CASES.slice(0, 8)) {
@@ -235,6 +272,59 @@ const collectBehaviorSnapshot = (mod) => {
       parseRichText: safe(() => stripMeta(mod.parseRichText(testCase.input, options), { keepPosition: true })),
       parseStructural: safe(() => stripMeta(mod.parseStructural(testCase.input, options), { keepPosition: true })),
     };
+  }
+
+  if (supportsExtractText) {
+    snapshot.helpers.extractText = safe(() => {
+      const tokens = mod.parseRichText("before $$bold(x)$$ $$code(y)$$ after", { handlers });
+      return mod.extractText(tokens);
+    });
+  }
+
+  if (supportsWalkTokens) {
+    snapshot.helpers.walkTokens = safe(() => {
+      const visits = [];
+      const tokens = mod.parseRichText(walkSource, { handlers });
+      mod.walkTokens(tokens, (token, ctx) => {
+        visits.push({
+          type: token.type,
+          depth: ctx.depth,
+          index: ctx.index,
+          parent: ctx.parent?.type ?? null,
+          value: typeof token.value === "string" ? token.value : `[${token.value.length}]`,
+        });
+      });
+      return visits;
+    });
+  }
+
+  if (supportsMapTokens) {
+    snapshot.helpers.mapTokens = safe(() => {
+      const tokens = mod.parseRichText(walkSource, { handlers });
+      return stripMeta(
+        mod.mapTokens(tokens, (token) => {
+          if (token.type === "code") return null;
+          if (token.type === "text" && typeof token.value === "string") {
+            return { ...token, value: token.value.toUpperCase() };
+          }
+          return token;
+        }),
+      );
+    });
+  }
+
+  if (supportsBuildZones) {
+    snapshot.helpers.buildZones = safe(() => {
+      const tree = mod.parseStructural("a $$bold(x)$$\n$$raw-code(ts)%\nX\n%end$$\n$$info()*\nB\n*end$$", {
+        handlers,
+        trackPositions: true,
+      });
+      return mod.buildZones(tree).map((zone) => ({
+        startOffset: zone.startOffset,
+        endOffset: zone.endOffset,
+        nodeTypes: zone.nodes.map((node) => node.type),
+      }));
+    });
   }
 
   const hasIncrementalApi =
@@ -249,16 +339,41 @@ const collectBehaviorSnapshot = (mod) => {
     if (!probe.ok) return false;
     return typeof probe.value.applyEditWithDiff === "function";
   })();
+  const supportsFullOnly = safe(() => mod.createIncrementalSession("x", { handlers }, { strategy: "full-only" })).ok;
+  const supportsAutoMaxEditRatio = safe(() =>
+    mod.createIncrementalSession("abcdef", { handlers }, { strategy: "auto", maxEditRatioForIncremental: 0.05 }),
+  ).ok;
+  const supportsOverrideOptions = (() => {
+    const probe = safe(() => mod.createIncrementalSession("$$bold(x)$$", { handlers }, { strategy: "incremental-only" }));
+    if (!probe.ok) return false;
+    if (typeof probe.value.applyEdit !== "function") return false;
+    if (probe.value.applyEdit.length >= 3) return true;
+    return safe(() =>
+      probe.value.applyEdit(
+        { startOffset: 7, oldEndOffset: 8, newText: "y" },
+        "$$bold(y)$$",
+        { handlers, allowForms: ["inline"] },
+      ),
+    ).ok;
+  })();
 
   for (const testCase of incrementalCases) {
-    const parseOptions = { handlers };
+    if (testCase.name === "full-only strategy fallback" && !supportsFullOnly) continue;
+    if (testCase.name === "auto maxEditRatio fallback" && !supportsAutoMaxEditRatio) continue;
+    if (testCase.name === "parse option fingerprint fallback" && !supportsOverrideOptions) continue;
+
+    const parseOptions = testCase.parseOptions ?? { handlers };
     const newSource = buildEditedSource(testCase.source, testCase.edit);
 
-    const parseIncrementalResult = safe(() => normalizeIncrementalDoc(mod.parseIncremental(testCase.source, parseOptions)));
+    const parseIncrementalResult = safe(() => normalizeDoc(mod.parseIncremental(testCase.source, parseOptions)));
     const sessionResult = safe(() =>
-      mod.createIncrementalSession(testCase.source, parseOptions, {
-        strategy: "incremental-only",
-      }),
+      mod.createIncrementalSession(
+        testCase.source,
+        parseOptions,
+        testCase.sessionOptions ?? {
+          strategy: "incremental-only",
+        },
+      ),
     );
 
     if (!sessionResult.ok) {
@@ -270,14 +385,14 @@ const collectBehaviorSnapshot = (mod) => {
     }
 
     const session = sessionResult.value;
-    const applyEditResult = safe(() => session.applyEdit(testCase.edit, newSource));
+    const applyEditResult = safe(() => session.applyEdit(testCase.edit, newSource, testCase.overrideOptions));
     const normalizedApplyEdit = applyEditResult.ok
       ? {
           ok: true,
           value: {
             mode: applyEditResult.value.mode,
             fallbackReason: applyEditResult.value.fallbackReason ?? null,
-            doc: normalizeIncrementalDoc(applyEditResult.value.doc),
+            doc: normalizeDoc(applyEditResult.value.doc),
           },
         }
       : applyEditResult;
@@ -288,14 +403,17 @@ const collectBehaviorSnapshot = (mod) => {
     };
 
     if (supportsApplyEditWithDiff && typeof session.applyEditWithDiff === "function") {
-      const applyEditWithDiffResult = safe(() => session.applyEditWithDiff(testCase.edit, newSource));
+      const applyEditWithDiffResult = safe(() =>
+        session.applyEditWithDiff(testCase.edit, newSource, testCase.overrideOptions),
+      );
       snapshot.incremental[testCase.name].applyEditWithDiff = applyEditWithDiffResult.ok
         ? {
             ok: true,
             value: {
               mode: applyEditWithDiffResult.value.mode,
               fallbackReason: applyEditWithDiffResult.value.fallbackReason ?? null,
-              doc: normalizeIncrementalDoc(applyEditWithDiffResult.value.doc),
+              doc: normalizeDoc(applyEditWithDiffResult.value.doc),
+              diff: normalizeDiff(applyEditWithDiffResult.value.diff),
             },
           }
         : applyEditWithDiffResult;
@@ -324,14 +442,6 @@ const knownExpectedDifferences = [
   },
   {
     matcher: (entry) =>
-      (entry.section === "core" || entry.section === "parser") &&
-      entry.caseName === "unclosed inline" &&
-      (entry.api === "parseStructural" || entry.api === "structural") &&
-      entry.actualVersion.startsWith("1.1."),
-    reason: "1.4 changed unclosed-inline structural fallback shape",
-  },
-  {
-    matcher: (entry) =>
       entry.section === "shorthand" &&
       entry.api === "parseStructural" &&
       entry.actualVersion.startsWith("1.3."),
@@ -355,16 +465,6 @@ const compareSnapshots = (baselineVersion, baseline, actualVersion, actual) => {
     for (const [caseName, baselineCase] of entriesOfRecord(baselineObject)) {
       const actualCase = isRecord(actualObject) ? actualObject[caseName] : undefined;
       if (!actualCase) {
-        if (sectionName === "incremental") continue;
-        diffs.push({
-          section: sectionName,
-          caseName,
-          api: "__case__",
-          baselineVersion,
-          actualVersion,
-          baseline: baselineCase,
-          actual: null,
-        });
         continue;
       }
 
@@ -389,11 +489,13 @@ const compareSnapshots = (baselineVersion, baseline, actualVersion, actual) => {
   };
 
   compareObject("core", baseline.core, actual.core);
+  compareObject("compat", baseline.compat, actual.compat);
   compareObject("custom", baseline.custom, actual.custom);
   compareObject("shorthand", baseline.shorthand, actual.shorthand);
   compareObject("onError", baseline.onError, actual.onError);
   compareObject("parser", baseline.parser, actual.parser);
   compareObject("positions", baseline.positions, actual.positions);
+  compareObject("helpers", baseline.helpers, actual.helpers);
   compareObject("incremental", baseline.incremental, actual.incremental);
 
   return diffs;
@@ -404,8 +506,17 @@ const main = async () => {
   const allVersions = npmViewVersions(packageName);
   const { latestPublishedVersion, selectedVersions } = computeTargetVersions(allVersions);
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "yume-dsl-version-ci-"));
+  const currentModulePath = new URL("../dist/index.js", import.meta.url);
+  const currentModule = await import(currentModulePath);
+  const baselineSnapshot = collectBehaviorSnapshot(currentModule);
+  const baselineHelperApis = Object.keys(baselineSnapshot.helpers);
+  const baselineParserCases = Object.keys(baselineSnapshot.parser).length;
+  const baselineIncrementalEntries = Object.entries(baselineSnapshot.incremental).filter(([key]) => key !== "__unsupported__");
+  const baselineIncrementalCases = baselineIncrementalEntries.length;
+  const supportsIncrementalDiff = baselineIncrementalEntries.some(([, entry]) => isRecord(entry) && "applyEditWithDiff" in entry);
   const testedSections = [
     { section: "core", cases: CORE_CASES.length, apis: ["parseRichText", "stripRichText", "parseStructural"] },
+    { section: "compat", cases: COMPAT_CASES.length, apis: ["parseRichText", "stripRichText", "parseStructural"] },
     { section: "custom", cases: CUSTOM_SYNTAX_CASES.length, apis: ["parseRichText", "parseStructural"] },
     {
       section: "shorthand",
@@ -413,18 +524,29 @@ const main = async () => {
       apis: ["parseRichText", "stripRichText", "parseStructural(implicitInlineShorthand=true)"],
     },
     { section: "onError", cases: ERROR_CASES.length, apis: ["onError(parse/strip/structural)"] },
-    { section: "parser", cases: Math.min(10, CORE_CASES.length), apis: ["createParser.parse/strip/structural"] },
+    ...(baselineParserCases > 0
+      ? [{ section: "parser", cases: baselineParserCases, apis: ["createParser.parse/strip/structural"] }]
+      : []),
     { section: "positions", cases: Math.min(8, CORE_CASES.length), apis: ["trackPositions(parse/structural)"] },
-    { section: "incremental", cases: 2, apis: ["parseIncremental", "createIncrementalSession.applyEdit"] },
+    ...(baselineHelperApis.length > 0
+      ? [{ section: "helpers", cases: baselineHelperApis.length, apis: baselineHelperApis }]
+      : []),
+    ...(baselineIncrementalCases > 0
+      ? [
+          {
+            section: "incremental",
+            cases: baselineIncrementalCases,
+            apis: supportsIncrementalDiff
+              ? ["parseIncremental", "createIncrementalSession.applyEdit", "applyEditWithDiff"]
+              : ["parseIncremental", "createIncrementalSession.applyEdit"],
+          },
+        ]
+      : []),
   ];
   const testedTotalCases = testedSections.reduce((sum, item) => sum + item.cases, 0);
   const testedText = `已测试分区: ${testedSections
     .map((item) => `${item.section}(${item.cases})`)
     .join(", ")}; 总用例 ${testedTotalCases}`;
-
-  const currentModulePath = new URL("../dist/index.js", import.meta.url);
-  const currentModule = await import(currentModulePath);
-  const baselineSnapshot = collectBehaviorSnapshot(currentModule);
 
   const reports = [];
   const unknownDiffs = [];

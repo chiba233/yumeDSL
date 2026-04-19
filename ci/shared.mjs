@@ -19,6 +19,14 @@ export const CORE_CASES = [
   { name: "trailing newline after block", input: "$$info()*\ncontent\n*end$$\nnext line" },
   { name: "crlf", input: "$$bold(hello)$$\r\nworld" },
   { name: "block with crlf", input: "$$info()*\r\ncontent\r\n*end$$" },
+  {
+    name: "40-level nesting",
+    input: (() => {
+      let text = "x";
+      for (let i = 0; i < 40; i += 1) text = `$$bold(${text})$$`;
+      return text;
+    })(),
+  },
 ];
 
 export const CUSTOM_SYNTAX_CASES = [
@@ -26,6 +34,7 @@ export const CUSTOM_SYNTAX_CASES = [
   { name: "custom: nested", input: "##bold(##thin(x)##)##" },
   { name: "custom: raw", input: "##raw-code(js)%\ncode\n%end##" },
   { name: "custom: block", input: "##info()*\ncontent\n*end##" },
+  { name: "custom: mixed", input: "text ##bold(a)## mid ##info()*\n##code(x)##\n*end##" },
 ];
 
 export const SHORTHAND_CASES = [
@@ -39,6 +48,47 @@ export const SHORTHAND_CASES = [
 export const ERROR_CASES = CORE_CASES.filter((testCase) =>
   ["unclosed inline", "unclosed block", "unknown tag", "unknown block", "depth limit hit"].includes(testCase.name),
 );
+
+export const COMPAT_CASES = [
+  {
+    name: "blockTags:inline-string",
+    input: "$$bold(hello)$$\nnext",
+    opts: { blockTags: ["bold"] },
+  },
+  {
+    name: "blockTags:inline-forms",
+    input: "$$bold(hello)$$\nnext",
+    opts: { blockTags: [{ tag: "bold", forms: ["inline"] }] },
+  },
+  {
+    name: "allowForms:inline-only",
+    input: "$$info(T)$$ $$raw-code(ts)%\nconst x = 1\n%end$$",
+    opts: { allowForms: ["inline"] },
+  },
+  {
+    name: "allowForms:no-inline",
+    input: "$$unknown(hello)$$ $$bold(x)$$",
+    opts: { allowForms: ["raw", "block"] },
+  },
+  {
+    name: "custom-tagName",
+    input: "$$ui:button(hello)$$",
+    opts: {
+      tagName: {
+        isTagChar: (char) => /[A-Za-z0-9:-]/.test(char),
+        isTagStartChar: (char) => /[A-Za-z]/.test(char),
+      },
+    },
+  },
+  {
+    name: "consecutive-raw",
+    input: "$$raw-code(ts)%\nconst a = 1\n%end$$\n$$raw-code(ts)%\nconst b = 2\n%end$$",
+  },
+  {
+    name: "consecutive-block",
+    input: "$$info(A)*\none\n*end$$\n$$info(B)*\ntwo\n*end$$",
+  },
+];
 
 export const expectedOnErrorByApi = {
   parseRichText: {
@@ -115,3 +165,34 @@ export const stripMeta = (value, options = {}) => {
   }
   return out;
 };
+
+export const normalizeDoc = (doc) => ({
+  source: doc.source,
+  tree: stripMeta(doc.tree),
+  zones: doc.zones.map((zone) => ({
+    startOffset: zone.startOffset,
+    endOffset: zone.endOffset,
+    nodes: stripMeta(zone.nodes),
+  })),
+});
+
+export const normalizeDiff = (diff) => ({
+  isNoop: diff.isNoop,
+  dirtySpanOld: diff.dirtySpanOld,
+  dirtySpanNew: diff.dirtySpanNew,
+  unchangedRanges: diff.unchangedRanges,
+  patches: diff.patches,
+  ops: diff.ops.map((op) =>
+    op.kind === "splice"
+      ? {
+          kind: op.kind,
+          path: op.path,
+          field: op.field,
+          oldRange: op.oldRange,
+          newRange: op.newRange,
+          oldNodes: stripMeta(op.oldNodes),
+          newNodes: stripMeta(op.newNodes),
+        }
+      : op,
+  ),
+});
