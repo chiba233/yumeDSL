@@ -429,6 +429,29 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     frame.buf.end = end;
   };
 
+  const tryMergeAdjacentTextNode = (targetNodes: TNode[], node: TNode): boolean => {
+    if (node.type !== "text") return false;
+    const last = targetNodes[targetNodes.length - 1];
+    if (!last || last.type !== "text") return false;
+
+    last.value += node.value;
+    if ("_meta" in last && "_meta" in node) {
+      last._meta.end = node._meta.end;
+    }
+    if (last.position && node.position) {
+      last.position.end = node.position.end;
+    }
+    return true;
+  };
+
+  const appendNodesWithMergedText = (targetNodes: TNode[], nodes: readonly TNode[]) => {
+    for (let index = 0; index < nodes.length; index++) {
+      const node = nodes[index];
+      if (tryMergeAdjacentTextNode(targetNodes, node)) continue;
+      targetNodes.push(node);
+    }
+  };
+
   const downgradeInlineIntoParent = (frame: ParseFrame, nextParentI: number): boolean => {
     const parent = stack[frame.parentIndex];
     if (!parent) return true;
@@ -440,7 +463,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     appendBuf(parent, frame.tagStartI, frame.argStartI);
     parent.i = frame.argStartI;
     flushBuffer(parent);
-    parent.nodes.push(...frame.nodes);
+    appendNodesWithMergedText(parent.nodes, frame.nodes);
     parent.i = nextParentI;
     return true;
   };
@@ -816,6 +839,9 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         replayFrame.parentIndex >= 0 ? (stack[replayFrame.parentIndex] ?? null) : null;
       if (!parent) {
         return true;
+      }
+      if (stack[stack.length - 1] !== parent) {
+        throw new Error("Malformed EOF inline replay expects parent to be the current stack top.");
       }
       if (parent.inlineCloseToken === null) {
         appendBuf(parent, replayFrame.tagStartI, replayFrame.argStartI);

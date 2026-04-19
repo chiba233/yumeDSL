@@ -103,7 +103,7 @@ const cases: GoldenCase[] = [
       assert.equal(result.doc.source, nextSource);
       assert.deepEqual(summarizeInlineTree(result.doc.tree), {
         rootType: "inline",
-        rootChildCount: 3,
+        rootChildCount: 2,
         maxInlineDepth: 9_948,
       });
       assert.ok(
@@ -143,6 +143,44 @@ const cases: GoldenCase[] = [
       assert.ok(
         elapsedMs < 1_000,
         `expected full close-run deletion to stay below 1s, got ${elapsedMs}ms`,
+      );
+    },
+  },
+  {
+    name: "[Incremental/Session] re-adding close tokens one-by-one after deleting the close run should stay bounded",
+    run: () => {
+      const handlers = createSimpleInlineHandlers(["bold"]);
+      const syntax = createEasySyntax({ tagPrefix: "=", tagOpen: "<", tagClose: ">" });
+      const depth = 10_000;
+      const depthLimit = 9_950;
+      const source0 = makeNestedEasyShorthand(depth);
+      const closeStart = source0.indexOf(">");
+      assert.notEqual(closeStart, -1);
+      let nextSource = applyEdit(source0, closeStart, source0.length - 1, "");
+      const session = createIncrementalSession(nextSource, {
+        handlers,
+        syntax,
+        implicitInlineShorthand: true,
+        depthLimit,
+      });
+      const startedAt = Date.now();
+
+      for (let step = 1; step <= 5; step++) {
+        const insertAt = nextSource.length - 1;
+        const updatedSource = applyEdit(nextSource, insertAt, insertAt, ">");
+        const result = session.applyEdit(
+          { startOffset: insertAt, oldEndOffset: insertAt, newText: ">" },
+          updatedSource,
+        );
+        nextSource = updatedSource;
+        assert.equal(result.mode, "full-fallback");
+        assert.equal(result.doc.source, updatedSource);
+      }
+
+      const elapsedMs = Date.now() - startedAt;
+      assert.ok(
+        elapsedMs < 1_500,
+        `expected five close re-add edits to stay below 1.5s total, got ${elapsedMs}ms`,
       );
     },
   },

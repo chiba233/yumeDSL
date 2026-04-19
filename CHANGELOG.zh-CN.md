@@ -13,6 +13,11 @@
   - `downgradeInlineIntoParent(...)` 现在遵循更严格的 shorthand 损坏语义：一旦 shorthand 子帧降级，它的 tag 头就作为普通文本回放到父帧，子帧里已经解析出来的节点直接挂回父帧，后续也不再补做任何 shorthand-head recovery。
   - `tryConsumeInlineCloseAtCursor(...)` 在 shorthand `>` 需要让位给祖先 full-form `endTag` 时走这条父层降级路径；`tryFinalizeFrameAtEof(...)` 在 EOF 时也保持同一原则：未闭合的 shorthand/inline 帧只回放自己的 tag 头到父帧，并让父帧从 `argStart` 继续，由最近仍然合法的 full-form 作用域重新决定最终结构。
   - 因此在 `depthLimit` 附近的大段损坏 close-run 里，已经降级的 shorthand 头会继续作为文本保留，不再通过额外的 owner recovery pass 被重新拍平成更多根层结构。
+- **结构解析器：EOF 未闭合 inline 链现在批量弹出**
+  - 当一串嵌套的未闭合 inline/shorthand 帧到达 EOF 时，`replayMalformedInlineChainAtEof` 一次性把整条链弹完，不再每弹一帧就回一次主循环。链从最内层往上走到第一个非 inline 容器，每帧发一条错误，只回放最外层那个帧的 tag 头——输出不变，但省掉了 N 轮主循环完整分支树的开销。
+  - 由于 `ancestorEndTagOwnerIndex` 在 push 阶段就把重扫时的 shorthand 降级为文本，从 `argStartI` 开始的单次重扫始终是 O(n)，不会因深嵌套出现 N² 的重入弹出。
+- **结构解析器：`resolveShorthandOwnership` 死代码清理**
+  - 移除了 `eof` phase 和 shorthand close 路径中冗余的第二次 `resolveShorthandOwnership` 调用。`eof` phase 在 1.4.4 早期提交简化 EOF 恢复后已不可达；第二次 close 路径调用在 `scanEndTagAt` 已返回非 `"full"` 时与第一次重复。
 - **渲染器内部：文本合并和 raw 转义路径都做了收紧**
   - `renderNodes(...)` 新增 `RenderFrame.textBuf` / `textBufPosition`，并拆出 `bufferText(...)` / `flushTextBuf(...)` 两个辅助路径：
     - 连续的 `text`、`escape`、`separator` 先攒进 `textBuf`；

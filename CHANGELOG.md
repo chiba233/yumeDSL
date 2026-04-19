@@ -13,6 +13,11 @@
   - `downgradeInlineIntoParent(...)` now follows the stricter malformed-shorthand rule: once a shorthand frame is downgraded, its tag head is replayed into the parent as plain text, the child frame’s already-parsed nodes are attached directly to the parent, and no extra shorthand-head recovery step runs afterward.
   - `tryConsumeInlineCloseAtCursor(...)` uses that downgrade path when a shorthand `>` must defer to an ancestor full-form `endTag`. `tryFinalizeFrameAtEof(...)` keeps the same model at end-of-input: an unclosed shorthand/inline frame only replays its own tag head into the parent and lets the parent resume from `argStart`, so the nearest still-valid full-form scope decides the final structure.
   - In malformed close-run cases near `depthLimit`, downgraded shorthand heads now stay as text instead of being re-flattened into additional root-level structure through a separate owner-recovery pass.
+- **Structural parser: EOF unclosed-inline chain is now batch-unwound**
+  - When a chain of nested unclosed inline/shorthand frames reaches EOF, `replayMalformedInlineChainAtEof` now pops the entire chain in a single pass instead of returning to the main loop once per frame. The chain unwinds up to the first non-inline container, emits one error per frame, and replays only the outermost tag head — identical output but without N round-trips through the full main-loop branch tree.
+  - Because `ancestorEndTagOwnerIndex` causes re-scanned shorthand to be deferred as text on the push path, the single replay from `argStartI` stays O(n) even for deep nesting (no N² re-push / re-pop).
+- **Structural parser: dead-code cleanup in `resolveShorthandOwnership`**
+  - The `eof` phase and the redundant second `resolveShorthandOwnership` call in the shorthand close path have been removed. The `eof` phase was unreachable after the EOF recovery was simplified in earlier 1.4.4 commits; the second close-path call duplicated the first when `scanEndTagAt` had already returned non-`"full"`.
 - **Renderer internals: tighter text merging and raw unescape handling**
   - `renderNodes(...)` now adds `RenderFrame.textBuf` / `textBufPosition` plus dedicated `bufferText(...)` / `flushTextBuf(...)` helpers:
     - consecutive `text`, `escape`, and `separator` output is accumulated in `textBuf`;
