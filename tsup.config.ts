@@ -1,5 +1,6 @@
 import { defineConfig } from "tsup";
 
+// @ts-ignore
 const coverageSourcemapEnabled = process.env.YUME_DSL_COVERAGE_SOURCEMAP === "1";
 
 export default defineConfig({

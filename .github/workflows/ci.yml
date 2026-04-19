@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  pull_request:
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "ci/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
+      - "tsup.config.ts"
+      - "eslint.config.js"
+      - ".github/workflows/ci.yml"
+      - ".github/workflows/publish-dsl.yml"
+  push:
+    branches:
+      - master
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "ci/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
+      - "tsup.config.ts"
+      - "eslint.config.js"
+      - ".github/workflows/ci.yml"
+      - ".github/workflows/publish-dsl.yml"
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Coverage tests
+        run: npm run test:coverage
+
+      - name: Compare behavior against latest patch of recent npm minors
+        run: node ./ci/version-behavior-compare.mjs
+
+      - name: CI contracts from .tmp baseline
+        run: |
+          node ./ci/onerror-matrix.mjs
+          node ./ci/parser-contract.mjs
