@@ -174,4 +174,48 @@ cases.push({
   },
 });
 
+cases.push({
+  name: "[Shorthand/Regression] malformed outer full-form must downgrade whole nested shorthand tail to text",
+  run: () => {
+    const inputs = [
+      "=bold<bold<>>",
+      "=bold<bold<>>>",
+      "=bold<bold<bold<>>>",
+      "=bold<bold<bold<bold<bold<bold<bold<>>>>>>>>",
+    ];
+
+    for (const input of inputs) {
+      const nodes = parseStructural(input, {
+        syntax,
+        handlers,
+        implicitInlineShorthand: true,
+      });
+
+      assert.equal(printStructural(nodes, { syntax }), input, input);
+      assert.equal(nodes.length, 1, input);
+      assert.equal(nodes[0]?.type, "text", input);
+    }
+  },
+});
+
+cases.push({
+  name: "[Shorthand/Regression] malformed outer full-form should still salvage later complete full-form child",
+  run: () => {
+    for (const input of ["=bold<bold<=bold<111>=>>", "=bold<bold<bold<=bold<>=>>>"]) {
+      const nodes = parseStructural(input, {
+        syntax,
+        handlers,
+        implicitInlineShorthand: true,
+      });
+
+      assert.equal(printStructural(nodes, { syntax }), input, input);
+      assert.equal(nodes.length, 3, input);
+      assert.equal(nodes[0]?.type, "text", input);
+      assert.equal(nodes[1]?.type, "inline", input);
+      assert.equal((nodes[1] as { tag: string }).tag, "bold", input);
+      assert.equal(nodes[2]?.type, "text", input);
+    }
+  },
+});
+
 await runGoldenCases("Shorthand Behavior", "shorthand 行为矩阵 case", cases, { quietPasses: true });
