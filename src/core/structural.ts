@@ -440,91 +440,9 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     appendBuf(parent, frame.tagStartI, frame.argStartI);
     parent.i = frame.argStartI;
     flushBuffer(parent);
-    for (const node of frame.nodes) {
-      appendRecoveredNodeIntoOwner(parent, node);
-    }
+    parent.nodes.push(...frame.nodes);
     parent.i = nextParentI;
     return true;
-  };
-
-  const downgradeEndTagOwnerScopeToParent = (ownerIndex: number): boolean => {
-    if (ownerIndex < 0) return false;
-    const owner = stack[ownerIndex];
-    if (!owner || owner.inlineCloseToken !== endTag) return false;
-    const parent = stack[owner.parentIndex];
-    while (stack.length > ownerIndex) {
-      stack.pop();
-    }
-    if (!parent) return true;
-    appendBuf(parent, owner.tagStartI, owner.argStartI);
-    parent.i = owner.argStartI;
-    return true;
-  };
-
-  type ImplicitShorthandInlineNode = TNode & {
-    type: "inline";
-    implicitInlineShorthand: true;
-    children: TNode[];
-  };
-
-  const isImplicitShorthandInline = (node: TNode): node is ImplicitShorthandInlineNode =>
-    node.type === "inline" && node.implicitInlineShorthand === true;
-
-  const appendRecoveredNodeIntoOwner = (owner: ParseFrame, node: TNode): void => {
-    flushBuffer(owner);
-    const pushSplitText = (text: string, baseOffset: number): number => {
-      let cursor = 0;
-      while (cursor < text.length) {
-        const shorthand = readInlineShorthandStart(text, cursor);
-        if (!shorthand || shorthand.tagOpenPos !== cursor) break;
-        const start = baseOffset + cursor;
-        const end = baseOffset + shorthand.argStart;
-        pushNode(owner.nodes, factory.text(text.slice(cursor, shorthand.argStart), start, end), makePosition(tracker, start, end));
-        cursor = shorthand.argStart;
-      }
-      return cursor;
-    };
-
-    const peelLeadingMalformedShorthandText = (root: TNode): void => {
-      if (!isImplicitShorthandInline(root)) return;
-      let current: ImplicitShorthandInlineNode = root;
-      while (true) {
-        if (current.children.length !== 1) return;
-        const child = current.children[0];
-        if (isImplicitShorthandInline(child)) {
-          current = child;
-          continue;
-        }
-        if (child.type !== "text") return;
-        const childBaseOffset = child.position?.start.offset ?? 0;
-        const consumed = pushSplitText(child.value, childBaseOffset);
-        if (consumed === 0) return;
-        if (consumed >= child.value.length) {
-          current.children = [];
-          return;
-        }
-        const start = childBaseOffset + consumed;
-        const end = childBaseOffset + child.value.length;
-        current.children = [factory.text(child.value.slice(consumed), start, end)];
-        const nextChild = current.children[0];
-        nextChild.position = makePosition(tracker, start, end);
-        return;
-      }
-    };
-
-    if (node.type === "text") {
-      const baseOffset = node.position?.start.offset ?? 0;
-      const consumed = pushSplitText(node.value, baseOffset);
-      if (consumed < node.value.length) {
-        const start = baseOffset + consumed;
-        const end = baseOffset + node.value.length;
-        pushNode(owner.nodes, factory.text(node.value.slice(consumed), start, end), makePosition(tracker, start, end));
-      }
-      return;
-    }
-
-    peelLeadingMalformedShorthandText(node);
-    owner.nodes.push(node);
   };
 
   // ── 子帧完成分发 ──
@@ -1273,10 +1191,10 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
 
     if (frame.inlineCloseToken !== null) {
       // inline 帧走到文本末尾仍未关闭 → 未闭合错误
-      // EOF 未闭合恢复按完整容器逐层上卷：
-      // 1. shorthand 落在父完整容器里时，先尝试在最近容器内完成消歧
-      // 2. 最近容器自己也无法闭合时，再把它交给更上层容器/父帧处理
-      // 3. 没有完整容器时，才按普通降级把已完成子节点挂回父帧
+      // EOF 未闭合恢复现在保持最简单的父层回放语义：
+      // 1. 当前未闭合 inline/shorthand 的 tag 头回放到父帧缓冲
+      // 2. 父帧从 argStart 重新继续扫描后续文本
+      // 3. 不再做 owner-chain 上卷或额外结构回收
       emitError(
         tracker,
         onError,
@@ -1286,12 +1204,14 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         frame.argStartI - frame.tagOpenPos,
         emittedErrorKeys,
       );
-      const frameIndex = stack.length - 1;
-      if (frame.inlineCloseToken === endTag && downgradeEndTagOwnerScopeToParent(frameIndex)) {
+      stack.pop();
+      const parent = stack[frame.parentIndex];
+      if (!parent) {
         return true;
       }
-      stack.pop();
-      return downgradeInlineIntoParent(frame, frame.textEnd);
+      appendBuf(parent, frame.tagStartI, frame.argStartI);
+      parent.i = frame.argStartI;
+      return true;
     }
 
     flushBuffer(frame);

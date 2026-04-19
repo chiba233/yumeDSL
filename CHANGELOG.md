@@ -4,15 +4,15 @@
 
 ### 1.4.4
 
-- **Structural parser: fixes the deep shorthand ownership regression introduced in `1.4.1`**
+- **Structural parser: restores ancestor full-form close ownership while keeping malformed shorthand as text**
   - `ParseFrame` now carries `ancestorEndTagOwnerIndex`, and `pushChildFrame(...)` populates it by either recording the direct parent when that parent is the owner or inheriting the parent’s owner index otherwise. Deep shorthand ownership checks can now reach the nearest ancestor `endTag` owner in O(1) instead of stopping at the direct parent.
-  - `resolveShorthandOwnership(...)` was expanded on both the push and close paths:
+  - `resolveShorthandOwnership(...)` now handles both the push and close paths against that ancestor owner chain:
     - on push, it now checks whether a shorthand `argStart` overlaps the ancestor owner’s `endTag`;
     - on close, it now checks whether the current `>` should defer to that ancestor owner;
     - this is the change that stops inputs like `=bold<bold<bold<...>>>>>>=` from letting the innermost shorthand steal the outer full-form close token.
-  - `downgradeInlineIntoParent(...)` now preserves the malformed shorthand head and the child frame’s already-parsed nodes before handing control back to the parent frame, instead of dropping part of that state and rebuilding from a later scan point. `tryConsumeInlineCloseAtCursor(...)` and `tryFinalizeFrameAtEof(...)` now both route through the same downgrade logic, so close-token conflict recovery and EOF recovery no longer diverge.
-  - New owner-chain recovery handling (`finalizeShorthandChainIntoOwner(...)` / `appendRecoveredNodeIntoOwner(...)`) walks the shorthand chain under the owner and reattaches shorthand heads that only survive as text through the owner path. That is the piece that restores stable layering for large close-run damage near `depthLimit`: textified `bold<` heads are no longer stranded inside the surviving shorthand tail during full-fallback reparses.
-  - The type narrowing in that recovery path was also cleaned up: the broad helper aliases were removed in favor of a local shorthand-inline type guard that narrows only the node shape actually needed by owner-chain recovery.
+  - `downgradeInlineIntoParent(...)` now follows the stricter malformed-shorthand rule: once a shorthand frame is downgraded, its tag head is replayed into the parent as plain text, the child frame’s already-parsed nodes are attached directly to the parent, and no extra shorthand-head recovery step runs afterward.
+  - `tryConsumeInlineCloseAtCursor(...)` uses that downgrade path when a shorthand `>` must defer to an ancestor full-form `endTag`. `tryFinalizeFrameAtEof(...)` keeps the same model at end-of-input: an unclosed shorthand/inline frame only replays its own tag head into the parent and lets the parent resume from `argStart`, so the nearest still-valid full-form scope decides the final structure.
+  - In malformed close-run cases near `depthLimit`, downgraded shorthand heads now stay as text instead of being re-flattened into additional root-level structure through a separate owner-recovery pass.
 - **Renderer internals: tighter text merging and raw unescape handling**
   - `renderNodes(...)` now adds `RenderFrame.textBuf` / `textBufPosition` plus dedicated `bufferText(...)` / `flushTextBuf(...)` helpers:
     - consecutive `text`, `escape`, and `separator` output is accumulated in `textBuf`;
