@@ -321,6 +321,76 @@ const cases: GoldenCase[] = [
       }
     },
   },
+  {
+    name: "[Coverage/Structural] long-window closer classification should preserve nested arg parens with cache path",
+    run() {
+      const longPrefix = "a".repeat(320);
+      const input = `$$raw-code(${longPrefix}(b(c)d))%\nconst x = 1;\n%end$$`;
+      const nodes = parseStructural(input);
+      assert.equal(printStructural(nodes), input);
+      assert.equal(nodes.length, 1);
+      assert.equal(nodes[0]?.type, "raw");
+      if (nodes[0]?.type === "raw") {
+        const argText = nodes[0].args
+          .filter((node): node is Extract<StructuralNode, { type: "text" }> => node.type === "text")
+          .map((node) => node.value)
+          .join("");
+        assert.equal(argText, `${longPrefix}(b(c)d)`);
+      }
+    },
+  },
+  {
+    name: "[Coverage/Structural] malformed inline chain at EOF should replay once and degrade to full source text",
+    run() {
+      const input = "$$bold(link(thin(x";
+      const nodes = parseStructural(input, {
+        handlers: createSimpleInlineHandlers(["bold", "link", "thin"] as const),
+        implicitInlineShorthand: true,
+        trackPositions: true,
+      });
+
+      assert.equal(nodes.length, 1);
+      assert.equal(nodes[0]?.type, "text");
+      if (nodes[0]?.type === "text") {
+        assert.equal(nodes[0].value, input);
+        assert.ok(nodes[0].position);
+        assert.equal(nodes[0].position?.start.offset, 0);
+        assert.equal(nodes[0].position?.end.offset, input.length);
+      }
+    },
+  },
+  {
+    name: "[Coverage/Structural] shorthand defer-parent downgrade should merge adjacent text with continuous position",
+    run() {
+      const input = "$$bold(pre link(x)$$ post";
+      const nodes = parseStructural(input, {
+        handlers: createSimpleInlineHandlers(["bold", "link"] as const),
+        implicitInlineShorthand: true,
+        trackPositions: true,
+      });
+
+      assert.equal(nodes.length, 2);
+      assert.equal(nodes[0]?.type, "inline");
+      if (nodes[0]?.type === "inline") {
+        assert.equal(nodes[0].children.length, 1);
+        assert.equal(nodes[0].children[0]?.type, "text");
+        if (nodes[0].children[0]?.type === "text") {
+          assert.equal(nodes[0].children[0].value, "pre link(x");
+          assert.ok(nodes[0].children[0].position);
+          assert.equal(nodes[0].children[0].position?.start.offset, 7);
+          assert.equal(nodes[0].children[0].position?.end.offset, 17);
+          assert.equal(input.slice(7, 17), nodes[0].children[0].value);
+        }
+      }
+      assert.equal(nodes[1]?.type, "text");
+      if (nodes[1]?.type === "text") {
+        assert.equal(nodes[1].value, " post");
+        assert.ok(nodes[1].position);
+        assert.equal(nodes[1].position?.start.offset, 20);
+        assert.equal(nodes[1].position?.end.offset, input.length);
+      }
+    },
+  },
 
   // ═══════════════════════════════════════════════════════════
   // structural.ts — raw unclosed inside inline frame (lines 565-583)

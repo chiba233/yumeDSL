@@ -16,6 +16,14 @@ const makeNestedShorthand = (depth: number): string => {
   return `$$bold(${text})$$`;
 };
 
+const makeMalformedNestedShorthand = (depth: number, missingCloses: number): string => {
+  const safeDepth = Math.max(depth, 2);
+  const safeMissing = Math.max(1, Math.min(missingCloses, safeDepth - 1));
+  const open = "bold(".repeat(safeDepth - 1);
+  const closes = ")".repeat(safeDepth - safeMissing - 1);
+  return `$$bold(${open}x${closes}$$`;
+};
+
 const measureMs = <T>(fn: () => T): { value: T; ms: number } => {
   const start = performance.now();
   const value = fn();
@@ -189,6 +197,22 @@ const cases: GoldenCase[] = [
       assert.ok(
         structural.ms < 4_000,
         `parseStructural shorthand(10000) unexpectedly slow: ${structural.ms.toFixed(1)} ms`,
+      );
+    },
+  },
+  {
+    name: "[Deep/Shorthand/Perf] 1 万层 malformed close-run 不应退化为灾难级复杂度",
+    run() {
+      const input = makeMalformedNestedShorthand(10_000, 120);
+      const handlers = createSimpleInlineHandlers(["bold"]);
+      const options = { handlers, depthLimit: 10_100, implicitInlineShorthand: true } as const;
+
+      const structural = measureMs(() => parseStructural(input, options));
+      assert.equal(structural.value.length, 1);
+      assert.equal(structural.value[0]?.type, "inline");
+      assert.ok(
+        structural.ms < 6_000,
+        `parseStructural malformed shorthand(10000) unexpectedly slow: ${structural.ms.toFixed(1)} ms`,
       );
     },
   },
