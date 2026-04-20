@@ -48,8 +48,7 @@ try {
     { type: "text", value: " after" },
   ];
   const expectedStructural = [
-    { type: "text", value: "$$bold(" },
-    { type: "text", value: "hello" },
+    { type: "text", value: "$$bold(hello" },
   ];
 
   if (JSON.stringify(parsed) !== JSON.stringify(expectedParsed)) {
