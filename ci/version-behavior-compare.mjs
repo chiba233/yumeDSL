@@ -423,40 +423,86 @@ const collectBehaviorSnapshot = (mod) => {
   return snapshot;
 };
 
-const knownExpectedDifferences = [
+const KNOWN_DIFF_RULES = [
   {
-    matcher: (entry) =>
-      (entry.section === "core" || entry.section === "parser") &&
-      entry.caseName === "unclosed inline" &&
-      (entry.api === "parseStructural" || entry.api === "structural") &&
-      entry.actualVersion.startsWith("1.3."),
-    reason: "1.4 changed unclosed-inline structural fallback shape",
+    id: "structural-unclosed-inline-shape",
+    reason: "workspace-dist changed unclosed-inline structural fallback shape",
+    sections: ["core", "parser"],
+    caseNames: ["unclosed inline"],
+    apis: ["parseStructural", "structural"],
+    actualVersionPattern: /^1\.(2|3|4)\./,
   },
   {
-    matcher: (entry) =>
-      (entry.section === "core" || entry.section === "parser") &&
-      entry.caseName === "unclosed inline" &&
-      (entry.api === "parseStructural" || entry.api === "structural") &&
-      entry.actualVersion.startsWith("1.2."),
-    reason: "1.4 changed unclosed-inline structural fallback shape",
-  },
-  {
-    matcher: (entry) =>
-      entry.section === "shorthand" &&
-      entry.api === "parseStructural" &&
-      entry.actualVersion.startsWith("1.3."),
-    reason: "1.4 changed shorthand structural degradation shape",
-  },
-  {
-    matcher: (entry) =>
-      entry.section === "shorthand" &&
-      entry.api === "parseStructural" &&
-      entry.actualVersion.startsWith("1.2."),
-    reason: "1.4 changed shorthand structural degradation shape",
+    id: "structural-shorthand-degradation-shape",
+    reason: "workspace-dist changed shorthand structural degradation shape",
+    sections: ["shorthand"],
+    caseNames: [
+      "simple shorthand",
+      "nested shorthand",
+      "shorthand with trailing text",
+      "unclosed shorthand",
+    ],
+    apis: ["parseStructural"],
+    actualVersionPattern: /^1\.(2|3|4)\./,
   },
 ];
 
-const isKnownDifference = (entry) => knownExpectedDifferences.some((rule) => rule.matcher(entry));
+const matchesKnownDiffRule = (entry, rule) =>
+  rule.sections.includes(entry.section) &&
+  rule.caseNames.includes(entry.caseName) &&
+  rule.apis.includes(entry.api) &&
+  rule.actualVersionPattern.test(entry.actualVersion);
+
+const findKnownDiffRule = (entry) => KNOWN_DIFF_RULES.find((rule) => matchesKnownDiffRule(entry, rule)) ?? null;
+
+const formatJsonInline = (value) => JSON.stringify(value);
+const formatDiffKey = (entry) => `${entry.actualVersion} | ${entry.section} / ${entry.caseName} / ${entry.api}`;
+
+const printKnownDiffStats = (knownDiffs) => {
+  if (knownDiffs.length === 0) {
+    console.log("[version-behavior] 已知差异: 0");
+    return;
+  }
+
+  const counts = {};
+  for (const diff of knownDiffs) {
+    const rule = findKnownDiffRule(diff);
+    const key = rule ? `${rule.id}: ${rule.reason}` : "unknown-rule";
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+
+  console.log("[version-behavior] 已知差异统计:");
+  for (const [label, count] of Object.entries(counts).sort((a, b) => b[1] - a[1])) {
+    console.log(`  - ${label} => ${count}`);
+  }
+};
+
+const printUnknownDiffReport = (summary, unknownDiffs) => {
+  console.error(`[version-behavior] 发现未知差异 ${unknownDiffs.length} 条，比较已失败`);
+  console.error(
+    `[version-behavior] 包 ${summary.package}; 对比版本: ${summary.comparedPublishedVersions.join(", ")}; 最新发布: ${summary.latestPublishedVersion}`,
+  );
+  console.error(`[version-behavior] ${summary.testedText}`);
+
+  const grouped = {};
+  for (const diff of unknownDiffs) {
+    const group = `${diff.actualVersion} | ${diff.section}`;
+    if (!grouped[group]) grouped[group] = [];
+    grouped[group].push(diff);
+  }
+
+  for (const [group, diffs] of Object.entries(grouped)) {
+    console.error(`\n[version-behavior] ${group}: ${diffs.length} 条`);
+    for (const [index, diff] of diffs.slice(0, 20).entries()) {
+      console.error(`  ${index + 1}. ${formatDiffKey(diff)}`);
+      console.error(`     baseline(${diff.baselineVersion}): ${formatJsonInline(diff.baseline)}`);
+      console.error(`     actual(${diff.actualVersion}): ${formatJsonInline(diff.actual)}`);
+    }
+    if (diffs.length > 20) {
+      console.error(`     ... 其余 ${diffs.length - 20} 条未展开`);
+    }
+  }
+};
 
 const compareSnapshots = (baselineVersion, baseline, actualVersion, actual) => {
   const diffs = [];
@@ -561,7 +607,7 @@ const main = async () => {
       const diffs = compareSnapshots("workspace-dist", baselineSnapshot, version, snapshot);
 
       for (const diff of diffs) {
-        if (isKnownDifference(diff)) knownDiffs.push(diff);
+        if (findKnownDiffRule(diff)) knownDiffs.push(diff);
         else unknownDiffs.push(diff);
       }
 
@@ -593,20 +639,10 @@ const main = async () => {
   };
 
   console.log(`[version-behavior] ${testedText}`);
+  printKnownDiffStats(knownDiffs);
 
   if (unknownDiffs.length > 0) {
-    console.error(
-      JSON.stringify(
-        {
-          ok: false,
-          summary,
-          unknownDiffs: unknownDiffs.slice(0, 50),
-          knownDiffs: knownDiffs.slice(0, 20),
-        },
-        null,
-        2,
-      ),
-    );
+    printUnknownDiffReport(summary, unknownDiffs);
     process.exit(1);
   }
 
