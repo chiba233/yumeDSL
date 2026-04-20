@@ -76,6 +76,13 @@ import {
   skipTagBoundary,
 } from "./scanner.js";
 import { makePosition, type PositionTracker } from "../internal/positions.js";
+import {
+  buildMalformedInlineReplayPlan,
+  resolveShorthandOwnershipClose,
+  resolveShorthandOwnershipPush,
+  scanEndTagAt,
+  type ShorthandProbeState,
+} from "./structuralOwnership.js";
 
 const emptyBuffer = (): BufferState => ({ start: -1, end: -1, segments: null });
 
@@ -297,13 +304,6 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
   // 没有 resume 闭包。子帧完成后由 completeChild 按 returnKind 分发。
 
   type ReturnKind = "inline" | "rawArgs" | "blockArgs" | "blockContent";
-  interface ShorthandProbeState {
-    textEnd: number;
-    startI: number;
-    boundaryI: number;
-    reject: boolean;
-  }
-
   interface ParseFrame {
     text: string;
     depth: number;
@@ -667,118 +667,21 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     };
   };
 
-  type EndTagMatchState = "none" | "full" | "truncated-prefix";
-  const scanEndTagAt = (text: string, start: number, endExclusive: number): EndTagMatchState => {
-    if (start >= endExclusive) return "none";
-    if (text[start] !== endTag[0]) return "none";
-    let offset = 0;
-    while (offset < endTag.length) {
-      const pos = start + offset;
-      if (pos >= endExclusive) return "truncated-prefix";
-      if (text[pos] !== endTag[offset]) return "none";
-      offset++;
-    }
-    return "full";
+  const getAncestorEndTagOwner = (frame: ParseFrame | null): ParseFrame | null => {
+    if (!frame) return null;
+    const ownerIndex = frame.ancestorEndTagOwnerIndex;
+    return ownerIndex >= 0 ? (stack[ownerIndex] ?? null) : null;
   };
 
-  type ShorthandOwnershipPhase = "push" | "close";
-  type ShorthandOwnershipDecision = "allow" | "defer-parent";
-  interface ShorthandOwnershipInput {
-    phase: ShorthandOwnershipPhase;
-    frame: ParseFrame;
-    parent: ParseFrame | null;
-    info?: ShorthandStartInfo;
-    at?: number;
-  }
-  const resolveShorthandOwnership = (
-    input: ShorthandOwnershipInput,
-  ): ShorthandOwnershipDecision => {
-    const getAncestorEndTagOwner = (frame: ParseFrame | null): ParseFrame | null => {
-      if (!frame) return null;
-      const ownerIndex = frame.ancestorEndTagOwnerIndex;
-      return ownerIndex >= 0 ? (stack[ownerIndex] ?? null) : null;
-    };
+  const getEndTagOwner = (frame: ParseFrame | null): ParseFrame | null => {
+    if (!frame) return null;
+    if (frame.inlineCloseToken === endTag) return frame;
+    return getAncestorEndTagOwner(frame);
+  };
 
-    const getEndTagOwner = (frame: ParseFrame | null): ParseFrame | null => {
-      if (!frame) return null;
-      if (frame.inlineCloseToken === endTag) return frame;
-      return getAncestorEndTagOwner(frame);
-    };
-
-    const hasEndTagOwnerAt = (frame: ParseFrame | null, at: number): boolean => {
-      const owner = getEndTagOwner(frame);
-      return !!owner && scanEndTagAt(owner.text, at, owner.textEnd) === "full";
-    };
-
-    if (input.phase === "push") {
-      const info = input.info;
-      if (!info) return "allow";
-      const frame = input.frame;
-
-      // `name<` 的 argStart 与父级 endTag 完全重叠时，优先父级闭合。
-      if (
-        frame.inlineCloseToken === endTag &&
-        scanEndTagAt(frame.text, info.argStart, frame.textEnd) === "full"
-      ) {
-        return "defer-parent";
-      }
-
-      if (hasEndTagOwnerAt(getAncestorEndTagOwner(frame), info.argStart)) {
-        return "defer-parent";
-      }
-
-      if (frame.inlineCloseToken !== endTag) return "allow";
-
-      const shorthandProbe = frame.shorthandProbe;
-      const canReuseProbe =
-        shorthandProbe !== null &&
-        shorthandProbe.textEnd === frame.textEnd &&
-        info.argStart >= shorthandProbe.startI &&
-        info.argStart <= shorthandProbe.boundaryI;
-
-      if (!canReuseProbe) {
-        let boundary = frame.textEnd;
-        let reject = false;
-        let probe = info.argStart;
-        while (probe < frame.textEnd) {
-          const [escaped, nextEsc] = readEscapedSequence(frame.text, probe, syntax);
-          if (escaped !== null) {
-            probe = nextEsc;
-            continue;
-          }
-          if (readTagStartInfo(frame.text, probe, syntax, tagName)) {
-            boundary = probe;
-            reject = false;
-            break;
-          }
-          if (frame.text.startsWith(tagClose, probe)) {
-            boundary = probe;
-            reject = scanEndTagAt(frame.text, probe, frame.textEnd) === "full";
-            break;
-          }
-          probe++;
-        }
-
-        frame.shorthandProbe = {
-          textEnd: frame.textEnd,
-          startI: info.argStart,
-          boundaryI: boundary,
-          reject,
-        };
-      }
-
-      return frame.shorthandProbe?.reject ? "defer-parent" : "allow";
-    }
-
-    if (input.phase === "close") {
-      const at = input.at;
-      if (at === undefined) return "allow";
-      const frame = input.frame;
-      if (!frame.implicitInlineShorthand) return "allow";
-      return hasEndTagOwnerAt(input.parent, at) ? "defer-parent" : "allow";
-    }
-
-    return "allow";
+  const hasEndTagOwnerAt = (frame: ParseFrame | null, at: number): boolean => {
+    const owner = getEndTagOwner(frame);
+    return !!owner && scanEndTagAt(owner.text, endTag, at, owner.textEnd) === "full";
   };
 
   const tryPushInlineShorthandChild = (
@@ -786,14 +689,24 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     tagStartI: number,
     info: ShorthandStartInfo,
   ): boolean => {
-    if (
-      resolveShorthandOwnership({
-        phase: "push",
-        frame,
-        parent: null,
-        info,
-      }) === "defer-parent"
-    ) {
+    const ownership = resolveShorthandOwnershipPush({
+      argStart: info.argStart,
+      frameInlineCloseToken: frame.inlineCloseToken,
+      frameText: frame.text,
+      frameTextEnd: frame.textEnd,
+      endTag,
+      tagClose,
+      currentProbe: frame.shorthandProbe,
+      hasAncestorEndTagOwnerAt: at => hasEndTagOwnerAt(getAncestorEndTagOwner(frame), at),
+      readEscapedNext: at => {
+        const [escaped, nextEsc] = readEscapedSequence(frame.text, at, syntax);
+        return escaped !== null ? nextEsc : null;
+      },
+      hasTagStartAt: at => Boolean(readTagStartInfo(frame.text, at, syntax, tagName)),
+    });
+    frame.shorthandProbe = ownership.nextProbe;
+    // 对应测试: [Coverage/Structural] shorthand ownership probe should skip escaped sequence before boundary
+    if (ownership.decision === "defer-parent") {
       return false;
     }
 
@@ -816,7 +729,15 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     return true;
   };
 
-  const emitUnclosedInlineFrameError = (frame: ParseFrame) => {
+  interface UnclosedInlineErrorFrame {
+    implicitInlineShorthand: boolean;
+    text: string;
+    tagStartI: number;
+    argStartI: number;
+    tagOpenPos: number;
+  }
+
+  const emitUnclosedInlineFrameError = (frame: UnclosedInlineErrorFrame) => {
     emitError(
       tracker,
       onError,
@@ -829,27 +750,30 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
   };
 
   const replayMalformedInlineChainAtEof = (frame: ParseFrame): boolean => {
-    let replayFrame: ParseFrame = frame;
+    const replayPlan = buildMalformedInlineReplayPlan(frame, parentIndex =>
+      parentIndex >= 0 ? (stack[parentIndex] ?? null) : null,
+    );
 
-    while (true) {
+    for (let index = 0; index < replayPlan.chain.length; index++) {
+      const replayFrame = replayPlan.chain[index];
       emitUnclosedInlineFrameError(replayFrame);
       stack.pop();
-
-      const parent =
-        replayFrame.parentIndex >= 0 ? (stack[replayFrame.parentIndex] ?? null) : null;
-      if (!parent) {
-        return true;
-      }
-      if (stack[stack.length - 1] !== parent) {
-        throw new Error("Malformed EOF inline replay expects parent to be the current stack top.");
-      }
-      if (parent.inlineCloseToken === null) {
-        appendBuf(parent, replayFrame.tagStartI, replayFrame.argStartI);
-        parent.i = replayFrame.argStartI;
-        return true;
-      }
-      replayFrame = parent;
     }
+
+    if (replayPlan.resumeParentIndex < 0) {
+      return true;
+    }
+    const parent = stack[replayPlan.resumeParentIndex];
+    if (!parent) {
+      return true;
+    }
+    if (stack[stack.length - 1] !== parent) {
+      throw new Error("Malformed EOF inline replay expects parent to be the current stack top.");
+    }
+    // 对应测试: [Coverage/Structural] malformed inline chain at EOF should replay once and degrade to full source text
+    appendBuf(parent, replayPlan.resumeTagStartI, replayPlan.resumeArgStartI);
+    parent.i = replayPlan.resumeArgStartI;
+    return true;
   };
 
   // ── 主循环 ──
@@ -867,15 +791,13 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       const parent = frame.parentIndex >= 0 ? stack[frame.parentIndex] : null;
       // full-form close 与 shorthand close 竞争时，先让 full-form close 拥有 token。
       if (
-        scanEndTagAt(frameText, i, frame.textEnd) === "full" &&
-        resolveShorthandOwnership({
-          phase: "close",
-          frame,
-          parent,
-          at: i,
-        }) === "defer-parent"
+        scanEndTagAt(frameText, endTag, i, frame.textEnd) === "full" &&
+        resolveShorthandOwnershipClose(i, frame.implicitInlineShorthand, at =>
+          hasEndTagOwnerAt(parent, at),
+        ) === "defer-parent"
       ) {
         stack.pop();
+        // 对应测试: [Coverage/Structural] shorthand defer-parent downgrade should merge adjacent text with continuous position
         return downgradeInlineIntoParent(frame, i);
       }
 
@@ -890,7 +812,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     if (!frameText.startsWith(tagClose, i)) return false;
 
     // ) 系列判定（完整 DSL inline 参数区）
-    if (scanEndTagAt(frameText, i, frame.textEnd) === "full") {
+    if (scanEndTagAt(frameText, endTag, i, frame.textEnd) === "full") {
       // )$$ → inline close
       flushBuffer(frame);
       frame.inlineCloseWidth = endTag.length;
@@ -1293,7 +1215,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
 
     // ── 非 inline 帧的意外 endTag ──
     // 非 inline 帧不存在合法 endTag 闭合；只消费 tagClose，把 tagPrefix 留给下一轮 tag 识别。
-    if (scanEndTagAt(frameText, i, frame.textEnd) === "full") {
+    if (scanEndTagAt(frameText, endTag, i, frame.textEnd) === "full") {
       const nextIsTag = readTagStartInfo(frameText, i + tagClose.length, syntax, tagName);
       if (!nextIsTag) {
         emitError(
