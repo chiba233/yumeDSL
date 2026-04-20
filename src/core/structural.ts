@@ -24,6 +24,9 @@
 //   ~399  ── 子帧完成分发 ──     completeChild：按 returnKind 统一组装节点
 //   ~469  buildComplexMeta       raw / block 的 meta + position 构造
 //   ~492  pushInlineChild        push inline 子帧（lazy close，不预扫）
+//   ~670  ownership 辅助         getAncestorEndTagOwner / hasEndTagOwnerAt
+//   ~690  shorthand ownership    resolveShorthandOwnershipPush（来自 structuralOwnership.ts）
+//   ~752  EOF replay             buildMalformedInlineReplayPlan（来自 structuralOwnership.ts）
 //
 //  主循环（~1161 while）：
 //  ~1120  帧完成                 textEnd 到达 / inline 未闭合处理
@@ -35,6 +38,12 @@
 //   ~704  深度限制退化           skipTagBoundary
 //   ~758  inline 帧嵌套标签      gating 检查 + pushInlineChild（跳过 getTagCloserType）
 //   ~885  非 inline 帧 form 判定 getTagCloserType → inline / raw / block 分发
+//
+//  抽离模块：
+//  structuralOwnership.ts
+//   - scanEndTagAt
+//   - resolveShorthandOwnershipPush / resolveShorthandOwnershipClose
+//   - buildMalformedInlineReplayPlan
 //
 //  ~1279  ── Public API ──       parseStructuralWithResolved / parseStructural
 // ═══════════════════════════════════════════════════════════════
