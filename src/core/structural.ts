@@ -788,6 +788,28 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
   // ── 主循环 ──
 
   const stack: ParseFrame[] = [makeFrame(text, depth, insideArgs, baseOffset)];
+  // ── tryConsumeInlineCloseAtCursor 决策路径 ──
+  //
+  // 前置: frame.inlineCloseToken !== null （否则直接 return false）
+  //
+  // ┌─ 分支 A: inlineCloseToken === tagClose （shorthand 子帧，只吃一个 tagClose）
+  // │  ├─ scanEndTagAt === "full" 且 ownership 判定 defer-parent
+  // │  │   → 当前 shorthand 帧降级回父帧（downgradeInlineIntoParent）
+  // │  ├─ startsWith(tagClose)
+  // │  │   → 正常 shorthand 关闭，completeChild
+  // │  └─ 否则 → return false（当前字符不是关闭 token）
+  // │
+  // └─ 分支 B: inlineCloseToken !== tagClose （完整 DSL 子帧，需要吃 endTag）
+  //    ├─ scanEndTagAt === "full"       → )$$ 关闭，completeChild
+  //    ├─ startsWith(rawOpen)           → )% raw form 转换
+  //    │   ├─ findRawClose 失败         → 报错，降级为文本
+  //    │   ├─ gating 拒绝 raw           → 整段降级为文本
+  //    │   └─ 正常 raw 路径             → buildComplexMeta + pushNode
+  //    ├─ startsWith(blockOpen)         → )* block form 转换
+  //    │   ├─ findBlockClose 失败       → 报错，降级为文本
+  //    │   ├─ gating 拒绝 block         → 整段降级为文本
+  //    │   └─ 正常 block 路径           → buildComplexMeta + pushChildFrame(blockContent)
+  //    └─ 否则                          → ) 当普通文本消费
   const tryConsumeInlineCloseAtCursor = (
     frame: ParseFrame,
     frameText: string,
@@ -796,6 +818,11 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     if (frame.inlineCloseToken === null) return false;
     const { tagClose, rawOpen, blockOpen, blockClose } = syntax;
 
+    // ── 分支 A: shorthand 子帧（inlineCloseToken === tagClose）──
+    // shorthand 帧优先判定：shorthand 子帧的 close token 是单个 tagClose，
+    // 而完整 DSL 子帧的 close token 是 endTag（tagClose + tagPrefix）。
+    // 必须先处理 shorthand，因为 endTag 以 tagClose 开头——
+    // 如果先走分支 B，shorthand 帧的 ) 会被误匹配为 endTag 的前缀。
     if (frame.inlineCloseToken === tagClose) {
       const parent = frame.parentIndex >= 0 ? stack[frame.parentIndex] : null;
       // full-form close 与 shorthand close 竞争时，先让 full-form close 拥有 token。
@@ -821,9 +848,12 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       return true;
     }
 
+    // ── 分支 B: 完整 DSL 子帧（inlineCloseToken === endTag）──
+    // 此处 tagClose 是 endTag 的前缀。先确认 tagClose 存在，
+    // 然后按 endTag / rawOpen / blockOpen 顺序判定具体 form。
     if (!frameText.startsWith(tagClose, i)) return false;
 
-    // ) 系列判定（完整 DSL inline 参数区）
+    // )$$ → endTag 完整匹配 → inline 正常关闭
     if (scanEndTagAt(frameText, endTag, i, frame.textEnd) === "full") {
       // )$$ → inline close
       flushBuffer(frame);
@@ -966,6 +996,32 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     frame.i += tagClose.length;
     return true;
   };
+  // ── tryConsumeTagOrTextAtCursor 决策路径 ──
+  //
+  // 1. readTagStartInfo 失败（不是标签头）
+  //    ├─ inline 帧内 → 尝试 shorthand 识别，否则当文本
+  //    └─ 非 inline 帧 → 单字符文本推进
+  //
+  // 2. readTagStartInfo 成功（识别到 $$tag( 开头）
+  //    ├─ depth >= depthLimit → 整个标签降级为文本，报错
+  //    ├─ inline 帧内（inlineCloseToken !== null）
+  //    │   → 直接 tryPushInlineChild，跳过 getTagCloserType
+  //    │     原因：inline 帧内的嵌套标签始终以 inline 方式解析，
+  //    │     form 判定由子帧自己在遇到 )$$ / )% / )* 时决定。
+  //    │   ├─ gating 允许 → push 子帧
+  //    │   └─ gating 拒绝 → skipTagBoundary 降级为文本
+  //    │
+  //    └─ 非 inline 帧 → getTagCloserType 确定 form
+  //        ├─ closerInfo === null（括号不配对）→ 退入 lazy inline 模式
+  //        ├─ closer === endTag   → inline 形态，tryPushInlineChild
+  //        ├─ closer === rawClose → raw 形态
+  //        │   ├─ findRawClose 失败 → 报错，降级为文本
+  //        │   ├─ gating 拒绝 raw  → 降级为文本
+  //        │   └─ 正常 raw 路径    → buildComplexMeta + pushChildFrame(rawArgs)
+  //        └─ 其它（blockClose）   → block 形态
+  //            ├─ findBlockClose 失败 → 报错，降级为文本
+  //            ├─ gating 拒绝 block  → 降级为文本
+  //            └─ 正常 block 路径    → buildComplexMeta + pushChildFrame(blockArgs)
   const tryConsumeTagOrTextAtCursor = (
     frame: ParseFrame,
     frameText: string,
@@ -1183,10 +1239,27 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     return true;
   };
 
+  // ══════════════════════════════════════════════════════════════
+  // 主循环调度优先级（高 → 低）
+  //
+  // 每轮迭代从栈顶取帧，按以下优先级依次尝试，命中即 continue：
+  //
+  //  1. 帧 EOF 收尾        — 游标到达 textEnd，收尾当前帧（含 inline 未闭合 replay）
+  //  2. 快速文本跳过        — 连续非边界字符批量 appendBuf，跳过逐字符开销
+  //  3. 转义序列            — escapeChar 开头，产出 escape 节点
+  //  4. inline 帧关闭检测   — )$$ / )% / )* / shorthand ) 判定（见上方决策树）
+  //  5. 非 inline 帧意外 endTag — 消费 tagClose 部分，留 tagPrefix 给下轮标签识别
+  //  6. 管道分隔符          — 仅参数区内，产出 separator 节点
+  //  7. 标签头 / 文本       — readTagStartInfo + form 分发（见上方决策树）
+  //  8. 兜底                — 单字符文本推进（防御性，正常路径不应到达）
+  //
+  // 顺序不可随意调换——例如 inline close 必须先于标签识别，
+  // 否则 )$$ 会被 readTagStartInfo 误读为新标签的起始。
+  // ══════════════════════════════════════════════════════════════
   while (stack.length > 0) {
     const frame = stack[stack.length - 1];
 
-    // ── 帧完成 ──
+    // ── 优先级 1: 帧 EOF 收尾 ──
     if (tryFinalizeFrameAtEof(frame)) {
       if (stack.length === 0) return frame.nodes;
       continue;
@@ -1195,6 +1268,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     const frameText = frame.text;
     const i = frame.i;
 
+    // ── 优先级 2: 快速文本跳过 ──
     if (shouldEnableFastTextSkip(frame)) {
       const boundary = findNextBoundaryChar(frame, i);
       if (boundary > i) {
@@ -1204,7 +1278,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       }
     }
 
-    // ── 转义序列 ──
+    // ── 优先级 3: 转义序列 ──
     const [escaped, next] = readEscapedForFrame(frameText, i, frame);
     if (escaped !== null) {
       flushBuffer(frame);
@@ -1217,7 +1291,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       continue;
     }
 
-    // ── inline 帧的 argClose 检测 ──
+    // ── 优先级 4: inline 帧关闭检测 ──
     //
     // inline 帧不再做裸括号配平。
     // 只在遇到 )$$ / )% / )* 时判定完整 form；shorthand 子帧只吃一个 )。
@@ -1225,7 +1299,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       continue;
     }
 
-    // ── 非 inline 帧的意外 endTag ──
+    // ── 优先级 5: 非 inline 帧的意外 endTag ──
     // 非 inline 帧不存在合法 endTag 闭合；只消费 tagClose，把 tagPrefix 留给下一轮 tag 识别。
     if (scanEndTagAt(frameText, endTag, i, frame.textEnd) === "full") {
       const nextIsTag = readTagStartInfo(frameText, i + tagClose.length, syntax, tagName);
@@ -1245,7 +1319,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       continue;
     }
 
-    // ── 管道分隔符（仅参数区内） ──
+    // ── 优先级 6: 管道分隔符（仅参数区内） ──
     if (frame.insideArgs && frameText.startsWith(tagDivider, i)) {
       flushBuffer(frame);
       pushNode(
@@ -1257,10 +1331,12 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       continue;
     }
 
+    // ── 优先级 7: 标签头 / 文本 ──
     if (tryConsumeTagOrTextAtCursor(frame, frameText, i)) {
       continue;
     }
 
+    // ── 优先级 8: 兜底 ──
     // 防御性兜底：避免未来重构导致该分支返回 false 时卡住游标。
     appendBuf(frame, i, i + 1);
     frame.i++;
