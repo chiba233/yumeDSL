@@ -12,32 +12,34 @@
 //
 // 文件导航（行号可能因编辑微调，但顺序不变）：
 //
-//    ~83  IndexedStructuralNode  内部节点类型（带 _meta）
-//   ~138  pushNode / node工厂     节点工具
-//   ~174  ScanContext            跨递归层共享的不可变配置
-//   ~187  parseNodes             主入口（下面全是它的内部定义）
+//    ~98  IndexedStructuralNode  内部节点类型（带 _meta）
+//   ~161  pushNode / node工厂     节点工具
+//   ~197  ScanContext            跨递归层共享的不可变配置
+//   ~210  parseNodesWithFactory  主入口（下面全是它的内部定义）
 //
-//  parseNodes 内部结构：
-//   ~263  ── 帧定义 ──           ParseFrame 接口 + ReturnKind 类型
-//   ~302  makeFrame              帧工厂
-//   ~340  ── 缓冲区 ──           flushBuffer / appendBuf
-//   ~399  ── 子帧完成分发 ──     completeChild：按 returnKind 统一组装节点
-//   ~469  buildComplexMeta       raw / block 的 meta + position 构造
-//   ~492  pushInlineChild        push inline 子帧（lazy close，不预扫）
-//   ~670  ownership 辅助         getAncestorEndTagOwner / hasEndTagOwnerAt
-//   ~690  shorthand ownership    resolveShorthandOwnershipPush（来自 structuralOwnership.ts）
-//   ~752  EOF replay             buildMalformedInlineReplayPlan（来自 structuralOwnership.ts）
+//  parseNodesWithFactory 内部结构：
+//   ~315  ── 帧定义 ──           ParseFrame 接口 + ReturnKind 类型
+//   ~352  makeFrame              帧工厂
+//   ~388  ── 缓冲区 ──           flushBuffer / appendBuf
+//   ~482  ── 子帧完成分发 ──     completeChild：按 returnKind 统一组装节点
+//   ~552  buildComplexMeta       raw / block 的 meta + position 构造
+//   ~584  emitCloseNotFoundError raw / block close 未找到的统一错误发射
+//   ~632  pushInlineChildFrame   push inline 子帧（lazy close，不预扫）
+//   ~707  ownership 辅助         getAncestorEndTagOwner / hasEndTagOwnerAt
+//   ~724  shorthand ownership    tryPushInlineShorthandChild
+//   ~777  未闭合 inline 错误     emitUnclosedInlineFrameError
+//   ~789  EOF replay             replayMalformedInlineChainAtEof
 //
-//  主循环（~1161 while）：
-//  ~1120  帧完成                 textEnd 到达 / inline 未闭合处理
-//  ~1173  转义序列               readEscapedSequence
-//  ~1186  inline 帧 argClose     )$$ / )% / )* form 判定 + shorthand 关闭
-//  ~1194  非 inline 帧意外 endTag
-//  ~1215  管道分隔符             insideArgs 时的 | 处理
-//  ~1226  标签头识别             readTagStartInfo + shorthand 识别
-//   ~704  深度限制退化           skipTagBoundary
-//   ~758  inline 帧嵌套标签      gating 检查 + pushInlineChild（跳过 getTagCloserType）
-//   ~885  非 inline 帧 form 判定 getTagCloserType → inline / raw / block 分发
+//  inline 帧关闭（拆分为三个函数）：
+//   ~829  tryCloseShorthandFrame      shorthand 子帧关闭（defer-parent / 正常关闭）
+//   ~878  tryCloseFullInlineFrame     完整 DSL 子帧关闭 / form 转换（endTag / raw / block）
+//  ~1021  tryConsumeInlineCloseAtCursor 薄调度层，按 inlineCloseToken 类型分派
+//
+//  标签 / 文本消费：
+//  ~1056  tryConsumeTagOrTextAtCursor  标签头识别 + form 分发（inline / raw / block）
+//
+//  主循环（~1267 while，优先级 1-8 见循环顶部注释）：
+//  ~1234  tryFinalizeFrameAtEof       帧 EOF 收尾
 //
 //  抽离模块：
 //  structuralOwnership.ts
@@ -45,7 +47,7 @@
 //   - resolveShorthandOwnershipPush / resolveShorthandOwnershipClose
 //   - buildMalformedInlineReplayPlan
 //
-//  ~1279  ── Public API ──       parseStructuralWithResolved / parseStructural
+//  ~1364  ── Public API ──       parseNodes / parseStructuralWithResolved / parseStructural
 // ═══════════════════════════════════════════════════════════════
 
 import type {
