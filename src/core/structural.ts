@@ -89,6 +89,7 @@ import {
 import { makePosition, type PositionTracker } from "../internal/positions.js";
 import {
   buildMalformedInlineReplayPlan,
+  type ReplayFrameLike,
   resolveShorthandOwnershipClose,
   resolveShorthandOwnershipPush,
   scanEndTagAt,
@@ -236,11 +237,8 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
   const blockContentEscapableTokens = getBlockContentEscapableTokens(syntax);
   let tagArgCloseCache: Map<number, number> | null = null;
 
-  const isRootFrame = (frame: ParseFrame): boolean =>
-    frame.parentIndex < 0 &&
-    frame.returnKind === null &&
-    frame.inlineCloseToken === null &&
-    !frame.insideArgs;
+  const isRootFrame = (frame: ParseFrame): frame is RootFrame =>
+    frame.returnKind === null && frame.parentIndex < 0 && !frame.insideArgs;
 
   const canReadEscapedForFrame = (frame: ParseFrame): boolean =>
     frame.insideArgs || frame.returnKind === "blockContent" || isRootFrame(frame);
@@ -280,11 +278,11 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
   const escapeLeadCode = escapeChar.charCodeAt(0);
 
   const findNextBoundaryChar = (frame: ParseFrame, from: number): number => {
-    const hasInlineCloseToken = frame.inlineCloseToken !== null;
+    const isInline = frame.returnKind === "inline";
     const canReadEscaped = canReadEscapedForFrame(frame);
-    const watchShorthandStart = Boolean(gating?.inlineShorthandEnabled && hasInlineCloseToken);
-    const inlineCloseLeadCode = hasInlineCloseToken
-      ? frame.inlineCloseToken!.charCodeAt(0)
+    const watchShorthandStart = Boolean(gating?.inlineShorthandEnabled && isInline);
+    const inlineCloseLeadCode = isInline
+      ? frame.inlineCloseToken.charCodeAt(0)
       : Number.NaN;
     for (let cursor = from; cursor < frame.textEnd; cursor++) {
       const currentCode = frame.text.charCodeAt(cursor);
@@ -292,7 +290,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       if (currentCode === tagPrefixLeadCode || currentCode === tagCloseLeadCode) return cursor;
       if (frame.insideArgs && currentCode === tagDividerLeadCode) return cursor;
       if (canReadEscaped && currentCode === escapeLeadCode) return cursor;
-      if (hasInlineCloseToken && currentCode === inlineCloseLeadCode) return cursor;
+      if (isInline && currentCode === inlineCloseLeadCode) return cursor;
     }
     return frame.textEnd;
   };
@@ -303,9 +301,9 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     );
   }
 
-  // ── 帧定义 ──
+  // ── 帧定义（discriminated union） ──
   //
-  // returnKind 决定子帧完成后怎么把结果交给父帧：
+  // returnKind 决定子帧完成后怎么把结果交给父帧，同时作为类型判别字段：
   //   null           — 根帧，完成后直接 return
   //   "inline"       — 子节点是 inline 标签的 children；lazy close，不预扫
   //   "rawArgs"      — 子节点是 raw 标签的 args
@@ -313,77 +311,173 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
   //   "blockContent" — 子节点是 block 标签的 children
   //
   // 没有 resume 闭包。子帧完成后由 completeChild 按 returnKind 分发。
+  //
+  // 各帧类型只携带自己需要的字段，TS 在 switch/if narrow 后自动补全。
+  // pendingArgs 留在 FrameBase 上，因为任意帧都可能成为 blockArgs 的父帧。
 
-  type ReturnKind = "inline" | "rawArgs" | "blockArgs" | "blockContent";
-  interface ParseFrame {
+  interface FrameBase {
     text: string;
     depth: number;
     insideArgs: boolean;
     baseOffset: number;
     i: number;
-    textEnd: number; // scan boundary; inline 帧初始为 text.length，其余等于 text.length
+    textEnd: number;
     nodes: TNode[];
     buf: BufferState;
-
-    // ── 返回槽位 ──
-    returnKind: ReturnKind | null;
-    parentIndex: number; // parent 在 stack 中的 index
-    tag: string; // 标签名
-    meta: TagMeta | null; // 预算好的 meta（inline 在关闭时才算）
+    parentIndex: number;
+    tag: string;
     tagPosition: SourceSpan | undefined;
-
-    // ── inline 专用：lazy close ──
-    inlineCloseToken: string | null; // non-null 表示这个帧遇到 close token 时自行关闭
-    inlineCloseWidth: number; // 关闭时消费的源码长度（可为 0，用于被完整 DSL 打断）
-    implicitInlineShorthand: boolean; // name(...) shorthand 子帧
-    tagStartI: number; // 标签头在 text 中的起始位置
-    argStartI: number; // info.argStart
-    tagOpenPos: number; // info.tagOpenPos，用于 error span
-
-    // ── block 专用：两阶段中间存储 ──
-    pendingArgs: TNode[] | null; // blockArgs 完成后暂存
-    contentStartI: number; // block content 起始位置
-    contentEndI: number; // block/raw content 结束位置
-
-    // ── shorthand 前探缓存（仅父 inline endTag 模式使用） ──
-    // 按需创建，避免每个帧常驻 4 个探测字段。
-    shorthandProbe: ShorthandProbeState | null;
     ancestorEndTagOwnerIndex: number;
+    pendingArgs: TNode[] | null; // blockArgs 完成后暂存到父帧上
   }
 
-  const makeFrame = (
+  interface RootFrame extends FrameBase {
+    returnKind: null;
+  }
+
+  interface InlineFrame extends FrameBase {
+    returnKind: "inline";
+    inlineCloseToken: string;   // 遇到此 token 时自行关闭
+    inlineCloseWidth: number;   // 关闭时消费的源码长度
+    implicitInlineShorthand: boolean; // name(...) shorthand 子帧
+    tagStartI: number;          // 标签头在 text 中的起始位置
+    argStartI: number;          // info.argStart
+    tagOpenPos: number;         // info.tagOpenPos，用于 error span
+    shorthandProbe: ShorthandProbeState | null; // shorthand 前探缓存
+  }
+
+  interface RawArgsFrame extends FrameBase {
+    returnKind: "rawArgs";
+    meta: TagMeta;              // 预算好的 meta
+    contentStartI: number;      // raw content 起始位置
+    contentEndI: number;        // raw content 结束位置
+  }
+
+  interface BlockArgsFrame extends FrameBase {
+    returnKind: "blockArgs";
+    meta: TagMeta;
+    contentStartI: number;
+    contentEndI: number;
+  }
+
+  interface BlockContentFrame extends FrameBase {
+    returnKind: "blockContent";
+    meta: TagMeta;
+  }
+
+  type ParseFrame = RootFrame | InlineFrame | RawArgsFrame | BlockArgsFrame | BlockContentFrame;
+
+  // ── 帧工厂 ──
+
+  const baseFields = (
     frameText: string,
     frameDepth: number,
     frameInsideArgs: boolean,
     frameBaseOffset: number,
-    frameTextStart = 0,
-    frameTextEnd = frameText.length,
-  ): ParseFrame => ({
+    frameTextStart: number,
+    frameTextEnd: number,
+    parentIndex: number,
+    tag: string,
+    tagPosition: SourceSpan | undefined,
+    ancestorEndTagOwnerIndex: number,
+  ) => ({
     text: frameText,
     depth: frameDepth,
     insideArgs: frameInsideArgs,
     baseOffset: frameBaseOffset,
     i: frameTextStart,
     textEnd: frameTextEnd,
-    nodes: [],
+    nodes: [] as TNode[],
     buf: emptyBuffer(),
-    returnKind: null,
-    parentIndex: -1,
-    tag: "",
-    meta: null,
-    tagPosition: undefined,
-    inlineCloseToken: null,
-    inlineCloseWidth: 0,
-    implicitInlineShorthand: false,
-    tagStartI: 0,
-    argStartI: 0,
-    tagOpenPos: 0,
-    pendingArgs: null,
-    contentStartI: 0,
-    contentEndI: 0,
-    shorthandProbe: null,
-    ancestorEndTagOwnerIndex: -1,
+    parentIndex,
+    tag,
+    tagPosition,
+    ancestorEndTagOwnerIndex,
+    pendingArgs: null as TNode[] | null,
   });
+
+  const makeRootFrame = (
+    frameText: string,
+    frameDepth: number,
+    frameInsideArgs: boolean,
+    frameBaseOffset: number,
+  ): RootFrame => ({
+    ...baseFields(frameText, frameDepth, frameInsideArgs, frameBaseOffset, 0, frameText.length, -1, "", undefined, -1),
+    returnKind: null,
+  });
+
+  interface InlineFrameInit {
+    text: string;
+    depth: number;
+    baseOffset: number;
+    textEnd: number;
+    parentIndex: number;
+    tag: string;
+    ancestorEndTagOwnerIndex: number;
+    inlineCloseToken: string;
+    implicitInlineShorthand: boolean;
+    tagStartI: number;
+    argStartI: number;
+    tagOpenPos: number;
+  }
+
+  const makeInlineFrame = (init: InlineFrameInit): InlineFrame => ({
+    ...baseFields(init.text, init.depth, true, init.baseOffset, init.argStartI, init.textEnd, init.parentIndex, init.tag, undefined, init.ancestorEndTagOwnerIndex),
+    returnKind: "inline",
+    inlineCloseToken: init.inlineCloseToken,
+    inlineCloseWidth: 0,
+    implicitInlineShorthand: init.implicitInlineShorthand,
+    tagStartI: init.tagStartI,
+    argStartI: init.argStartI,
+    tagOpenPos: init.tagOpenPos,
+    shorthandProbe: null,
+  });
+
+  interface ComplexFrameInit {
+    text: string;
+    depth: number;
+    baseOffset: number;
+    textStart: number;
+    textEnd: number;
+    parentIndex: number;
+    tag: string;
+    meta: TagMeta;
+    tagPosition: SourceSpan | undefined;
+    ancestorEndTagOwnerIndex: number;
+  }
+
+  const makeRawArgsFrame = (
+    init: ComplexFrameInit,
+    contentStartI: number,
+    contentEndI: number,
+  ): RawArgsFrame => ({
+    ...baseFields(init.text, init.depth, true, init.baseOffset, init.textStart, init.textEnd, init.parentIndex, init.tag, init.tagPosition, init.ancestorEndTagOwnerIndex),
+    returnKind: "rawArgs",
+    meta: init.meta,
+    contentStartI,
+    contentEndI,
+  });
+
+  const makeBlockArgsFrame = (
+    init: ComplexFrameInit,
+    contentStartI: number,
+    contentEndI: number,
+  ): BlockArgsFrame => ({
+    ...baseFields(init.text, init.depth, true, init.baseOffset, init.textStart, init.textEnd, init.parentIndex, init.tag, init.tagPosition, init.ancestorEndTagOwnerIndex),
+    returnKind: "blockArgs",
+    meta: init.meta,
+    contentStartI,
+    contentEndI,
+  });
+
+  const makeBlockContentFrame = (
+    init: ComplexFrameInit,
+  ): BlockContentFrame => ({
+    ...baseFields(init.text, init.depth, false, init.baseOffset, init.textStart, init.textEnd, init.parentIndex, init.tag, init.tagPosition, init.ancestorEndTagOwnerIndex),
+    returnKind: "blockContent",
+    meta: init.meta,
+  });
+
 
   // ── 缓冲区 ──
 
@@ -463,7 +557,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     }
   };
 
-  const downgradeInlineIntoParent = (frame: ParseFrame, nextParentI: number): boolean => {
+  const downgradeInlineIntoParent = (frame: InlineFrame, nextParentI: number): boolean => {
     const parent = stack[frame.parentIndex];
     if (!parent) return true;
     // inline 子帧降级回父帧：
@@ -481,71 +575,74 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
 
   // ── 子帧完成分发 ──
 
-  const completeChild = (child: ParseFrame) => {
+  const completeChild = (child: InlineFrame | RawArgsFrame | BlockArgsFrame | BlockContentFrame) => {
     const parent = stack[child.parentIndex];
     const childNodes = child.nodes;
 
     // 所有子帧都在这里统一"回填"到父帧。
     // 好处是主循环只负责扫描和入栈，真正的组装策略集中在一个地方，
     // 不会在多个分支里重复写"父帧如何接 child"。
-    const kind = child.returnKind;
-    if (kind === "inline") {
-      const closeStart = child.i; // child.i 停在 endTag 的位置
-      const nextI = closeStart + child.inlineCloseWidth;
-      const base = parent.baseOffset;
-      const argOff = base + child.argStartI;
-      const closeOff = base + closeStart;
-      const meta: TagMeta = {
-        start: base + child.tagStartI,
-        end: base + nextI,
-        argStart: argOff,
-        argEnd: closeOff,
-        contentStart: argOff,
-        contentEnd: closeOff,
-      };
-      parent.i = nextI;
-      pushNode(
-        parent.nodes,
-        factory.inline(child.tag, childNodes, meta, child.implicitInlineShorthand),
-        makePosition(tracker, meta.start, meta.end),
-      );
-    } else if (kind === "rawArgs") {
-      pushNode(
-        parent.nodes,
-        factory.raw(
-          child.tag,
-          childNodes,
-          child.text.slice(child.contentStartI, child.contentEndI),
-          child.meta!,
-        ),
-        child.tagPosition,
-      );
-    } else if (kind === "blockArgs") {
-      // args 完成，暂存后 push content 帧
-      parent.pendingArgs = childNodes;
-      const content = makeFrame(
-        child.text,
-        parent.depth + 1,
-        false,
-        parent.baseOffset,
-        child.contentStartI,
-        child.contentEndI,
-      );
-      pushChildFrame(
-        content,
-        "blockContent",
-        child.parentIndex,
-        child.tag,
-        child.meta,
-        child.tagPosition,
-      );
-    } else if (kind === "blockContent") {
-      pushNode(
-        parent.nodes,
-        factory.block(child.tag, parent.pendingArgs!, childNodes, child.meta!),
-        child.tagPosition,
-      );
-      parent.pendingArgs = null;
+    switch (child.returnKind) {
+      case "inline": {
+        const closeStart = child.i; // child.i 停在 endTag 的位置
+        const nextI = closeStart + child.inlineCloseWidth;
+        const base = parent.baseOffset;
+        const argOff = base + child.argStartI;
+        const closeOff = base + closeStart;
+        const meta: TagMeta = {
+          start: base + child.tagStartI,
+          end: base + nextI,
+          argStart: argOff,
+          argEnd: closeOff,
+          contentStart: argOff,
+          contentEnd: closeOff,
+        };
+        parent.i = nextI;
+        pushNode(
+          parent.nodes,
+          factory.inline(child.tag, childNodes, meta, child.implicitInlineShorthand),
+          makePosition(tracker, meta.start, meta.end),
+        );
+        break;
+      }
+      case "rawArgs":
+        pushNode(
+          parent.nodes,
+          factory.raw(
+            child.tag,
+            childNodes,
+            child.text.slice(child.contentStartI, child.contentEndI),
+            child.meta, // TS 已知非 null
+          ),
+          child.tagPosition,
+        );
+        break;
+      case "blockArgs": {
+        // args 完成，暂存后 push content 帧
+        parent.pendingArgs = childNodes;
+        const content = makeBlockContentFrame({
+          text: child.text,
+          depth: parent.depth + 1,
+          baseOffset: parent.baseOffset,
+          textStart: child.contentStartI,
+          textEnd: child.contentEndI,
+          parentIndex: child.parentIndex,
+          tag: child.tag,
+          meta: child.meta,
+          tagPosition: child.tagPosition,
+          ancestorEndTagOwnerIndex: computeAncestorEndTagOwnerIndex(parent, child.parentIndex),
+        });
+        stack.push(content);
+        break;
+      }
+      case "blockContent":
+        pushNode(
+          parent.nodes,
+          factory.block(child.tag, parent.pendingArgs!, childNodes, child.meta), // TS 已知 meta 非 null
+          child.tagPosition,
+        );
+        parent.pendingArgs = null;
+        break;
     }
   };
 
@@ -603,24 +700,12 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     );
   };
 
-  const pushChildFrame = (
-    child: ParseFrame,
-    returnKind: ReturnKind,
-    parentIndex: number,
-    tag: string,
-    meta: TagMeta | null,
-    tagPosition: SourceSpan | undefined,
-  ) => {
-    const parent = stack[parentIndex];
-    child.returnKind = returnKind;
-    child.parentIndex = parentIndex;
-    child.tag = tag;
-    child.meta = meta;
-    child.tagPosition = tagPosition;
-    child.ancestorEndTagOwnerIndex =
-      parent.inlineCloseToken === endTag ? parentIndex : parent.ancestorEndTagOwnerIndex;
-    stack.push(child);
-  };
+  // ancestorEndTagOwnerIndex 计算：向上找最近的 endTag 模式 inline 祖先。
+  // 新子帧继承父帧的值，但如果父帧自身是 endTag 模式 inline 帧，用父帧 index。
+  const computeAncestorEndTagOwnerIndex = (parent: ParseFrame, parentIndex: number): number =>
+    (parent.returnKind === "inline" && parent.inlineCloseToken === endTag)
+      ? parentIndex
+      : parent.ancestorEndTagOwnerIndex;
 
   interface InlineChildInit {
     tag: string;
@@ -633,15 +718,22 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
 
   const pushInlineChildFrame = (frame: ParseFrame, init: InlineChildInit): void => {
     flushBuffer(frame);
-    const child = makeFrame(frame.text, frame.depth + 1, true, frame.baseOffset);
-    child.i = init.argStartI;
-    child.textEnd = frame.textEnd;
-    pushChildFrame(child, "inline", stack.length - 1, init.tag, null, undefined);
-    child.inlineCloseToken = init.closeToken;
-    child.implicitInlineShorthand = init.implicitInlineShorthand;
-    child.tagStartI = init.tagStartI;
-    child.argStartI = init.argStartI;
-    child.tagOpenPos = init.tagOpenPos;
+    const parentIndex = stack.length - 1;
+    const child = makeInlineFrame({
+      text: frame.text,
+      depth: frame.depth + 1,
+      baseOffset: frame.baseOffset,
+      textEnd: frame.textEnd,
+      parentIndex,
+      tag: init.tag,
+      ancestorEndTagOwnerIndex: computeAncestorEndTagOwnerIndex(frame, parentIndex),
+      inlineCloseToken: init.closeToken,
+      implicitInlineShorthand: init.implicitInlineShorthand,
+      tagStartI: init.tagStartI,
+      argStartI: init.argStartI,
+      tagOpenPos: init.tagOpenPos,
+    });
+    stack.push(child);
   };
 
   // ── inline 子帧 push ──
@@ -714,7 +806,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
 
   const getEndTagOwner = (frame: ParseFrame | null): ParseFrame | null => {
     if (!frame) return null;
-    if (frame.inlineCloseToken === endTag) return frame;
+    if (frame.returnKind === "inline" && frame.inlineCloseToken === endTag) return frame;
     return getAncestorEndTagOwner(frame);
   };
 
@@ -724,7 +816,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
   };
 
   const tryPushInlineShorthandChild = (
-    frame: ParseFrame,
+    frame: InlineFrame,
     tagStartI: number,
     info: ShorthandStartInfo,
   ): boolean => {
@@ -788,10 +880,29 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     );
   };
 
-  const replayMalformedInlineChainAtEof = (frame: ParseFrame): boolean => {
-    const replayPlan = buildMalformedInlineReplayPlan(frame, parentIndex =>
-      parentIndex >= 0 ? (stack[parentIndex] ?? null) : null,
-    );
+  // ParseFrame → ReplayFrameLike 适配：
+  // ReplayFrameLike 要求 inlineCloseToken: string | null，
+  // 但 discriminated union 里只有 InlineFrame 带该字段。
+  // 非 inline 帧返回 null 表示"不是 inline"，让 replay 算法在此停步。
+  const toReplayFrameLike = (frame: ParseFrame): ReplayFrameLike => {
+    if (frame.returnKind === "inline") return frame;
+    return {
+      text: frame.text,
+      parentIndex: frame.parentIndex,
+      inlineCloseToken: null,
+      implicitInlineShorthand: false,
+      tagStartI: 0,
+      argStartI: 0,
+      tagOpenPos: 0,
+    };
+  };
+
+  const replayMalformedInlineChainAtEof = (frame: InlineFrame): boolean => {
+    const replayPlan = buildMalformedInlineReplayPlan(frame, parentIndex => {
+      if (parentIndex < 0) return null;
+      const f = stack[parentIndex];
+      return f ? toReplayFrameLike(f) : null;
+    });
 
     for (let index = 0; index < replayPlan.chain.length; index++) {
       const replayFrame = replayPlan.chain[index];
@@ -817,7 +928,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
 
   // ── 主循环 ──
 
-  const stack: ParseFrame[] = [makeFrame(text, depth, insideArgs, baseOffset)];
+  const stack: ParseFrame[] = [makeRootFrame(text, depth, insideArgs, baseOffset)];
   // ── tryCloseShorthandFrame ──
   //
   // shorthand 子帧的关闭判定（inlineCloseToken === tagClose，只吃一个 )）。
@@ -829,7 +940,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
   //   │   → 正常 shorthand 关闭，completeChild
   //   └─ 否则 → return false（当前字符不是关闭 token）
   const tryCloseShorthandFrame = (
-    frame: ParseFrame,
+    frame: InlineFrame,
     frameText: string,
     i: number,
   ): boolean => {
@@ -878,7 +989,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
   //   │   └─ 正常 block 路径            → buildComplexMeta + pushChildFrame(blockContent)
   //   └─ 否则                           → ) 当普通文本消费
   const tryCloseFullInlineFrame = (
-    frame: ParseFrame,
+    frame: InlineFrame,
     frameText: string,
     i: number,
   ): boolean => {
@@ -989,22 +1100,19 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       // push content 帧
       parent.i = nextI;
       parent.pendingArgs = args;
-      const contentFrame = makeFrame(
-        frameText,
-        parent.depth + 1,
-        false,
-        parent.baseOffset,
-        contentStart,
-        closeStart,
-      );
-      pushChildFrame(
-        contentFrame,
-        "blockContent",
-        frame.parentIndex,
-        frame.tag,
-        metaResult.meta,
-        metaResult.pos,
-      );
+      const contentFrame = makeBlockContentFrame({
+        text: frameText,
+        depth: parent.depth + 1,
+        baseOffset: parent.baseOffset,
+        textStart: contentStart,
+        textEnd: closeStart,
+        parentIndex: frame.parentIndex,
+        tag: frame.tag,
+        meta: metaResult.meta,
+        tagPosition: metaResult.pos,
+        ancestorEndTagOwnerIndex: computeAncestorEndTagOwnerIndex(parent, frame.parentIndex),
+      });
+      stack.push(contentFrame);
       return true;
     }
 
@@ -1025,7 +1133,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     frameText: string,
     i: number,
   ): boolean => {
-    if (frame.inlineCloseToken === null) return false;
+    if (frame.returnKind !== "inline") return false;
     if (frame.inlineCloseToken === syntax.tagClose) return tryCloseShorthandFrame(frame, frameText, i);
     return tryCloseFullInlineFrame(frame, frameText, i);
   };
@@ -1063,7 +1171,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     // ── 标签头识别 ──
     const info = readTagStartInfo(frameText, i, syntax, tagName);
     if (!info) {
-      if (frame.inlineCloseToken !== null) {
+      if (frame.returnKind === "inline") {
         const shorthand = readInlineShorthandStart(frameText, i);
         if (shorthand && tryPushInlineShorthandChild(frame, i, shorthand)) {
           return true;
@@ -1092,7 +1200,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     }
 
     // ── inline 帧内的嵌套标签：直接 push 子帧，跳过 getTagCloserType ──
-    if (frame.inlineCloseToken !== null) {
+    if (frame.returnKind === "inline") {
       if (!tryPushInlineChild(frame, i, info)) {
         // 完整 DSL 结构优先于文本：即使当前 tag 不支持 inline form，
         // 也要整段降级为文本，避免把内层 )$$ 误判成当前层关闭。
@@ -1171,17 +1279,20 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       frame.i = nextI;
 
       // raw 正文不再递归扫描；只有参数区需要进入子帧继续产出结构节点。
-      const child = makeFrame(
-        frameText,
-        frame.depth + 1,
-        true,
-        frame.baseOffset,
-        info.argStart,
-        closerInfo.argClose,
-      );
-      pushChildFrame(child, "rawArgs", stack.length - 1, info.tag, meta, pos);
-      child.contentStartI = contentStart;
-      child.contentEndI = closeStart;
+      const parentIndex = stack.length - 1;
+      const child = makeRawArgsFrame({
+        text: frameText,
+        depth: frame.depth + 1,
+        baseOffset: frame.baseOffset,
+        textStart: info.argStart,
+        textEnd: closerInfo.argClose,
+        parentIndex,
+        tag: info.tag,
+        meta,
+        tagPosition: pos,
+        ancestorEndTagOwnerIndex: computeAncestorEndTagOwnerIndex(frame, parentIndex),
+      }, contentStart, closeStart);
+      stack.push(child);
       return true;
     }
 
@@ -1220,23 +1331,26 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     // 1. 先扫 args，得到 separator/text/inline 等结构
     // 2. 再扫正文，得到 children
     // 所以这里先压入 blockArgs 子帧，completeChild 再续推 content 帧。
-    const child = makeFrame(
-      frameText,
-      frame.depth + 1,
-      true,
-      frame.baseOffset,
-      info.argStart,
-      closerInfo.argClose,
-    );
-    pushChildFrame(child, "blockArgs", stack.length - 1, info.tag, meta, pos);
-    child.contentStartI = contentStart;
-    child.contentEndI = closeStart;
+    const parentIndex = stack.length - 1;
+    const child = makeBlockArgsFrame({
+      text: frameText,
+      depth: frame.depth + 1,
+      baseOffset: frame.baseOffset,
+      textStart: info.argStart,
+      textEnd: closerInfo.argClose,
+      parentIndex,
+      tag: info.tag,
+      meta,
+      tagPosition: pos,
+      ancestorEndTagOwnerIndex: computeAncestorEndTagOwnerIndex(frame, parentIndex),
+    }, contentStart, closeStart);
+    stack.push(child);
     return true;
   };
   const tryFinalizeFrameAtEof = (frame: ParseFrame): boolean => {
     if (frame.i < frame.textEnd) return false;
 
-    if (frame.inlineCloseToken !== null) {
+    if (frame.returnKind === "inline") {
       // EOF 下若连续祖先也都是未闭合 inline/shorthand，
       // 直接整条未闭合链退到第一个非 inline 容器，再只重扫一次。
       return replayMalformedInlineChainAtEof(frame);
