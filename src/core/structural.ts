@@ -369,32 +369,10 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
 
   // ── 帧工厂 ──
 
-  const baseFields = (
-    frameText: string,
-    frameDepth: number,
-    frameInsideArgs: boolean,
-    frameBaseOffset: number,
-    frameTextStart: number,
-    frameTextEnd: number,
-    parentIndex: number,
-    tag: string,
-    tagPosition: SourceSpan | undefined,
-    ancestorEndTagOwnerIndex: number,
-  ) => ({
-    text: frameText,
-    depth: frameDepth,
-    insideArgs: frameInsideArgs,
-    baseOffset: frameBaseOffset,
-    i: frameTextStart,
-    textEnd: frameTextEnd,
-    nodes: [] as TNode[],
-    buf: emptyBuffer(),
-    parentIndex,
-    tag,
-    tagPosition,
-    ancestorEndTagOwnerIndex,
-    pendingArgs: null as TNode[] | null,
-  });
+  // ── 帧工厂 ──
+  //
+  // 每个工厂直接构造完整对象字面量，不经过中间 spread。
+  // 这样每次建帧只分配一个对象，避免 baseFields() 产生的短命中间对象。
 
   const makeRootFrame = (
     frameText: string,
@@ -402,8 +380,20 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     frameInsideArgs: boolean,
     frameBaseOffset: number,
   ): RootFrame => ({
-    ...baseFields(frameText, frameDepth, frameInsideArgs, frameBaseOffset, 0, frameText.length, -1, "", undefined, -1),
     returnKind: null,
+    text: frameText,
+    depth: frameDepth,
+    insideArgs: frameInsideArgs,
+    baseOffset: frameBaseOffset,
+    i: 0,
+    textEnd: frameText.length,
+    nodes: [],
+    buf: emptyBuffer(),
+    parentIndex: -1,
+    tag: "",
+    tagPosition: undefined,
+    ancestorEndTagOwnerIndex: -1,
+    pendingArgs: null,
   });
 
   interface InlineFrameInit {
@@ -422,8 +412,20 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
   }
 
   const makeInlineFrame = (init: InlineFrameInit): InlineFrame => ({
-    ...baseFields(init.text, init.depth, true, init.baseOffset, init.argStartI, init.textEnd, init.parentIndex, init.tag, undefined, init.ancestorEndTagOwnerIndex),
     returnKind: "inline",
+    text: init.text,
+    depth: init.depth,
+    insideArgs: true,
+    baseOffset: init.baseOffset,
+    i: init.argStartI,
+    textEnd: init.textEnd,
+    nodes: [],
+    buf: emptyBuffer(),
+    parentIndex: init.parentIndex,
+    tag: init.tag,
+    tagPosition: undefined,
+    ancestorEndTagOwnerIndex: init.ancestorEndTagOwnerIndex,
+    pendingArgs: null,
     inlineCloseToken: init.inlineCloseToken,
     inlineCloseWidth: 0,
     implicitInlineShorthand: init.implicitInlineShorthand,
@@ -451,8 +453,20 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     contentStartI: number,
     contentEndI: number,
   ): RawArgsFrame => ({
-    ...baseFields(init.text, init.depth, true, init.baseOffset, init.textStart, init.textEnd, init.parentIndex, init.tag, init.tagPosition, init.ancestorEndTagOwnerIndex),
     returnKind: "rawArgs",
+    text: init.text,
+    depth: init.depth,
+    insideArgs: true,
+    baseOffset: init.baseOffset,
+    i: init.textStart,
+    textEnd: init.textEnd,
+    nodes: [],
+    buf: emptyBuffer(),
+    parentIndex: init.parentIndex,
+    tag: init.tag,
+    tagPosition: init.tagPosition,
+    ancestorEndTagOwnerIndex: init.ancestorEndTagOwnerIndex,
+    pendingArgs: null,
     meta: init.meta,
     contentStartI,
     contentEndI,
@@ -463,8 +477,20 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     contentStartI: number,
     contentEndI: number,
   ): BlockArgsFrame => ({
-    ...baseFields(init.text, init.depth, true, init.baseOffset, init.textStart, init.textEnd, init.parentIndex, init.tag, init.tagPosition, init.ancestorEndTagOwnerIndex),
     returnKind: "blockArgs",
+    text: init.text,
+    depth: init.depth,
+    insideArgs: true,
+    baseOffset: init.baseOffset,
+    i: init.textStart,
+    textEnd: init.textEnd,
+    nodes: [],
+    buf: emptyBuffer(),
+    parentIndex: init.parentIndex,
+    tag: init.tag,
+    tagPosition: init.tagPosition,
+    ancestorEndTagOwnerIndex: init.ancestorEndTagOwnerIndex,
+    pendingArgs: null,
     meta: init.meta,
     contentStartI,
     contentEndI,
@@ -473,8 +499,20 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
   const makeBlockContentFrame = (
     init: ComplexFrameInit,
   ): BlockContentFrame => ({
-    ...baseFields(init.text, init.depth, false, init.baseOffset, init.textStart, init.textEnd, init.parentIndex, init.tag, init.tagPosition, init.ancestorEndTagOwnerIndex),
     returnKind: "blockContent",
+    text: init.text,
+    depth: init.depth,
+    insideArgs: false,
+    baseOffset: init.baseOffset,
+    i: init.textStart,
+    textEnd: init.textEnd,
+    nodes: [],
+    buf: emptyBuffer(),
+    parentIndex: init.parentIndex,
+    tag: init.tag,
+    tagPosition: init.tagPosition,
+    ancestorEndTagOwnerIndex: init.ancestorEndTagOwnerIndex,
+    pendingArgs: null,
     meta: init.meta,
   });
 
