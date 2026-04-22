@@ -1137,7 +1137,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       return true;
     }
 
-    // ── Raw 形态 ��─
+    // ── Raw 形态 ──
     // 与 tryCloseFullInlineFrame 里的 raw 路径不同之处：
     // 这里 args 还未解析，需要推 rawArgs 子帧；completeChild 负责最终组装。
     if (closerInfo.closer === rawClose) {
