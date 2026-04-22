@@ -582,67 +582,61 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     // 所有子帧都在这里统一"回填"到父帧。
     // 好处是主循环只负责扫描和入栈，真正的组装策略集中在一个地方，
     // 不会在多个分支里重复写"父帧如何接 child"。
-    switch (child.returnKind) {
-      case "inline": {
-        const closeStart = child.i; // child.i 停在 endTag 的位置
-        const nextI = closeStart + child.inlineCloseWidth;
-        const base = parent.baseOffset;
-        const argOff = base + child.argStartI;
-        const closeOff = base + closeStart;
-        const meta: TagMeta = {
-          start: base + child.tagStartI,
-          end: base + nextI,
-          argStart: argOff,
-          argEnd: closeOff,
-          contentStart: argOff,
-          contentEnd: closeOff,
-        };
-        parent.i = nextI;
-        pushNode(
-          parent.nodes,
-          factory.inline(child.tag, childNodes, meta, child.implicitInlineShorthand),
-          makePosition(tracker, meta.start, meta.end),
-        );
-        break;
-      }
-      case "rawArgs":
-        pushNode(
-          parent.nodes,
-          factory.raw(
-            child.tag,
-            childNodes,
-            child.text.slice(child.contentStartI, child.contentEndI),
-            child.meta, // TS 已知非 null
-          ),
-          child.tagPosition,
-        );
-        break;
-      case "blockArgs": {
-        // args 完成，暂存后 push content 帧
-        parent.pendingArgs = childNodes;
-        const content = makeBlockContentFrame({
-          text: child.text,
-          depth: parent.depth + 1,
-          baseOffset: parent.baseOffset,
-          textStart: child.contentStartI,
-          textEnd: child.contentEndI,
-          parentIndex: child.parentIndex,
-          tag: child.tag,
-          meta: child.meta,
-          tagPosition: child.tagPosition,
-          ancestorEndTagOwnerIndex: computeAncestorEndTagOwnerIndex(parent, child.parentIndex),
-        });
-        stack.push(content);
-        break;
-      }
-      case "blockContent":
-        pushNode(
-          parent.nodes,
-          factory.block(child.tag, parent.pendingArgs!, childNodes, child.meta), // TS 已知 meta 非 null
-          child.tagPosition,
-        );
-        parent.pendingArgs = null;
-        break;
+    const kind = child.returnKind;
+    if (kind === "inline") {
+      const closeStart = child.i; // child.i 停在 endTag 的位置
+      const nextI = closeStart + child.inlineCloseWidth;
+      const base = parent.baseOffset;
+      const argOff = base + child.argStartI;
+      const closeOff = base + closeStart;
+      const meta: TagMeta = {
+        start: base + child.tagStartI,
+        end: base + nextI,
+        argStart: argOff,
+        argEnd: closeOff,
+        contentStart: argOff,
+        contentEnd: closeOff,
+      };
+      parent.i = nextI;
+      pushNode(
+        parent.nodes,
+        factory.inline(child.tag, childNodes, meta, child.implicitInlineShorthand),
+        makePosition(tracker, meta.start, meta.end),
+      );
+    } else if (kind === "rawArgs") {
+      pushNode(
+        parent.nodes,
+        factory.raw(
+          child.tag,
+          childNodes,
+          child.text.slice(child.contentStartI, child.contentEndI),
+          child.meta, // TS 已知非 null
+        ),
+        child.tagPosition,
+      );
+    } else if (kind === "blockArgs") {
+      // args 完成，暂存后 push content 帧
+      parent.pendingArgs = childNodes;
+      const content = makeBlockContentFrame({
+        text: child.text,
+        depth: parent.depth + 1,
+        baseOffset: parent.baseOffset,
+        textStart: child.contentStartI,
+        textEnd: child.contentEndI,
+        parentIndex: child.parentIndex,
+        tag: child.tag,
+        meta: child.meta,
+        tagPosition: child.tagPosition,
+        ancestorEndTagOwnerIndex: computeAncestorEndTagOwnerIndex(parent, child.parentIndex),
+      });
+      stack.push(content);
+    } else if (kind === "blockContent") {
+      pushNode(
+        parent.nodes,
+        factory.block(child.tag, parent.pendingArgs!, childNodes, child.meta), // TS 已知 meta 非 null
+        child.tagPosition,
+      );
+      parent.pendingArgs = null;
     }
   };
 
