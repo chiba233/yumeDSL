@@ -573,6 +573,34 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     return { meta, pos: makePosition(tracker, meta.start, meta.end), nextI };
   };
 
+  // ── close-not-found 错误发射 ──
+  //
+  // raw / block 的 close 查找失败时，统一走这个路径：
+  // 1. 尝试 findMalformedWholeLineTokenCandidate 定位"长得像但格式不对"的候选
+  // 2. 根据是否找到候选选择 MALFORMED / NOT_CLOSED 错误码
+  // 3. 通过 emitError 上报，emittedErrorKeys 防重复
+  //
+  // 调用方自行处理降级逻辑（inline 帧需 stack.pop + 操作 parent，非 inline 帧直接操作 frame）。
+  const emitCloseNotFoundError = (
+    frameText: string,
+    contentStart: number,
+    tagStartI: number,
+    closeToken: string,
+    malformedCode: "RAW_CLOSE_MALFORMED" | "BLOCK_CLOSE_MALFORMED",
+    unclosedCode: "RAW_NOT_CLOSED" | "BLOCK_NOT_CLOSED",
+  ): void => {
+    const malformed = findMalformedWholeLineTokenCandidate(frameText, contentStart, closeToken);
+    emitError(
+      tracker,
+      onError,
+      malformed ? malformedCode : unclosedCode,
+      frameText,
+      malformed?.index ?? tagStartI,
+      malformed?.length ?? contentStart - tagStartI,
+      emittedErrorKeys,
+    );
+  };
+
   const pushChildFrame = (
     child: ParseFrame,
     returnKind: ReturnKind,
@@ -865,6 +893,13 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       return true;
     }
 
+    // ── inline 帧内的 raw / block form 转换 ──
+    //
+    // 与 tryConsumeTagOrTextAtCursor 里的 raw/block 路径看起来相似但本质不同：
+    // 这里当前帧已经是 inline 子帧，frame.nodes 里已经有解析好的 args，
+    // 所以 raw 直接产出最终节点，block 直接推 blockContent 帧。
+    // 而 tryConsumeTagOrTextAtCursor 里 args 还未解析，
+    // 需要先推 rawArgs / blockArgs 子帧，由 completeChild 后续组装。
     if (frameText.startsWith(rawOpen, i)) {
       // )% → raw form
       const argClose = i;
@@ -874,20 +909,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       const tagStartI = frame.tagStartI;
 
       if (closeStart === -1) {
-        const malformed = findMalformedWholeLineTokenCandidate(
-          frameText,
-          contentStart,
-          syntax.rawClose,
-        );
-        emitError(
-          tracker,
-          onError,
-          malformed ? "RAW_CLOSE_MALFORMED" : "RAW_NOT_CLOSED",
-          frameText,
-          malformed?.index ?? tagStartI,
-          malformed?.length ?? contentStart - tagStartI,
-          emittedErrorKeys,
-        );
+        emitCloseNotFoundError(frameText, contentStart, tagStartI, syntax.rawClose, "RAW_CLOSE_MALFORMED", "RAW_NOT_CLOSED");
         // 降级：回退到父帧，整段当文本
         stack.pop();
         appendBuf(parent, tagStartI, contentStart);
@@ -932,16 +954,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       const tagStartI = frame.tagStartI;
 
       if (closeStart === -1) {
-        const malformed = findMalformedWholeLineTokenCandidate(frameText, contentStart, blockClose);
-        emitError(
-          tracker,
-          onError,
-          malformed ? "BLOCK_CLOSE_MALFORMED" : "BLOCK_NOT_CLOSED",
-          frameText,
-          malformed?.index ?? tagStartI,
-          malformed?.length ?? contentStart - tagStartI,
-          emittedErrorKeys,
-        );
+        emitCloseNotFoundError(frameText, contentStart, tagStartI, blockClose, "BLOCK_CLOSE_MALFORMED", "BLOCK_NOT_CLOSED");
         stack.pop();
         appendBuf(parent, tagStartI, contentStart);
         parent.i = contentStart;
@@ -1122,26 +1135,15 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       return true;
     }
 
-    // ── Raw 形态 ──
+    // ── Raw 形态 ��─
+    // 与 tryCloseFullInlineFrame 里的 raw 路径不同之处：
+    // 这里 args 还未解析，需要推 rawArgs 子帧；completeChild 负责最终组装。
     if (closerInfo.closer === rawClose) {
       const contentStart = closerInfo.argClose + syntax.rawOpen.length;
       const closeStart = findRawClose(frameText, contentStart, syntax);
 
       if (closeStart === -1) {
-        const malformed = findMalformedWholeLineTokenCandidate(
-          frameText,
-          contentStart,
-          syntax.rawClose,
-        );
-        emitError(
-          tracker,
-          onError,
-          malformed ? "RAW_CLOSE_MALFORMED" : "RAW_NOT_CLOSED",
-          frameText,
-          malformed?.index ?? i,
-          malformed?.length ?? contentStart - i,
-          emittedErrorKeys,
-        );
+        emitCloseNotFoundError(frameText, contentStart, i, syntax.rawClose, "RAW_CLOSE_MALFORMED", "RAW_NOT_CLOSED");
         appendBuf(frame, i, contentStart);
         frame.i = contentStart;
         return true;
@@ -1182,24 +1184,12 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     }
 
     // ── Block 形态 ──
+    // 同 raw，args 未解析，先推 blockArgs 子帧；completeChild 续推 blockContent。
     const contentStart = closerInfo.argClose + syntax.blockOpen.length;
     const closeStart = findBlockClose(frameText, contentStart, syntax, tagName);
 
     if (closeStart === -1) {
-      const malformed = findMalformedWholeLineTokenCandidate(
-        frameText,
-        contentStart,
-        syntax.blockClose,
-      );
-      emitError(
-        tracker,
-        onError,
-        malformed ? "BLOCK_CLOSE_MALFORMED" : "BLOCK_NOT_CLOSED",
-        frameText,
-        malformed?.index ?? i,
-        malformed?.length ?? contentStart - i,
-        emittedErrorKeys,
-      );
+      emitCloseNotFoundError(frameText, contentStart, i, syntax.blockClose, "BLOCK_CLOSE_MALFORMED", "BLOCK_NOT_CLOSED");
       appendBuf(frame, i, contentStart);
       frame.i = contentStart;
       return true;
