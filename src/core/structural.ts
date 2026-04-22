@@ -799,12 +799,15 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     if (frame.inlineCloseToken === tagClose) {
       const parent = frame.parentIndex >= 0 ? stack[frame.parentIndex] : null;
       // full-form close 与 shorthand close 竞争时，先让 full-form close 拥有 token。
-      if (
-        scanEndTagAt(frameText, endTag, i, frame.textEnd) === "full" &&
-        resolveShorthandOwnershipClose(i, frame.implicitInlineShorthand, at =>
-          hasEndTagOwnerAt(parent, at),
-        ) === "defer-parent"
-      ) {
+      const isFullEndTagAtCursor = scanEndTagAt(frameText, endTag, i, frame.textEnd) === "full";
+      const shouldDeferToParentClose =
+        isFullEndTagAtCursor &&
+        resolveShorthandOwnershipClose(
+          i,
+          frame.implicitInlineShorthand,
+          at => hasEndTagOwnerAt(parent, at),
+        ) === "defer-parent";
+      if (shouldDeferToParentClose) {
         stack.pop();
         // 对应测试: [Coverage/Structural] shorthand defer-parent downgrade should merge adjacent text with continuous position
         return downgradeInlineIntoParent(frame, i);
