@@ -788,74 +788,76 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
   // ── 主循环 ──
 
   const stack: ParseFrame[] = [makeFrame(text, depth, insideArgs, baseOffset)];
-  // ── tryConsumeInlineCloseAtCursor 决策路径 ──
+  // ── tryCloseShorthandFrame ──
   //
-  // 前置: frame.inlineCloseToken !== null （否则直接 return false）
+  // shorthand 子帧的关闭判定（inlineCloseToken === tagClose，只吃一个 )）。
   //
-  // ┌─ 分支 A: inlineCloseToken === tagClose （shorthand 子帧，只吃一个 tagClose）
-  // │  ├─ scanEndTagAt === "full" 且 ownership 判定 defer-parent
-  // │  │   → 当前 shorthand 帧降级回父帧（downgradeInlineIntoParent）
-  // │  ├─ startsWith(tagClose)
-  // │  │   → 正常 shorthand 关闭，completeChild
-  // │  └─ 否则 → return false（当前字符不是关闭 token）
-  // │
-  // └─ 分支 B: inlineCloseToken !== tagClose （完整 DSL 子帧，需要吃 endTag）
-  //    ├─ scanEndTagAt === "full"       → )$$ 关闭，completeChild
-  //    ├─ startsWith(rawOpen)           → )% raw form 转换
-  //    │   ├─ findRawClose 失败         → 报错，降级为文本
-  //    │   ├─ gating 拒绝 raw           → 整段降级为文本
-  //    │   └─ 正常 raw 路径             → buildComplexMeta + pushNode
-  //    ├─ startsWith(blockOpen)         → )* block form 转换
-  //    │   ├─ findBlockClose 失败       → 报错，降级为文本
-  //    │   ├─ gating 拒绝 block         → 整段降级为文本
-  //    │   └─ 正常 block 路径           → buildComplexMeta + pushChildFrame(blockContent)
-  //    └─ 否则                          → ) 当普通文本消费
-  const tryConsumeInlineCloseAtCursor = (
+  // 决策路径：
+  //   ├─ scanEndTagAt === "full" 且 ownership 判定 defer-parent
+  //   │   → 当前 shorthand 帧降级回父帧（downgradeInlineIntoParent）
+  //   ├─ startsWith(tagClose)
+  //   │   → 正常 shorthand 关闭，completeChild
+  //   └─ 否则 → return false（当前字符不是关闭 token）
+  const tryCloseShorthandFrame = (
     frame: ParseFrame,
     frameText: string,
     i: number,
   ): boolean => {
-    if (frame.inlineCloseToken === null) return false;
-    const { tagClose, rawOpen, blockOpen, blockClose } = syntax;
+    const { tagClose } = syntax;
+    const parent = frame.parentIndex >= 0 ? stack[frame.parentIndex] : null;
 
-    // ── 分支 A: shorthand 子帧（inlineCloseToken === tagClose）──
-    // shorthand 帧优先判定：shorthand 子帧的 close token 是单个 tagClose，
-    // 而完整 DSL 子帧的 close token 是 endTag（tagClose + tagPrefix）。
-    // 必须先处理 shorthand，因为 endTag 以 tagClose 开头——
-    // 如果先走分支 B，shorthand 帧的 ) 会被误匹配为 endTag 的前缀。
-    if (frame.inlineCloseToken === tagClose) {
-      const parent = frame.parentIndex >= 0 ? stack[frame.parentIndex] : null;
-      // full-form close 与 shorthand close 竞争时，先让 full-form close 拥有 token。
-      const isFullEndTagAtCursor = scanEndTagAt(frameText, endTag, i, frame.textEnd) === "full";
-      const shouldDeferToParentClose =
-        isFullEndTagAtCursor &&
-        resolveShorthandOwnershipClose(
-          i,
-          frame.implicitInlineShorthand,
-          at => hasEndTagOwnerAt(parent, at),
-        ) === "defer-parent";
-      if (shouldDeferToParentClose) {
-        stack.pop();
-        // 对应测试: [Coverage/Structural] shorthand defer-parent downgrade should merge adjacent text with continuous position
-        return downgradeInlineIntoParent(frame, i);
-      }
-
-      if (!frameText.startsWith(tagClose, i)) return false;
-      flushBuffer(frame);
-      frame.inlineCloseWidth = tagClose.length;
+    // full-form close 与 shorthand close 竞争时，先让 full-form close 拥有 token。
+    const isFullEndTagAtCursor = scanEndTagAt(frameText, endTag, i, frame.textEnd) === "full";
+    const shouldDeferToParentClose =
+      isFullEndTagAtCursor &&
+      resolveShorthandOwnershipClose(
+        i,
+        frame.implicitInlineShorthand,
+        at => hasEndTagOwnerAt(parent, at),
+      ) === "defer-parent";
+    if (shouldDeferToParentClose) {
       stack.pop();
-      completeChild(frame);
-      return true;
+      // 对应测试: [Coverage/Structural] shorthand defer-parent downgrade should merge adjacent text with continuous position
+      return downgradeInlineIntoParent(frame, i);
     }
 
-    // ── 分支 B: 完整 DSL 子帧（inlineCloseToken === endTag）──
-    // 此处 tagClose 是 endTag 的前缀。先确认 tagClose 存在，
-    // 然后按 endTag / rawOpen / blockOpen 顺序判定具体 form。
+    if (!frameText.startsWith(tagClose, i)) return false;
+    flushBuffer(frame);
+    frame.inlineCloseWidth = tagClose.length;
+    stack.pop();
+    completeChild(frame);
+    return true;
+  };
+
+  // ── tryCloseFullInlineFrame ──
+  //
+  // 完整 DSL 子帧的关闭 / form 转换判定（inlineCloseToken === endTag）。
+  // tagClose 是 endTag 的前缀，先确认 tagClose 存在，
+  // 然后按 endTag / rawOpen / blockOpen 顺序判定具体 form。
+  //
+  // 决策路径：
+  //   ├─ !startsWith(tagClose)          → return false（不是关闭 token）
+  //   ├─ scanEndTagAt === "full"        → )$$ 关闭，completeChild
+  //   ├─ startsWith(rawOpen)            → )% raw form 转换
+  //   │   ├─ findRawClose 失败          → 报错，降级为文本
+  //   │   ├─ gating 拒绝 raw            → 整段降级为文本
+  //   │   └─ 正常 raw 路径              → buildComplexMeta + pushNode
+  //   ├─ startsWith(blockOpen)          → )* block form 转换
+  //   │   ├─ findBlockClose 失败        → 报错，降级为文本
+  //   │   ├─ gating 拒绝 block          → 整段降级为文本
+  //   │   └─ 正常 block 路径            → buildComplexMeta + pushChildFrame(blockContent)
+  //   └─ 否则                           → ) 当普通文本消费
+  const tryCloseFullInlineFrame = (
+    frame: ParseFrame,
+    frameText: string,
+    i: number,
+  ): boolean => {
+    const { tagClose, rawOpen, blockOpen, blockClose } = syntax;
+
     if (!frameText.startsWith(tagClose, i)) return false;
 
     // )$$ → endTag 完整匹配 → inline 正常关闭
     if (scanEndTagAt(frameText, endTag, i, frame.textEnd) === "full") {
-      // )$$ → inline close
       flushBuffer(frame);
       frame.inlineCloseWidth = endTag.length;
       stack.pop();
@@ -995,6 +997,22 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     appendBuf(frame, i, i + tagClose.length);
     frame.i += tagClose.length;
     return true;
+  };
+
+  // ── tryConsumeInlineCloseAtCursor（调度入口）──
+  //
+  // 根据 inlineCloseToken 类型分派到对应的关闭函数。
+  // shorthand 帧必须优先判定——shorthand 的 close token 是单个 tagClose，
+  // 而 endTag 以 tagClose 开头，如果先走 full inline 判定，
+  // shorthand 帧的 ) 会被误匹配为 endTag 的前缀。
+  const tryConsumeInlineCloseAtCursor = (
+    frame: ParseFrame,
+    frameText: string,
+    i: number,
+  ): boolean => {
+    if (frame.inlineCloseToken === null) return false;
+    if (frame.inlineCloseToken === syntax.tagClose) return tryCloseShorthandFrame(frame, frameText, i);
+    return tryCloseFullInlineFrame(frame, frameText, i);
   };
   // ── tryConsumeTagOrTextAtCursor 决策路径 ──
   //
