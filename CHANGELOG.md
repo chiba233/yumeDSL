@@ -2,6 +2,41 @@
 
 # Changelog
 
+### 1.4.5
+
+- **Renderer: inline-block tag position now covers the consumed trailing newline**
+  - When an inline-form tag is also registered as a block tag (`blockTags: [{ tag, forms: ["inline"] }]`), the token emitted by `renderInlineNode(...)` now has its `position.end` extended over the trailing newline that was consumed during scanning, matching the `raw` and `block` forms through the shared `complexTagPosition(...)` path.
+  - Previously this branch still reused `node.position`, so the rich-text end was one newline short of the source span actually covered; the rich end now lines up exactly with the next text token’s start.
+  - `renderInlineNode(...)` also caches the `ctx.blockTagSet.has(node.tag, "inline")` lookup into a local `isInlineBlockTag` to avoid calling the predicate twice.
+  - Regression case: `tests/positions.test.ts` "inline(blockTag) trailing newline -> render end 应覆盖被消费的换行".
+- **Structural parser: pure-function module split (ownership / replay)**
+  - Extracted a new pure-function module `src/core/structuralOwnership.ts` from `src/core/structural.ts`, holding ownership resolution and replay helpers.
+  - `structural.ts` is now ~150 lines lighter and essentially wiring for the main loop; the new module is ~180 lines and is easier to read and test in isolation. Behavior is unchanged.
+- **Structural parser: `tryConsumeInlineCloseAtCursor` split into three single-purpose helpers**
+  - The original ~170-line function is split by `inlineCloseToken` type into:
+    - `tryCloseShorthandFrame`: shorthand child frame close decision (defer-parent vs normal close);
+    - `tryCloseFullInlineFrame`: full-DSL child frame close and form transition (endTag / raw / block / text);
+    - `tryConsumeInlineCloseAtCursor`: thin dispatcher by token type.
+  - Each helper carries its own decision-tree comment, so no single function has to maintain both logics at once.
+- **Structural parser: extracted `emitCloseNotFoundError` to dedupe raw/block error handling**
+  - Unifies the `findMalformed + emitError` close-not-found pattern; 4 sites of ~12 duplicated lines each collapse into a single call.
+  - Added comments to the inline-frame vs non-inline-frame raw/block paths explaining why they must stay separate: inline frames have already parsed their args inline and can assemble directly, whereas non-inline frames must push a child frame to parse args first.
+- **Structural parser: decision-tree comments and main-loop priority chain**
+  - `tryConsumeInlineCloseAtCursor` / `tryConsumeTagOrTextAtCursor` now carry full decision-path trees at the top (shorthand vs full-DSL branches; tag-head recognition → form dispatch).
+  - The main `while` loop now carries a 1–8 priority overview and a note explaining why the dispatch order cannot be reordered.
+- **Raw-form comment mojibake fix**
+  - Restored the corrupted em-dashes in the `── Raw 形态 ──` section comment of `structural.ts`. No behavior change.
+- **Other refactors and comment sync**
+  - Minor cosmetic cleanup in `structural.ts`;
+  - File-navigation comment line numbers synced to the post-refactor structure;
+  - Additional jsDoc updates.
+- **Tests**
+  - Added new cases in `tests/coverage.test.ts` (+70 lines) and `tests/deepNesting.test.ts` (+24 lines).
+- **CI**
+  - `ci/version-behavior-compare.mjs` updated (+77 / −41).
+  - `ci/parser-contract.mjs` expectations updated for the new version (−1).
+- No breaking public API changes
+
 ### 1.4.4
 
 - **Structural parser: restores ancestor full-form close ownership while keeping malformed shorthand as text**

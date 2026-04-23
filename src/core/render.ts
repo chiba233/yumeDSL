@@ -251,8 +251,17 @@ const renderInlineNode = (
   const rendered = handler.inline
     ? { ...handler.inline(childTokens, dslCtx) }
     : { type: node.tag, value: materializeTextTokens(childTokens, dslCtx) };
-  appendToken(tokens, createToken(rendered, node.position, dslCtx), dslCtx);
-  return ctx.blockTagSet.has(node.tag, "inline");
+  const isInlineBlockTag = ctx.blockTagSet.has(node.tag, "inline");
+  appendToken(
+    tokens,
+    createToken(
+      rendered,
+      isInlineBlockTag ? complexTagPosition(ctx, node.tag, node._meta, "inline") : node.position,
+      dslCtx,
+    ),
+    dslCtx,
+  );
+  return isInlineBlockTag;
 };
 
 const renderRawNode = (

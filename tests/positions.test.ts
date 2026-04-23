@@ -534,20 +534,6 @@ const cases: GoldenCase[] = [
     },
   },
   {
-    name: "[Position/Semantics] block trailing newline -> render 与 structural 的 end 必须不同",
-    run() {
-      const text = "$$info()*\nhello\n*end$$\nnext";
-      const rich = parseRichText(text, { handlers: testHandlers, trackPositions: true });
-      const structural = parseStructural(text, { handlers: testHandlers, trackPositions: true });
-
-      assert.equal(rich[0]?.type, "info");
-      assert.equal(structural[0]?.type, "block");
-      assert.equal(rich[0]?.position?.end.offset, 23);
-      assert.equal(structural[0]?.position?.end.offset, 22);
-      assert.notEqual(rich[0]?.position?.end.offset, structural[0]?.position?.end.offset);
-    },
-  },
-  {
     name: "[Position/Semantics] block leading newline -> render 与 structural 的子节点 start 必须不同",
     run() {
       const text = "$$info()*\nhello\n*end$$";
@@ -567,15 +553,73 @@ const cases: GoldenCase[] = [
     },
   },
   {
-    name: "[Position/Semantics] raw plain path -> render 与 structural 位置仍应一致",
+    name: "[Position/Semantics] trailing newline normalization (inline/raw/block + LF/CRLF) -> render end 应覆盖被消费换行",
     run() {
-      const text = "$$raw-code(ts)%\nconst x = 1\n%end$$";
-      const rich = parseRichText(text, { handlers: testHandlers, trackPositions: true });
-      const structural = parseStructural(text, { handlers: testHandlers, trackPositions: true });
+      const scenarios = [
+        {
+          text: "$$bold(x)$$\nbar",
+          richType: "bold",
+          structuralType: "inline",
+          consumedLbWidth: 1,
+          richOptions: { blockTags: [{ tag: "bold", forms: ["inline"] as const }] },
+        },
+        {
+          text: "$$bold(x)$$\r\nbar",
+          richType: "bold",
+          structuralType: "inline",
+          consumedLbWidth: 2,
+          richOptions: { blockTags: [{ tag: "bold", forms: ["inline"] as const }] },
+        },
+        {
+          text: "$$raw-code(ts)%\nconst x = 1\n%end$$\nnext",
+          richType: "raw-code",
+          structuralType: "raw",
+          consumedLbWidth: 1,
+          richOptions: {},
+        },
+        {
+          text: "$$raw-code(ts)%\r\nconst x = 1\r\n%end$$\r\nnext",
+          richType: "raw-code",
+          structuralType: "raw",
+          consumedLbWidth: 2,
+          richOptions: {},
+        },
+        {
+          text: "$$info()*\nhello\n*end$$\nnext",
+          richType: "info",
+          structuralType: "block",
+          consumedLbWidth: 1,
+          richOptions: {},
+        },
+        {
+          text: "$$info()*\r\nhello\r\n*end$$\r\nnext",
+          richType: "info",
+          structuralType: "block",
+          consumedLbWidth: 2,
+          richOptions: {},
+        },
+      ] as const;
 
-      assert.equal(rich[0]?.type, "raw-code");
-      assert.equal(structural[0]?.type, "raw");
-      assert.deepEqual(rich[0]?.position, structural[0]?.position);
+      for (const scenario of scenarios) {
+        const rich = parseRichText(scenario.text, {
+          handlers: testHandlers,
+          trackPositions: true,
+          ...scenario.richOptions,
+        });
+        const structural = parseStructural(scenario.text, {
+          handlers: testHandlers,
+          trackPositions: true,
+        });
+
+        assert.equal(rich[0]?.type, scenario.richType);
+        assert.equal(structural[0]?.type, scenario.structuralType);
+        assert.equal(rich[1]?.type, "text");
+        assert.equal(
+          rich[0]?.position?.end.offset,
+          structural[0]?.position?.end.offset! + scenario.consumedLbWidth,
+        );
+        assert.equal(rich[0]?.position?.end.offset, rich[1]?.position?.start.offset);
+      }
     },
   },
   {

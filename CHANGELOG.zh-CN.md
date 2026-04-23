@@ -2,6 +2,41 @@
 
 # 更新日志
 
+### 1.4.5
+
+- **渲染器：inline-block 标签 position 对齐尾换行消费**
+  - 当 inline-form 标签同时被登记为 block tag（`blockTags: [{ tag, forms: ["inline"] }]`）时，`renderInlineNode(...)` 产出的 token `position.end` 现在会覆盖被消费掉的尾部换行，与 `raw` / `block` 形态走同一条 `complexTagPosition(...)` 路径。
+  - 此前该分支仍直接复用 `node.position`，rich-text 的 end 会比实际跨过的源范围短一个换行；现在 rich end 与下一个文本 token 的 start 严格相接。
+  - `renderInlineNode(...)` 同时把 `ctx.blockTagSet.has(node.tag, "inline")` 的查询结果缓存到局部变量 `isInlineBlockTag`，避免同一判定被重复调用。
+  - 对应回归用例：`tests/positions.test.ts` 的 "inline(blockTag) trailing newline -> render end 应覆盖被消费的换行"。
+- **结构解析器：纯函数模块抽离（ownership / replay）**
+  - 从 `src/core/structural.ts` 中抽出新的纯函数模块 `src/core/structuralOwnership.ts`，承载 ownership 判定与 replay 相关逻辑。
+  - `structural.ts` 瘦身约 150 行，仅保留主循环接线；新模块约 180 行，便于单独测试与阅读。行为完全等价。
+- **结构解析器：`tryConsumeInlineCloseAtCursor` 拆分为三个单一职责函数**
+  - 原 ~170 行函数按 `inlineCloseToken` 类型拆为：
+    - `tryCloseShorthandFrame`：shorthand 子帧关闭判定（defer-parent / 正常关闭）；
+    - `tryCloseFullInlineFrame`：完整 DSL 子帧关闭与 form 转换（endTag / raw / block / 文本）；
+    - `tryConsumeInlineCloseAtCursor`：薄调度层，按 token 类型分派。
+  - 每个函数各带独立决策树注释，避免在一个函数里同时维护两套不同逻辑。
+- **结构解析器：提取 `emitCloseNotFoundError` 消除 raw/block 错误处理重复**
+  - 统一 `findMalformed + emitError` 的 close-not-found 模式，4 处 ~12 行重复代码各缩减为 1 行调用。
+  - 为 inline 帧与非 inline 帧的 raw/block 路径添加注释：inline 帧的 args 已在当前帧解析完成可直接组装；非 inline 帧需要先推子帧解析 args，所以两条路径必须分开。
+- **结构解析器：决策树注释与主循环优先级链**
+  - `tryConsumeInlineCloseAtCursor` / `tryConsumeTagOrTextAtCursor` 顶部新增完整决策路径树注释（shorthand / 完整 DSL 两条分支、标签头识别 → form 分发）。
+  - 主循环 `while` 处新增 1–8 级调度优先级总览和顺序不可交换的原因说明。
+- **Raw 形态注释乱码修复**
+  - 修复 `structural.ts` 中 `── Raw 形态 ──` 章节破折号字符乱码；无行为变化。
+- **其余重构与注释同步**
+  - `structural.ts` 局部代码美化；
+  - 文件导航注释行号同步到重构后结构；
+  - 补充相关 jsDoc。
+- **测试**
+  - 新增若干 `tests/coverage.test.ts`（+70 行）与 `tests/deepNesting.test.ts`（+24 行）用例。
+- **CI**
+  - `ci/version-behavior-compare.mjs` 更新（+77 / −41）。
+  - `ci/parser-contract.mjs` 修正新版期望（−1）。
+- 无破坏性公共 API 变化
+
 ### 1.4.4
 
 - **结构解析器：恢复祖先 full-form 的闭合归属，同时把损坏 shorthand 统一按文本处理**
