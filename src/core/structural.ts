@@ -521,8 +521,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         child.tagPosition,
       );
     } else if (kind === "blockArgs") {
-      // args 完成，暂存后 push content 帧
-      parent.pendingArgs = childNodes;
+      // args 完成，挂到 content 帧上，不再借 parent 临时槽
       const content = makeFrame(
         child.text,
         parent.depth + 1,
@@ -531,6 +530,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         child.contentStartI,
         child.contentEndI,
       );
+      content.pendingArgs = childNodes;
       pushChildFrame(
         content,
         "blockContent",
@@ -542,10 +542,9 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     } else if (kind === "blockContent") {
       pushNode(
         parent.nodes,
-        factory.block(child.tag, parent.pendingArgs!, childNodes, child.meta!),
+        factory.block(child.tag, child.pendingArgs!, childNodes, child.meta!),
         child.tagPosition,
       );
-      parent.pendingArgs = null;
     }
   };
 
@@ -988,7 +987,6 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
 
       // push content 帧
       parent.i = nextI;
-      parent.pendingArgs = args;
       const contentFrame = makeFrame(
         frameText,
         parent.depth + 1,
@@ -997,6 +995,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         contentStart,
         closeStart,
       );
+      contentFrame.pendingArgs = args;
       pushChildFrame(
         contentFrame,
         "blockContent",

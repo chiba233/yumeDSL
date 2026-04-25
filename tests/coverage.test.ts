@@ -46,6 +46,11 @@ import {
   skipDegradedInline,
   skipTagBoundary,
 } from "../src/core/scanner.ts";
+import {
+  buildMalformedInlineReplayPlan,
+  resolveShorthandOwnershipPush,
+  type ReplayFrameLike,
+} from "../src/core/structuralOwnership.ts";
 import { fnvFeedString, fnvFeedStringBounded, fnvInit } from "../src/internal/hash.ts";
 
 // ── Helpers ──
@@ -1009,6 +1014,48 @@ const cases: GoldenCase[] = [
         errors.some((error) => error.code === "BLOCK_CLOSE_MALFORMED" && error.snippet.length > 0),
         true,
       );
+    },
+  },
+  {
+    name: "[Coverage/StructuralOwnership] shorthand push should defer to ancestor end-tag owner",
+    run() {
+      const result = resolveShorthandOwnershipPush({
+        argStart: 3,
+        frameInlineCloseToken: ")",
+        frameText: "abc)$$",
+        frameTextEnd: 6,
+        endTag: ")$$",
+        tagClose: ")",
+        currentProbe: null,
+        hasAncestorEndTagOwnerAt: (at) => at === 3,
+        readEscapedNext: () => null,
+        hasTagStartAt: () => false,
+      });
+
+      assert.deepEqual(result, { decision: "defer-parent", nextProbe: null });
+    },
+  },
+  {
+    name: "[Coverage/StructuralOwnership] malformed inline replay should stop when parent frame is missing",
+    run() {
+      const frame: ReplayFrameLike = {
+        text: "$$bold(x",
+        parentIndex: 9,
+        inlineCloseToken: ")$$",
+        implicitInlineShorthand: false,
+        tagStartI: 0,
+        argStartI: 7,
+        tagOpenPos: 6,
+      };
+
+      const plan = buildMalformedInlineReplayPlan(frame, () => null);
+
+      assert.deepEqual(plan, {
+        chain: [frame],
+        resumeParentIndex: -1,
+        resumeTagStartI: 0,
+        resumeArgStartI: 7,
+      });
     },
   },
 ];
