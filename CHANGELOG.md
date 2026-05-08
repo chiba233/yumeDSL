@@ -2,6 +2,27 @@
 
 # Changelog
 
+### 1.5.0
+
+- **Incremental diff dirty-range helper**
+  - Added `createIncrementalDirtyRange(diff)` for consumers that trust
+    `createIncrementalSession().applyEditWithDiff(...)` and need to project
+    the diff dirty span onto source-positioned render tokens.
+  - The helper follows the existing closure-style public API shape:
+    `const { getRange, touches } = createIncrementalDirtyRange(diff)`.
+    `getRange()` returns the new-source dirty range, and `touches(range)`
+    tests whether a source range intersects it.
+  - Added `DirtyRangeGetter`, `DirtyRangeTester`, and `SourceOffsetRange`
+    public type exports for typed integrations.
+  - No-op diffs return `null` from `getRange()` and never match in
+    `touches(...)`.
+  - Zero-width dirty ranges are treated as cursor-like positions: a range
+    matches when it contains that offset.
+- **Tests**
+  - Added incremental helper coverage for normal ranges, no-op diffs, and
+    zero-width dirty ranges.
+- No breaking public API changes
+
 ### 1.4.5
 
 - **Renderer: inline-block tag position now covers the consumed trailing newline**

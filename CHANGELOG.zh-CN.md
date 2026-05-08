@@ -2,6 +2,22 @@
 
 # 更新日志
 
+### 1.5.0
+
+- **增量 diff dirty range 辅助 API**
+  - 新增 `createIncrementalDirtyRange(diff)`，用于信任
+    `createIncrementalSession().applyEditWithDiff(...)` 结果的集成方，把
+    diff 的 dirty span 投射到带源码位置的渲染 token 上。
+  - API 形态沿用主库现有闭包风格：
+    `const { getRange, touches } = createIncrementalDirtyRange(diff)`。
+    `getRange()` 返回新源码中的 dirty range，`touches(range)` 判断一个源码范围是否与它相交。
+  - 新增公开类型导出：`DirtyRangeGetter`、`DirtyRangeTester`、`SourceOffsetRange`。
+  - no-op diff 下 `getRange()` 返回 `null`，`touches(...)` 永远返回 `false`。
+  - 零宽 dirty range 按光标位置处理：只要待测范围包含该 offset，就视为命中。
+- **测试**
+  - 补充增量辅助 API 覆盖：普通范围、no-op diff、零宽 dirty range。
+- 无破坏性公共 API 变化
+
 ### 1.4.5
 
 - **渲染器：inline-block 标签 position 对齐尾换行消费**

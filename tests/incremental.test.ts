@@ -7,6 +7,7 @@ import {
   type TextToken,
   type TokenDiffResult,
   createEasySyntax,
+  createIncrementalDirtyRange,
   createSimpleBlockHandlers,
   createIncrementalSession,
   createSimpleInlineHandlers,
@@ -29,6 +30,28 @@ import { buildParseOptionsFingerprint, cloneParseOptions } from "../src/incremen
 import { runGoldenCases, type GoldenCase } from "./testHarness.ts";
 
 type StructuralDiffOp = TokenDiffResult["ops"][number];
+
+{
+  const diff = {
+    isNoop: false,
+    dirtySpanNew: { startOffset: 10, endOffset: 20 },
+  } as TokenDiffResult;
+  const { getRange, touches } = createIncrementalDirtyRange(diff);
+  assert.deepEqual(getRange(), { startOffset: 10, endOffset: 20 });
+  assert.equal(touches({ startOffset: 5, endOffset: 12 }), true);
+  assert.equal(touches({ startOffset: 20, endOffset: 30 }), false);
+
+  const noopDirtyRange = createIncrementalDirtyRange({ ...diff, isNoop: true });
+  assert.equal(noopDirtyRange.getRange(), null);
+  assert.equal(noopDirtyRange.touches({ startOffset: 10, endOffset: 20 }), false);
+
+  const zeroWidthDirtyRange = createIncrementalDirtyRange({
+    ...diff,
+    dirtySpanNew: { startOffset: 10, endOffset: 10 },
+  });
+  assert.equal(zeroWidthDirtyRange.touches({ startOffset: 5, endOffset: 10 }), true);
+  assert.equal(zeroWidthDirtyRange.touches({ startOffset: 11, endOffset: 12 }), false);
+}
 
 const parseFull = (source: string, options?: Parameters<typeof parseStructural>[1]) => {
   const tree = parseStructural(source, { ...options, trackPositions: true });

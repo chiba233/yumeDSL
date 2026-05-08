@@ -89,6 +89,10 @@ export {
   parseIncremental,
   createIncrementalSession,
 } from "./incremental/incremental.js";
+export {
+  createIncrementalDirtyRange,
+} from "./incremental/range.js";
+export type { DirtyRangeGetter, DirtyRangeTester } from "./incremental/range.js";
 
 // ── Types: structural ──
 export type {
@@ -104,6 +108,7 @@ export type {
   IncrementalSessionOptions,
   IncrementalDiffRefinementOptions,
   TokenDiffResult,
+  SourceOffsetRange,
   IncrementalSessionApplyResult,
   IncrementalSessionApplyWithDiffResult,
 } from "./types/incremental.js";
