@@ -430,7 +430,8 @@ const tree = parseStructural("$$bold(hello)$$ and $$code(ts)%\nconst x = 1;\n%en
 - `parseIncremental(source, options?)` —— 建好并返回第一份增量快照（`IncrementalDocument`）
 - `createIncrementalSession(source, options?, sessionOptions?)` —— 建一个长期存活的 session，后面反复吃 edit
 - `createIncrementalDirtyRange(diff)` —— 绑定一个 `TokenDiffResult`，返回 `{ getRange, touches }`，用于标记与新源码
-  dirty span 相交的带源码位置渲染 token
+  dirty span 相交的带源码位置渲染 token。no-op diff 下 `getRange()` 返回 `null`，`touches(...)` 永远不命中；
+  零宽 dirty range 只命中真正包含该 offset 的半开源码范围（`startOffset <= offset < endOffset`）。
 
 简单记：
 

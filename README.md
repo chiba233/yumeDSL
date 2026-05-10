@@ -454,7 +454,9 @@ and diff refinement knobs now live under `sessionOptions.diff` (or per-call `app
 - `parseIncremental(source, options?)` — build and return the **first** incremental snapshot (`IncrementalDocument`)
 - `createIncrementalSession(source, options?, sessionOptions?)` — create a **long-lived session** for repeated edits
 - `createIncrementalDirtyRange(diff)` — bind one `TokenDiffResult` and return `{ getRange, touches }` helpers for
-  marking source-positioned render tokens that overlap the new-source dirty span
+  marking source-positioned render tokens that overlap the new-source dirty span. No-op diffs return `null` from
+  `getRange()` and never match in `touches(...)`; zero-width dirty ranges match only half-open source ranges that
+  contain the offset (`startOffset <= offset < endOffset`).
 
 In practice:
 

@@ -17,7 +17,7 @@ const intersectsDirtyRange = (
 ): boolean => {
   if (!dirtyRange) return false;
   if (dirtyRange.startOffset === dirtyRange.endOffset) {
-    return range.startOffset <= dirtyRange.startOffset && range.endOffset >= dirtyRange.startOffset;
+    return range.startOffset <= dirtyRange.startOffset && range.endOffset > dirtyRange.startOffset;
   }
   return range.endOffset > dirtyRange.startOffset && range.startOffset < dirtyRange.endOffset;
 };
@@ -30,7 +30,13 @@ export const createIncrementalDirtyRange = (
   touches: DirtyRangeTester;
 } => {
   const dirtyRange = extractDirtyRange(diff);
-  const getRange: DirtyRangeGetter = () => dirtyRange;
+  const getRange: DirtyRangeGetter = () =>
+    dirtyRange
+      ? {
+          startOffset: dirtyRange.startOffset,
+          endOffset: dirtyRange.endOffset,
+        }
+      : null;
   const touches: DirtyRangeTester = (range) =>
     intersectsDirtyRange(range, dirtyRange);
 
