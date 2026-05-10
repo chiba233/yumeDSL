@@ -49,7 +49,8 @@ type StructuralDiffOp = TokenDiffResult["ops"][number];
     ...diff,
     dirtySpanNew: { startOffset: 10, endOffset: 10 },
   });
-  assert.equal(zeroWidthDirtyRange.touches({ startOffset: 5, endOffset: 10 }), true);
+  assert.equal(zeroWidthDirtyRange.touches({ startOffset: 5, endOffset: 10 }), false);
+  assert.equal(zeroWidthDirtyRange.touches({ startOffset: 10, endOffset: 11 }), true);
   assert.equal(zeroWidthDirtyRange.touches({ startOffset: 11, endOffset: 12 }), false);
 }
 
