@@ -1,6 +1,5 @@
 import { parseStructural } from "../core/structural.js";
 import { fnv1a, fnvFeedStringBounded, fnvFeedU32, fnvInit } from "../internal/hash.js";
-import { beginLookaheadRecording, endLookaheadRecording } from "../internal/lookahead.js";
 import { buildPositionTracker } from "../internal/positions.js";
 import { buildZonesInternal, SOFT_ZONE_NODE_CAP } from "../internal/zones.js";
 import type {
@@ -53,11 +52,6 @@ const ZONE_TAG = 7;
 // 不会影响结构签名，因此同一引用的 WeakMap 缓存仍然有效。
 const nodeSignatureCache = new WeakMap<StructuralNode, number>();
 const zoneSignatureCache = new WeakMap<Zone, number>();
-// zone → "解析时有前向扫描读到了文末"（readsPastEnd）。
-// 这类 zone 的结构判定依赖它右侧的全部内容，因此即使它整体位于编辑左侧，
-// 编辑后也必须从它开始重解析，不能原样复用（详见 internal/lookahead 与 findDirtyRange）。
-// 用 WeakMap 而非给 Zone 加字段：保持公开 Zone 类型纯净、不影响 deepEqual(zones) 测试。
-const zoneReadsPastEndCache = new WeakMap<Zone, boolean>();
 // 文档 → 配置指纹缓存：避免每次增量更新都重算 fingerprint。
 const parseOptionsFingerprintCache = new WeakMap<IncrementalDocument, number>();
 // 这些 WeakMap 只缓存内部生成的不可变快照/zone/node。
@@ -139,43 +133,6 @@ export const getCachedZoneSignature = (zone: Zone): number | undefined => zoneSi
 /** Store a structural signature for one zone. */
 export const setCachedZoneSignature = (zone: Zone, signature: number): void => {
   zoneSignatureCache.set(zone, signature);
-};
-
-/** Whether this zone's parse read past the end of the available text (depends on right context). */
-export const zoneReadsPastEnd = (zone: Zone): boolean => zoneReadsPastEndCache.get(zone) === true;
-
-/** Carry the readsPastEnd flag onto a shifted/derived zone (called from deferShiftZone). */
-export const setZoneReadsPastEnd = (zone: Zone): void => {
-  zoneReadsPastEndCache.set(zone, true);
-};
-
-/**
- * Flag every zone that contains the start of an unresolved forward scan. Such a
- * scan read to the document end, so the containing zone depends on everything to
- * its right; a later edit must reparse from it even when it sits left of the edit.
- */
-export const assignZoneReadsPastEnd = (
-  zones: readonly Zone[],
-  unresolvedScanStarts: readonly number[],
-): void => {
-  // zones 按 startOffset 升序、互不重叠、连续覆盖：用二分定位包含每个 start 的 zone，
-  // 避免 O(starts × zones) 的嵌套扫描（每次全量解析 / 窗口重解析都会调到这里）。
-  for (let s = 0; s < unresolvedScanStarts.length; s++) {
-    const start = unresolvedScanStarts[s];
-    let lo = 0;
-    let hi = zones.length - 1;
-    while (lo <= hi) {
-      const mid = (lo + hi) >>> 1;
-      if (start < zones[mid].startOffset) {
-        hi = mid - 1;
-      } else if (start >= zones[mid].endOffset) {
-        lo = mid + 1;
-      } else {
-        zoneReadsPastEndCache.set(zones[mid], true);
-        break;
-      }
-    }
-  }
 };
 
 const tryConsumeSignatureBudget = (budget: SignatureBudget): boolean => {
@@ -412,15 +369,8 @@ export const parseIncrementalInternal = (
 ): IncrementalDocument => {
   // fallback 路径允许复用已经构建好的 tracker，避免同一次更新里重复扫描整份源码。
   const tracker = existingTracker ?? buildPositionTracker(source);
-  // 记录这次全量解析里"读到文末"的前向扫描起点，据此给 zone 打 readsPastEnd 标记，
-  // 供后续增量编辑的 findDirtyRange 决定是否要从某个左侧 zone 起重解析。
-  // 不需要 try/finally：parseWithPositions 对用户输入不抛（结构解析器是降级而非抛错），
-  // 且 recorder 状态由下一次 beginLookaheadRecording 重置。
-  beginLookaheadRecording(0);
   const tree = parseWithPositions(source, tracker, options);
-  const unresolvedScanStarts = endLookaheadRecording();
   const zones = buildZonesInternal(tree, zoneCap);
-  assignZoneReadsPastEnd(zones, unresolvedScanStarts);
   for (let i = 0; i < zones.length; i++) {
     zoneSignature(zones[i]);
   }
