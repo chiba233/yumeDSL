@@ -15,7 +15,6 @@ import type {
   IncrementalUpdateErrorCode,
   IncrementalUpdateResult,
   PositionTracker,
-  StructuralNode,
   TokenDiffResult,
   Zone,
 } from "../types";
@@ -238,19 +237,15 @@ const reparseDirtyWindowUntilStable = (
     // inline 未闭合 EOF 收尾等），它们若扫到切片右边界仍未收敛，就会被静默截断，
     // 解析结果可能与"该段在整篇里"的解析不同。lookahead 记录器捕捉这种"触达边界"，
     // 命中则说明窗口依赖更右上下文，必须扩窗（最终扩到文末，必然与全量一致）。
+    // 无需 try/finally：parseWithPositions 不对输入抛错，recorder 由下一次 begin 重置。
     beginLookaheadRecording(dirtyStartNew);
-    let dirtyTree: readonly StructuralNode[];
-    let unresolvedScanStarts: number[];
-    try {
-      dirtyTree = parseWithPositions(
-        newSource.slice(dirtyStartNew, dirtyEndNew),
-        tracker,
-        parseOptions,
-        dirtyStartNew,
-      );
-    } finally {
-      unresolvedScanStarts = endLookaheadRecording();
-    }
+    const dirtyTree = parseWithPositions(
+      newSource.slice(dirtyStartNew, dirtyEndNew),
+      tracker,
+      parseOptions,
+      dirtyStartNew,
+    );
+    const unresolvedScanStarts = endLookaheadRecording();
     const lookaheadReachedBoundary = unresolvedScanStarts.length > 0;
     nextDirtyZones = buildZonesInternal(dirtyTree, zoneCap);
 

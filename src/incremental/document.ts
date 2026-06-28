@@ -414,14 +414,11 @@ export const parseIncrementalInternal = (
   const tracker = existingTracker ?? buildPositionTracker(source);
   // 记录这次全量解析里"读到文末"的前向扫描起点，据此给 zone 打 readsPastEnd 标记，
   // 供后续增量编辑的 findDirtyRange 决定是否要从某个左侧 zone 起重解析。
+  // 不需要 try/finally：parseWithPositions 对用户输入不抛（结构解析器是降级而非抛错），
+  // 且 recorder 状态由下一次 beginLookaheadRecording 重置。
   beginLookaheadRecording(0);
-  let tree: readonly StructuralNode[];
-  let unresolvedScanStarts: number[];
-  try {
-    tree = parseWithPositions(source, tracker, options);
-  } finally {
-    unresolvedScanStarts = endLookaheadRecording();
-  }
+  const tree = parseWithPositions(source, tracker, options);
+  const unresolvedScanStarts = endLookaheadRecording();
   const zones = buildZonesInternal(tree, zoneCap);
   assignZoneReadsPastEnd(zones, unresolvedScanStarts);
   for (let i = 0; i < zones.length; i++) {
