@@ -214,7 +214,7 @@ const hashText = (value: string): number => fnv1a(value);
 // plain data 的隔离由 snapshot clone 负责；fingerprint 若把它也算进去，会让增量路径过度敏感。
 const buildHandlersShapeFingerprint = (handlers: IncrementalParseOptions["handlers"] | undefined): number => {
   if (!handlers) return 0;
-  const keys = Object.keys(handlers).sort();
+  const keys = Object.keys(handlers).sort((a, b) => a.localeCompare(b));
   let hash = fnvInit();
   hash = fnvFeedU32(hash, keys.length);
   for (let i = 0; i < keys.length; i++) {
@@ -231,7 +231,8 @@ const buildHandlersShapeFingerprint = (handlers: IncrementalParseOptions["handle
 
 const DEFAULT_PARSE_OPTIONS_FINGERPRINT = fnvFeedU32(fnvInit(), 0x9e3779b9);
 
-const normalizeShorthandList = (input: readonly string[]): string[] => Array.from(new Set(input)).sort();
+const normalizeShorthandList = (input: readonly string[]): string[] =>
+  Array.from(new Set(input)).sort((a, b) => a.localeCompare(b));
 
 // 整合指纹：handlers + allowForms + shorthand 模式 + syntax 8 字段 + tagName 两个函数引用。
 // 任何一项变了 → fingerprint 不同 → 增量更新直接跳 full rebuild。
