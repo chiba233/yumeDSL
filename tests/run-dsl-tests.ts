@@ -46,6 +46,9 @@ await import("./zones.test.ts");
 console.log("=== Incremental ===");
 await import("./incremental.test.ts");
 
+console.log("=== Incremental Fuzz ===");
+await import("./incrementalFuzz.test.ts");
+
 console.log("=== Incremental Perf ===");
 await import("./incrementalStackPerf.test.ts");
 await import("./incrementalCloseRunPerf.test.ts");

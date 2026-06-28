@@ -1,3 +1,5 @@
+import { DEFAULT_TAG_NAME, isWholeLineToken } from "../config/chars.js";
+import { createSyntax } from "../config/syntax.js";
 import { buildPositionTracker } from "../internal/positions.js";
 import { buildZonesInternal, SOFT_ZONE_NODE_CAP } from "../internal/zones.js";
 import type {
@@ -15,6 +17,7 @@ import type {
   IncrementalUpdateErrorCode,
   IncrementalUpdateResult,
   PositionTracker,
+  StructuralNode,
   TokenDiffResult,
   Zone,
 } from "../types";
@@ -33,13 +36,13 @@ import {
 import {
   getCachedOptionsFingerprint,
   hasUnsafeZoneCoverageTailGap,
-  isSafeRightReuse,
   LEFT_LOOKBEHIND_ZONES,
   mapOldOffsetToNew,
   normalizeSoftZoneNodeCap,
   parseIncrementalInternal,
   parseWithPositions,
   setCachedOptionsFingerprint,
+  zoneSignature,
 } from "./document.js";
 import { deferShiftZone, getRawZones, installLazyDocument } from "./lazy.js";
 import { buildParseOptionsFingerprint, cloneParseOptions } from "./options.js";
@@ -163,13 +166,200 @@ const findDirtyRange = (zones: readonly Zone[], edit: IncrementalEdit): { from: 
   };
 };
 
-// 循环重解析脏窗，直到右边界稳定或超预算。
-// "稳定"的意思是：重解析产出的最后一个 zone 的 endOffset 恰好等于脏窗的 endOffset。
-// 不稳定 → 右边扩一个 zone，再来一轮。
-// 预算守卫：cumulative 重解析字节数超过 2·n → 放弃，返回 budgetExceeded=true，
-// 调用方会直接 full rebuild。这保证了脏窗扩展不会变成 O(n²)。
-const reparseDirtyWindowUntilStable = (
-  zones: readonly Zone[],
+// ── 签名驱动的右侧重收敛（approach C）──
+//
+// 旧实现"孤立切片重解析 + seam probe 盲信 offset 对齐"在三处不 sound：
+//   1. 切片右界把无界前向扫描（raw/block/inline close）截断，被强行闭合；
+//   2. seam probe 从右侧重新起解析，看不到从脏区右溢的构造；
+//   3. 文末插入被 mapOldOffsetToNew 映回插入前，窗口漏掉新增文本。
+//
+// 重收敛把这些统一掉：从一个**可证明干净的左锚点**连续解析，向右扩窗，
+// 直到新解析出的某个 zone 与旧右侧 zone 在
+//   「同一新坐标 offset 边界 + 同一签名 + 同一节点数」
+// 上重收敛——只从该点起复用旧 zone。
+//
+// 为什么 sound：
+// - 左锚点 Lnew = prevZones[from].startOffset 严格位于编辑左侧（findDirtyRange
+//   左回看 1 个 zone 保证 from 不与编辑重叠），故 [0, Lnew) 与旧源逐字节相同，
+//   且 Lnew 是旧解析的顶层 zone 边界（无构造跨越它）。任何起于 [0,Lnew) 的构造
+//   其闭合扫描都止于 Lnew 之前（否则跨越 Lnew，与"干净边界"矛盾），所以新解析
+//   在 Lnew 处状态 == 全量解析状态 == 干净顶层。从 Lnew 连续解析即复刻全量在
+//   [Lnew, …) 的行为，**包含任何从脏区右溢的构造**。
+//   （注：isLineStart 仅在 raw/block close 检测里用到——见 chars.ts——切片
+//    pos 0 的伪行首对干净顶层起点无影响；右界截断产生的伪闭合都落在 seam 右侧，
+//    被"无 zone 恰好起于 seam"或"候选非末尾 zone"挡掉。）
+// - 重收敛点 seamNew：要求存在一个**非截断**的新 zone 恰好起于 seamNew
+//   （窗口已越过它，故它不是被右界强行闭合的产物），且签名/节点数与旧 zone 一致。
+//   此时 [seamNew, EOF) 源未变且起始干净 → 旧 zone [s..] 必与全量一致，可安全复用。
+// - 文本/构造跨越 seamNew（如全量会把脏区尾 text 与右侧 text 合并成一个节点，
+//   或脏区构造右溢吞掉右侧）→ 不会有 zone 恰好起于 seamNew → 不收敛 → 继续右扩，
+//   脏窗自然吸收，直到真正的干净边界或文末（= 全量，可接受）。
+//
+// 窗口按倍增扩展；cumulative 重解析字节超预算 → 放弃增量，调用方 full rebuild，
+// 保证最坏情形不退化成反复扩窗的 O(n²)。
+const RECONVERGE_INITIAL_EXTRA_ZONES = 2;
+
+type ReconvergeOutcome = {
+  budgetExceeded: boolean;
+  dirtyZones: Zone[];
+  // 旧右侧 zone 的复用起点索引；== prevZones.length 表示右侧全部并入脏窗（无复用）。
+  reuseFromIndex: number;
+  cumulativeReparsedBytes: number;
+  probeSliceBytes: number;
+};
+
+// ── zone 子树最远读取偏移（overhang 探测）──
+//
+// 解析器会产出"子节点延伸到父节点 position.end 之外"的退化结构——典型是 args 配平
+// 扫描失败时，block/inline 的 arg 退化成一个延伸到很远（甚至越过该构造自身闭合点、
+// 越过后续若干顶层节点）的 text 节点。例如：
+//   "$$info($$c()%)*\n*end$$\n$$math()%\nnest\n%end$$"
+//   → block info 节点是 [0,22]，但它的 arg text 却是 [7,44]（盖住了后面的 raw math）。
+// 此时若编辑落在 [22,44) 区间（在 block 之外、却在它的 arg 覆盖范围内），被复用的左侧
+// block 节点其 arg 文本值会失真——这类"非结构 token 变化"骨架比对抓不到。
+//
+// 因此对被复用左侧再加一道闸：任一左侧 zone 的子树最远读取偏移越过编辑起点 → 不 sound
+// → 回退全量。maxEnd 按 zone 缓存；良构文档里 maxEnd == zone.endOffset（无 overhang），
+// 左侧 endOffset 又都 ≤ 编辑起点，故该闸恒不触发，几乎零成本。
+const zoneMaxEndCache = new WeakMap<Zone, number>();
+
+// 子树最远读取偏移（含全部后代）。overhang 只来自 raw/block 的 args 在 tag-head 阶段用
+// 独立 findTagArgClose 解析、失败后退化成越界文本；但它可藏在任意深度的**子节点**的 args 里
+// （如 block 的 child inline 的 arg 越界，盖过 block 自身闭合点），故必须遍历整棵子树，
+// 不能只走 args 链。用**显式栈**（非递归），深嵌套不爆调用栈；结果按 zone 缓存，与既有的
+// zoneSignature 同量级（且 5000 万层单构造 = 单 zone → prevZones.length≤1 → 提前 full
+// rebuild，根本不会走到这里）。
+const subtreeMaxEnd = (node: StructuralNode): number => {
+  let max = node.position?.end.offset ?? 0;
+  const stack: StructuralNode[] = [node];
+  while (stack.length > 0) {
+    const n = stack.pop();
+    if (!n) break;
+    const end = n.position?.end.offset;
+    if (end !== undefined && end > max) max = end;
+    if (n.type === "inline" || n.type === "block") {
+      for (let i = 0; i < n.children.length; i++) stack.push(n.children[i]);
+    }
+    if (n.type === "raw" || n.type === "block") {
+      for (let i = 0; i < n.args.length; i++) stack.push(n.args[i]);
+    }
+  }
+  return max;
+};
+
+const zoneMaxEndOffset = (zone: Zone): number => {
+  const cached = zoneMaxEndCache.get(zone);
+  if (cached !== undefined) return cached;
+  let max = zone.endOffset;
+  for (let i = 0; i < zone.nodes.length; i++) {
+    const m = subtreeMaxEnd(zone.nodes[i]);
+    if (m > max) max = m;
+  }
+  zoneMaxEndCache.set(zone, max);
+  return max;
+};
+
+// 新解析出的 zone 是否与旧 zone 在新坐标系下重收敛：
+// 同一 offset 跨度（+delta）+ 同一节点数 + 同一结构签名（位置无关，已缓存）。
+const zoneReconverges = (treeZone: Zone, oldZone: Zone, delta: number): boolean => {
+  if (treeZone.startOffset !== oldZone.startOffset + delta) return false;
+  if (treeZone.endOffset !== oldZone.endOffset + delta) return false;
+  if (treeZone.nodes.length !== oldZone.nodes.length) return false;
+  const oldSig = zoneSignature(oldZone);
+  if (oldSig === undefined) return false;
+  const newSig = zoneSignature(treeZone);
+  if (newSig === undefined) return false;
+  return oldSig === newSig;
+};
+
+// ── 悬空开标记探测（解析非前缀单调性的关键防护）──
+//
+// 解析器对未闭合构造的处理**不是前缀单调**的：`$$b(` 是否成为构造，取决于
+// 右侧（可能在窗口之外）是否出现匹配的闭合。例如
+//   parse("$$b($$code()%\n%end$$")        => [text "$$b(", raw code]
+//   parse("$$b($$code()%\n%end$$\n)*")    => [text "$$b($$code()%\n%end$$\n)*"]   ← 整体塌成文本
+// 即在窗口末尾追加内容会**回溯改变**窗口前部的节点。若脏窗里残留一个未在窗口内
+// 闭合的开标记（降级成了文本里的 "$$<tag>("），那么基于该截断窗口找到的任何
+// 右侧重收敛点都不可信——继续扩窗到 EOF 才能确定它的最终归属。
+//
+// 因此：脏窗提交前缀里若存在悬空开标记，则该 seam 无效，必须继续扩窗（最终 EOF
+// 时该开标记降级定型，reuse-nothing 的脏窗即正确全量）。
+type StrayTokenScanner = (value: string) => boolean;
+
+const makeStrayOpenScanner = (
+  parseOptions: IncrementalParseOptions | undefined,
+): StrayTokenScanner => {
+  const syntax = createSyntax(parseOptions?.syntax);
+  const tagPrefix = syntax.tagPrefix;
+  const tagOpen = syntax.tagOpen;
+  const tagName = parseOptions?.tagName ?? DEFAULT_TAG_NAME;
+  const isStart = tagName.isTagStartChar ?? DEFAULT_TAG_NAME.isTagStartChar;
+  const isChar = tagName.isTagChar ?? DEFAULT_TAG_NAME.isTagChar;
+  // 文本里是否含一个完整开头 `tagPrefix <tagStartChar><tagChar>* tagOpen`。
+  return (value: string): boolean => {
+    let idx = value.indexOf(tagPrefix);
+    while (idx !== -1) {
+      let j = idx + tagPrefix.length;
+      if (j < value.length && isStart(value[j])) {
+        j++;
+        while (j < value.length && isChar(value[j])) j++;
+        if (value.startsWith(tagOpen, j)) return true;
+      }
+      idx = value.indexOf(tagPrefix, idx + 1);
+    }
+    return false;
+  };
+};
+
+// 脏窗提交前缀 treeZones[0, end) 里是否有悬空开标记——必须**递归**扫到嵌套文本。
+// 退化的开标记可能落在某个构造的子节点文本里，例如在 inline 内容里 "$$info()*…" 整段
+// 降级成了一个 text 子节点（含 "$$info("），而它在全量解析里（配上 EOF 的整行 *end$$）
+// 会变成一个吞噬一切的 block——只看顶层文本会漏掉它，导致基于截断窗口的假重收敛。
+const nodeHasStrayOpenDeep = (node: StructuralNode, hasStrayOpen: StrayTokenScanner): boolean => {
+  const stack: StructuralNode[] = [node];
+  while (stack.length > 0) {
+    const n = stack.pop();
+    if (!n) break;
+    if (n.type === "text") {
+      if (hasStrayOpen(n.value)) return true;
+      continue;
+    }
+    if (n.type === "inline" || n.type === "block") {
+      for (let i = 0; i < n.children.length; i++) stack.push(n.children[i]);
+    }
+    if (n.type === "raw" || n.type === "block") {
+      for (let i = 0; i < n.args.length; i++) stack.push(n.args[i]);
+    }
+  }
+  return false;
+};
+
+const treeZonesPrefixHasStrayOpen = (
+  treeZones: readonly Zone[],
+  end: number,
+  hasStrayOpen: StrayTokenScanner,
+): boolean => {
+  for (let z = 0; z < end; z++) {
+    const nodes = treeZones[z].nodes;
+    for (let i = 0; i < nodes.length; i++) {
+      if (nodeHasStrayOpenDeep(nodes[i], hasStrayOpen)) return true;
+    }
+  }
+  return false;
+};
+
+// 提交前缀 treeZones[0,end) 的结构签名组合（位置无关），用于候选跨窗口稳定性确认。
+const combinePrefixSignature = (treeZones: readonly Zone[], end: number): number => {
+  let sig = Math.imul(end + 1, 2654435761) >>> 0;
+  for (let i = 0; i < end; i++) {
+    const zs = zoneSignature(treeZones[i]) ?? 0;
+    sig = Math.imul(sig ^ zs, 2654435761) >>> 0;
+  }
+  return sig;
+};
+
+const reconvergeDirtyWindow = (
+  prevZones: readonly Zone[],
   dirtyFrom: number,
   dirtyTo: number,
   edit: IncrementalEdit,
@@ -178,56 +368,246 @@ const reparseDirtyWindowUntilStable = (
   tracker: PositionTracker,
   parseOptions: IncrementalParseOptions | undefined,
   cumulativeBudget: number,
-  cumulativeReparsedBytes: number,
   zoneCap: number,
-): {
-  budgetExceeded: boolean;
-  dirtyTo: number;
-  dirtyZones: Zone[];
-  cumulativeReparsedBytes: number;
-} => {
-  // 这里不是"直到解析成功"，而是"直到右边界真的收敛"。
-  // 如果 reparsedEnd 一直追不上 dirtyEndNew，就说明影响已经穿透到了更右边的 zone。
-  let nextDirtyTo = dirtyTo;
-  let nextDirtyZones: Zone[] = [];
-  let nextCumulativeReparsedBytes = cumulativeReparsedBytes;
+  hasStrayOpen: StrayTokenScanner,
+): ReconvergeOutcome => {
+  const lastIndex = prevZones.length - 1;
+  const dirtyStartNew = mapOldOffsetToNew(edit, delta, prevZones[dirtyFrom].startOffset);
+  let cumulativeReparsedBytes = 0;
+  let probeSliceBytes = 0;
+
+  // 窗口右界用"旧 zone 索引"表示，从 dirtyTo 起按倍增扩展。
+  let windowToIdx = Math.min(lastIndex, dirtyTo + RECONVERGE_INITIAL_EXTRA_ZONES);
+  // 候选确认：解析器存在"窗口大小相关"的非单调退化——同一前缀在 [anchor,W) 解析成一种结构、
+  // 在 [anchor,2W) 又变（典型是 raw 的 arg 因括号/整行扫描越窗而被误解析成一个 block）。
+  // 因此一个候选必须在**两次连续倍增窗口**里给出完全一致的前缀（同 seam + 同前缀签名）
+  // 才接受；到达 EOF 时窗口即真解析，可直接接受。
+  let pendingSeam = -1;
+  let pendingPrefixSig = 0;
 
   while (true) {
-    const dirtyStartOld = zones[dirtyFrom].startOffset;
-    const dirtyEndOld = zones[nextDirtyTo].endOffset;
-    const dirtyStartNew = mapOldOffsetToNew(edit, delta, dirtyStartOld);
-    const dirtyEndNew = mapOldOffsetToNew(edit, delta, dirtyEndOld);
-    const reparsedWindowSize = dirtyEndNew - dirtyStartNew;
-    nextCumulativeReparsedBytes += reparsedWindowSize;
-    if (nextCumulativeReparsedBytes > cumulativeBudget) {
+    const reachedEof = windowToIdx >= lastIndex;
+    // 到达最后一个 zone 时，窗口右界必须落在新源 EOF：
+    // mapOldOffsetToNew 会把文末插入点映回插入前，直接用映射会漏掉新增文本。
+    const windowEndNew = reachedEof
+      ? newSource.length
+      : mapOldOffsetToNew(edit, delta, prevZones[windowToIdx].endOffset);
+
+    cumulativeReparsedBytes += windowEndNew - dirtyStartNew;
+    if (cumulativeReparsedBytes > cumulativeBudget) {
       return {
         budgetExceeded: true,
-        dirtyTo: nextDirtyTo,
-        dirtyZones: nextDirtyZones,
-        cumulativeReparsedBytes: nextCumulativeReparsedBytes,
+        dirtyZones: [],
+        reuseFromIndex: prevZones.length,
+        cumulativeReparsedBytes,
+        probeSliceBytes,
       };
     }
 
-    const dirtyTree = parseWithPositions(
-      newSource.slice(dirtyStartNew, dirtyEndNew),
+    const tree = parseWithPositions(
+      newSource.slice(dirtyStartNew, windowEndNew),
       tracker,
       parseOptions,
       dirtyStartNew,
     );
-    nextDirtyZones = buildZonesInternal(dirtyTree, zoneCap);
+    const treeZones = buildZonesInternal(tree, zoneCap);
 
-    const reparsedEnd =
-      nextDirtyZones.length > 0 ? nextDirtyZones[nextDirtyZones.length - 1].endOffset : dirtyStartNew;
-    if (reparsedEnd === dirtyEndNew || nextDirtyTo === zones.length - 1) {
+    // 在 (dirtyTo, windowToIdx] 内找最小可复用起点 s。
+    // treeZones 按 startOffset 升序，游标单调推进。
+    let foundSeam = -1;
+    let foundCursor = -1;
+    let treeZoneCursor = 0;
+    for (let s = dirtyTo + 1; s <= windowToIdx; s++) {
+      const seamNew = mapOldOffsetToNew(edit, delta, prevZones[s].startOffset);
+      while (treeZoneCursor < treeZones.length && treeZones[treeZoneCursor].startOffset < seamNew) {
+        treeZoneCursor++;
+      }
+      if (treeZoneCursor >= treeZones.length) break; // seam 超出已解析内容
+      const candidate = treeZones[treeZoneCursor];
+      // 没有 zone 恰好起于 seam → 有节点跨越它（被吞并/合并）→ 此处不收敛。
+      if (candidate.startOffset !== seamNew) continue;
+      // 截断防护：候选不能是被窗口右界强行闭合的末尾 zone。
+      // 窗口已到 EOF 时末尾 zone 也是真实的；否则要求其后还有 zone。
+      const candidateIsGenuine = treeZoneCursor < treeZones.length - 1 || reachedEof;
+      if (!candidateIsGenuine) break; // 需更大窗口确认 → 跳出去倍增扩窗
+      if (!zoneReconverges(candidate, prevZones[s], delta)) continue;
+      // 提交前缀里若残留悬空开标记（递归扫到嵌套文本）→ 有构造越过 seam 退化 → 不可信。
+      // 这类（如 inline 内 "$$info()*…" 整段降级成 text 子节点、配 EOF 整行闭合会变 block）
+      // 截断窗口里看似闭合，唯递归悬空开标记能逼现 → 放弃所有 seam，扩窗。
+      if (treeZonesPrefixHasStrayOpen(treeZones, treeZoneCursor, hasStrayOpen)) break;
+      foundSeam = s;
+      foundCursor = treeZoneCursor;
+      break;
+    }
+
+    if (foundSeam !== -1) {
+      const prefixSig = combinePrefixSignature(treeZones, foundCursor);
+      // EOF 窗口即真解析，直接接受；否则需与上一轮倍增窗口的前缀一致方可接受。
+      if (reachedEof || (foundSeam === pendingSeam && prefixSig === pendingPrefixSig)) {
+        const seamNew = mapOldOffsetToNew(edit, delta, prevZones[foundSeam].startOffset);
+        probeSliceBytes = windowEndNew - seamNew;
+        return {
+          budgetExceeded: false,
+          dirtyZones: treeZones.slice(0, foundCursor),
+          reuseFromIndex: foundSeam,
+          cumulativeReparsedBytes,
+          probeSliceBytes,
+        };
+      }
+      pendingSeam = foundSeam;
+      pendingPrefixSig = prefixSig;
+    } else {
+      pendingSeam = -1;
+    }
+
+    if (reachedEof) {
+      // 解析到文末仍未重收敛 → 右侧全部并入脏窗，无复用。
       return {
         budgetExceeded: false,
-        dirtyTo: nextDirtyTo,
-        dirtyZones: nextDirtyZones,
-        cumulativeReparsedBytes: nextCumulativeReparsedBytes,
+        dirtyZones: treeZones,
+        reuseFromIndex: prevZones.length,
+        cumulativeReparsedBytes,
+        probeSliceBytes,
       };
     }
-    nextDirtyTo += 1;
+    const extra = windowToIdx - dirtyTo;
+    windowToIdx = Math.min(lastIndex, dirtyTo + extra * 2);
   }
+};
+
+// ── 左边界合并探测 ──
+//
+// 起于被复用左侧 [0, from) 的任意前向扫描——findTagArgClose 的括号配平、lazy-inline
+// 找 )$$、findRawClose/findBlockClose 找整行闭合——其结果**只取决于其右侧的
+// 「结构 token 序列」**（普通字符只是 pos++，不影响判定）。而 findTagArgClose 一路扫到
+// EOF（见 scanner.ts，无界），所以左侧构造的前瞻可以跨越编辑、且其"读取范围"在解析树里
+// 完全不可见（如 "$$b(" 括号不配平时前瞻到 EOF 失败、回退成 inline，节点看上去却很正常）。
+//
+// 关键不变量：编辑左侧 [0, from) 与编辑右侧（复用右侧 / 编辑之外）的源码都未变；
+// 因此只要**脏区内的结构 token 骨架未被本次编辑改变**，任一左侧扫描看到的 token 序列
+// 就完全相同 → 解析结果相同 → 复用左侧 sound。反之骨架若变 → 左侧扫描结果可能变 →
+// 回退全量。纯文本编辑（不碰任何结构 token）→ 骨架不变 → 走增量。from === 0 时无左侧可复用，免检。
+//
+// 骨架 = 脏区源码里所有结构 token 的有序标记串。token 集合覆盖各扫描所关心的一切：
+// escapeChar / tagPrefix / tagOpen / tagClose / endTag / rawOpen / blockOpen /
+// 整行 rawClose / 整行 blockClose。匹配按"先转义、再整行闭合、再带 tagClose 前缀的复合
+// token、最后单字符 token"的优先级，避免前缀歧义。转义后跳过紧邻 1 个字符（保守：宁可
+// 多发标记/多回退，也不漏标记——漏标记才会不 sound）。
+type SkeletonTokens = {
+  escapeChar: string;
+  tagPrefix: string;
+  tagOpen: string;
+  tagClose: string;
+  tagDivider: string;
+  endTag: string;
+  rawOpen: string;
+  blockOpen: string;
+  rawClose: string;
+  blockClose: string;
+  isStart: (c: string) => boolean;
+  isChar: (c: string) => boolean;
+};
+
+const makeSkeletonTokens = (parseOptions: IncrementalParseOptions | undefined): SkeletonTokens => {
+  const s = createSyntax(parseOptions?.syntax);
+  const tagName = parseOptions?.tagName ?? DEFAULT_TAG_NAME;
+  return {
+    escapeChar: s.escapeChar,
+    tagPrefix: s.tagPrefix,
+    tagOpen: s.tagOpen,
+    tagClose: s.tagClose,
+    tagDivider: s.tagDivider,
+    endTag: s.endTag,
+    rawOpen: s.rawOpen,
+    blockOpen: s.blockOpen,
+    rawClose: s.rawClose,
+    blockClose: s.blockClose,
+    isStart: tagName.isTagStartChar ?? DEFAULT_TAG_NAME.isTagStartChar,
+    isChar: tagName.isTagChar ?? DEFAULT_TAG_NAME.isTagChar,
+  };
+};
+
+const structuralSkeleton = (
+  src: string,
+  start: number,
+  end: number,
+  tk: SkeletonTokens,
+): string => {
+  let out = "";
+  let pos = start;
+  while (pos < end) {
+    if (tk.escapeChar.length > 0 && src.startsWith(tk.escapeChar, pos)) {
+      // 只发 'E' 标记、**不跳过**后续字符：解析器的转义是上下文/特定 token 相关的
+      // （例如顶层 "\$$b(" 里 "\" 其实是文本、"$$b(" 仍是有效开标记），手写跳过会漏标记
+      // 而漏标记会不 sound。让后续 token 照常被标记（最坏多发标记/多回退一次，仍 sound）。
+      out += "E";
+      pos += tk.escapeChar.length;
+      continue;
+    }
+    if (isWholeLineToken(src, pos, tk.rawClose)) {
+      out += "R";
+      pos += tk.rawClose.length;
+      continue;
+    }
+    if (isWholeLineToken(src, pos, tk.blockClose)) {
+      out += "K";
+      pos += tk.blockClose.length;
+      continue;
+    }
+    if (src.startsWith(tk.endTag, pos)) {
+      out += "T";
+      pos += tk.endTag.length;
+      continue;
+    }
+    if (src.startsWith(tk.rawOpen, pos)) {
+      out += "r";
+      pos += tk.rawOpen.length;
+      continue;
+    }
+    if (src.startsWith(tk.blockOpen, pos)) {
+      out += "k";
+      pos += tk.blockOpen.length;
+      continue;
+    }
+    if (src.startsWith(tk.tagPrefix, pos)) {
+      // 有效开标记 $$<validtag>( → 'A'（不含 tag 名，名字变化不改变左侧扫描行为）；
+      // 裸 $$（不构成有效开）→ 'P'。两种都**只前进 1**：解析器对 tagPrefix 的搜索是逐位
+      // 重叠的，前进 2 会把落在奇数位的有效开（如 "$$$b(" 里的 "$$b("）漏掉。
+      // 裸 $$ 也必须发 'P'：成串的 $$ 会左右错位地影响 $$tag( 的配对/降级（如删掉
+      // "$$$$n(" 里多余的 $$ 仍得到 "$$n("，但前者多出的 $$ 会改变更远处的解析），
+      // 不发标记就会漏判。
+      let j = pos + tk.tagPrefix.length;
+      if (j < end && tk.isStart(src[j])) {
+        j++;
+        while (j < end && tk.isChar(src[j])) j++;
+        if (src.startsWith(tk.tagOpen, j)) {
+          out += "A"; // 有效开标记 $$tag（不含 tagOpen，下轮把 tagOpen 计为 O）
+          pos = j;
+          continue;
+        }
+      }
+      out += "P";
+      pos += 1;
+      continue;
+    }
+    if (src.startsWith(tk.tagOpen, pos)) {
+      out += "O";
+      pos += tk.tagOpen.length;
+      continue;
+    }
+    if (src.startsWith(tk.tagClose, pos)) {
+      out += "C";
+      pos += tk.tagClose.length;
+      continue;
+    }
+    if (tk.tagDivider.length > 0 && src.startsWith(tk.tagDivider, pos)) {
+      out += "D"; // tagDivider：影响 args 切分 / 左侧构造内容扫描，必须计入。
+      pos += tk.tagDivider.length;
+      continue;
+    }
+    pos += 1;
+  }
+  return out;
 };
 
 // 编辑合法性三重校验：
@@ -351,63 +731,79 @@ const updateIncrementalInternal = (
 
   const delta = newSource.length - doc.source.length;
   const dirty = findDirtyRange(prevZones, edit);
+  const hasStrayOpen = makeStrayOpenScanner(runtimeParseOptions);
 
-  let dirtyTo = dirty.to;
-  let dirtyZones: Zone[] = [];
+  // 右侧重收敛：从干净左锚点连续解析、向右扩到与旧右侧 zone 重收敛。
+  const from = dirty.from;
 
-  const firstReparse = reparseDirtyWindowUntilStable(
+  // 左侧 overhang 闸：任一被复用左侧 zone 的子树最远读取越过编辑起点 → 其内容覆盖了
+  // 被编辑区，复用即失真（见 zoneMaxEndOffset 上注）→ 回退全量。
+  // （不能据「左侧看起来良构」就跳过此闸：args 配平失败后回退成闭合 inline 的构造在树里
+  //  完全正常、其 args 扫描范围却已读到很远——读取范围在树里不可见，无法廉价甄别。）
+  for (let i = 0; i < from; i++) {
+    if (zoneMaxEndOffset(prevZones[i]) > edit.startOffset) return fullRebuild();
+  }
+  const reconv = reconvergeDirtyWindow(
     prevZones,
-    dirty.from,
-    dirtyTo,
+    from,
+    dirty.to,
     edit,
     delta,
     newSource,
     newTracker,
     runtimeParseOptions,
     cumulativeBudget,
-    cumulativeReparsedBytes,
     zoneCap,
+    hasStrayOpen,
   );
-  cumulativeReparsedBytes = firstReparse.cumulativeReparsedBytes;
+  cumulativeReparsedBytes += reconv.cumulativeReparsedBytes;
+  probeSliceBytes = reconv.probeSliceBytes;
   // 超预算不表示结果错误，只表示"继续增量不值了"。
   // 这时马上 rebuild，能避免极端编辑把增量拖成反复扩窗。
-  if (firstReparse.budgetExceeded) return fullRebuild();
-  dirtyTo = firstReparse.dirtyTo;
-  dirtyZones = firstReparse.dirtyZones;
+  if (reconv.budgetExceeded || cumulativeReparsedBytes > cumulativeBudget) return fullRebuild();
 
-  const oldRightZones = prevZones.slice(dirtyTo + 1);
-  if (oldRightZones.length > 0) {
-    const seamOldOffset = oldRightZones[0].startOffset;
-    const seamNewOffset = mapOldOffsetToNew(edit, delta, seamOldOffset);
-    const rightReuseCheck = isSafeRightReuse(
-      oldRightZones,
-      newSource,
-      seamNewOffset,
-      delta,
-      newTracker,
-      runtimeParseOptions,
-      zoneCap,
-    );
-    probeSliceBytes = rightReuseCheck.probeSliceBytes;
-    if (!rightReuseCheck.ok) return fullRebuild();
-  }
-  // seam probe 通过之前，右侧一律视为不安全。
-  // "看起来没动"不算证据，闭合边界轻微漂移就是最难查的那类增量 bug。
+  const dirtyZones = reconv.dirtyZones;
+  const reuseFromIndex = reconv.reuseFromIndex;
+  const oldRightZones = prevZones.slice(reuseFromIndex);
+
+  // diff 窗口：脏区在新旧坐标系下的区间，供 session 的 token diff 作提示用。
+  const dirtyOldStart = prevZones[from].startOffset;
+  // reuseFromIndex - 1 是最后一个并入脏窗的旧 zone（reuse-nothing 时即末尾 zone）。
+  const dirtyOldEnd = prevZones[Math.min(reuseFromIndex, prevZones.length) - 1].endOffset;
+  const dirtyCommitEndNew =
+    dirtyZones.length > 0
+      ? dirtyZones[dirtyZones.length - 1].endOffset
+      : mapOldOffsetToNew(edit, delta, dirtyOldStart);
   const diffSourceWindow: InternalDiffSourceWindow = {
-    oldRange: {
-      startOffset: prevZones[dirty.from].startOffset,
-      endOffset: prevZones[dirtyTo].endOffset,
-    },
+    oldRange: { startOffset: dirtyOldStart, endOffset: dirtyOldEnd },
     newRange: {
-      startOffset: mapOldOffsetToNew(edit, delta, prevZones[dirty.from].startOffset),
-      endOffset: mapOldOffsetToNew(edit, delta, prevZones[dirtyTo].endOffset),
+      startOffset: mapOldOffsetToNew(edit, delta, dirtyOldStart),
+      endOffset: dirtyCommitEndNew,
     },
   };
 
+  // ── 左侧安全门：脏区结构 token 骨架比对（见 structuralSkeleton 上注）──
+  // from === 0 时无被复用左侧，必然安全，免检。否则比对脏区在旧/新源码下的结构骨架：
+  // 不变 → 任一左侧前向扫描看到的 token 序列不变（且脏区起首构造未因编辑降级而向左并入）
+  //      → 复用左侧 sound；变了 → 回退全量。
+  // 注：不能据「左侧看起来良构」就跳过——args 配平失败回退成闭合 inline 的左侧构造其扫描
+  //     已读到脏区、却在树里完全正常（读取范围不可见），无法廉价甄别，故 from>0 一律比对。
+  if (from > 0) {
+    const skeletonTokens = makeSkeletonTokens(runtimeParseOptions);
+    const oldSkeleton = structuralSkeleton(doc.source, dirtyOldStart, dirtyOldEnd, skeletonTokens);
+    const newSkeleton = structuralSkeleton(
+      newSource,
+      mapOldOffsetToNew(edit, delta, dirtyOldStart),
+      dirtyCommitEndNew,
+      skeletonTokens,
+    );
+    if (oldSkeleton !== newSkeleton) return fullRebuild();
+  }
+
   // 以左侧切片为基底直接增长成 nextRawZones：避免再单独建 rightZones 数组、再 spread 重拷一遍
-  // （左、右各省一次 O(zones) 拷贝）。左侧 zone 在编辑点之前、偏移不变故原样保留；
+  // （左、右各省一次 O(zones) 拷贝）。左侧 zone 严格在编辑点之前、偏移不变故原样保留；
   // deferShiftZone 仍逐个对旧右侧 zone 施加 lazy 位移，顺序与原 .map 一致。
-  const nextRawZones = prevZones.slice(0, dirty.from);
+  const nextRawZones = prevZones.slice(0, from);
   for (let k = 0; k < dirtyZones.length; k++) nextRawZones.push(dirtyZones[k]);
   for (let k = 0; k < oldRightZones.length; k++) {
     nextRawZones.push(deferShiftZone(oldRightZones[k], delta));
@@ -423,6 +819,7 @@ const updateIncrementalInternal = (
   };
   installLazyDocument(updated, nextRawZones, newTracker);
   setCachedOptionsFingerprint(updated, nextOptionsFingerprint);
+
   emitDebug(false);
   internalObserver?.({ mode: "incremental", diffSourceWindow });
   return updated;

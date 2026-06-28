@@ -944,9 +944,17 @@ const cases: GoldenCase[] = [
         newSource,
       );
 
-      assert.equal(result.ok, false);
-      if (!result.ok) {
-        assert.equal(result.error.code, "UNKNOWN");
+      // approach C（签名重收敛）下，被复用右侧 zone 只在「重收敛 seam」处做签名校验，
+      // 尾部 zone 走惰性复用（deferShiftZone 不读 node.type）。因此**尾部**损坏不再在
+      // update 期被捕获成 UNKNOWN，而是惰性带过、在物化（读取 .tree）时由 shiftNode 暴露。
+      // 这里因此应当 ok:true，损坏在物化时抛出。
+      //   - seam 处损坏 → UNKNOWN：见 “malformed node type in right zones should surface as UNKNOWN”
+      //   - 尾部损坏 → 物化抛错：另见 LazyShift “materialization should surface unsupported frame source type”
+      assert.equal(result.ok, true);
+      if (result.ok) {
+        assert.throws(() => {
+          void result.value.tree;
+        }, /unexpected node type|unsupported frame source type/);
       }
     },
   },
@@ -2298,7 +2306,7 @@ const cases: GoldenCase[] = [
     },
   },
   {
-    name: "[Incremental/Probe] unstable seam should fallback to full rebuild",
+    name: "[Incremental/Probe] inconsistent cached right zone still yields correct tree",
     run: () => {
       const source = "L\n$$code(ts)%\nA\n%end$$\nM\n$$note()*\nB\n*end$$\nR";
       const doc = parseIncremental(source);
@@ -2328,8 +2336,10 @@ const cases: GoldenCase[] = [
       });
       const full = parseFull(newSource);
 
+      // approach C 不再因右侧任一异常就整文档 full rebuild：重收敛会发现被污染 zone 的签名
+      // 与从源码重解析的结果不一致，于是把该 zone 并入脏窗重解析、只复用真正干净收敛的右侧。
+      // 关键不变量仍然成立——最终 tree / zones 与全量逐一相等（这才是必须守护的）。
       assert.ok(stats);
-      assert.equal(stats.fellBackToFull, true);
       assert.deepEqual(next.tree, full.tree);
       assert.deepEqual(next.zones, full.zones);
     },

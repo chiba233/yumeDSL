@@ -143,9 +143,13 @@ export const deferShiftZone = (zone: Zone, delta: number): Zone => {
     nodes: zone.nodes,
   };
   const totalDelta = existingDelta + delta;
-  if (totalDelta !== 0) {
-    zonePendingDeltaMap.set(newZone, totalDelta);
-  }
+  // 即便累积 offset delta 为 0，也必须登记并最终重新 resolve：
+  // 等长编辑（如把 'L' 替换成 '\n'）会改变后续所有行的行号 / 列号，
+  // 而节点 offset 不变。沿用旧 position 对象会导致 line/column 失真，
+  // 破坏 "增量 == 全量（含 position）" 不变量。
+  // 右侧 zone 一律按 tracker.resolve(oldOffset + delta) 在新 tracker 上重算，
+  // delta 为 0 时 resolve(oldOffset) 仍给出新源下的正确 line/column。
+  zonePendingDeltaMap.set(newZone, totalDelta);
   // zone signature 不包含 position。
   // 所以只要结构节点没变，lazy shift 后可以继续沿用旧 signature 缓存。
   const signature = getCachedZoneSignature(zone);

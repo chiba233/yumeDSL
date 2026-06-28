@@ -4,6 +4,14 @@
 
 ### 1.5.1
 
+- **增量：`updateIncremental(...)` 现在可证明地重收敛到全量解析（签名驱动重收敛）**
+  - 修复一类潜在正确性 bug：`updateIncremental(doc, edit, newSource).tree`（以及 `createIncrementalSession().applyEdit(...)`）可能与 `parseStructural(newSource, ...)` 不一致——包括节点结构**和** position。此前"孤立重解析脏切片 + 定宽 seam probe"的复用在多处边界上不 sound。
+  - **右侧**改用*签名驱动重收敛*：从一个可证明干净的左锚点连续重解析脏窗，按倍增（带预算守卫）向右扩，直到某个重解析出的 zone 与缓存旧 zone 在「同一新坐标 offset 边界 + 同一结构签名 + 非截断 + 跨窗口稳定」上重收敛。这正确覆盖了：无界前向扫描在切片边界被截断、构造向右溢出、文末插入、整行 `*end$$` / `%end$$` 落在窗口中部、seam 处文本片段合并，以及解析器**非前缀单调**的降级（在窗口末尾追加内容会回溯改变前部节点）。
+  - **左侧**由两道闸守护：(a) *args overhang* 闸——被复用左侧 zone 的子树读取越过编辑点（退化的 `findTagArgClose` 失败、产出越界 arg 文本）即回退全量；(b) 脏区*结构 token 骨架*比对（覆盖 `tagPrefix` / `tagOpen` / `tagClose` / `tagDivider` / `endTag` / `rawOpen` / `blockOpen` 及整行 `rawClose` / `blockClose` / 转义，并用重叠前缀正确的逐位扫描）——若编辑改变了 token 骨架（这正是左侧构造扫描伸入脏区、或脏区起首构造向左合并的前提），即回退全量。
+  - **lazy 平移的 position 修复**：被复用的右侧 zone 现在一律对新 position tracker 重新 resolve（即便净 offset delta 为 `0`）。等长编辑若改变了换行（如 `L` → `\n`）会平移后续所有行/列，旧的 `delta === 0` 快路径跳过了它，使复用节点带上失真的 `line` / `column`。
+  - **零 `src/core/**` 改动**——整个修复都在 `src/incremental/**`。没有给 core 加 ambient 状态、没有强制 `onError`、没有给共享闭包"增肥"、热路径没有 `try/finally`。所有树遍历均为**显式栈**（无递归）——深嵌套不会爆调用栈，与库其余部分一致。
+  - **性能**：良构局部编辑保持增量且有界——重解析字节为 `O(edit)`、装配为 `O(Z)`（不变）。在未闭合 / 降级构造**下方**做纯文本编辑仍走增量（无"每键 `O(n)`"回退）。改变脏区结构 token 骨架的编辑会保守回退全量——增量复用是为性能服务的尽力而为，绝不以正确性为代价。
+  - **测试**：新增 `tests/incrementalFuzz.test.ts`——种子化、可复现的属性测试，对低层与公开会话两条 API 断言 `increment == full` 不变量（带 position 的 tree + 合法 zone 分区），覆盖确定性回归源（已知失败类 + CRLF）与数百万次随机 doc/编辑（含自定义 syntax + shorthand）。`incremental.test.ts` 中两个防御性用例已更新，以反映更细粒度的复用（被污染的 *seam* zone 仍报 `UNKNOWN`；被污染的 *尾部* zone 现在在物化时惰性暴露；不一致的缓存右侧 zone 被并入脏窗重解析，而非触发整文档全量重建）。
 - **Scanner：CRLF 整行闭合标记不再被误报为 malformed**
   - `findMalformedWholeLineTokenCandidate(...)` 现在通过共享的 `getLineEnd(...)`（会剥掉行尾 `\r`）推导行内容末尾，与权威的 `isWholeLineToken(...)` / `getLineEnd(...)` 语义同源。此前它切片到 `\n` 处并保留了 `\r`，导致在 CRLF 文件里一个合法的整行闭合（如 `*=\r\n`）可能被报成 `BLOCK_CLOSE_MALFORMED` / `RAW_CLOSE_MALFORMED`，而非正确的 `*_NOT_CLOSED`，且候选 span 错误地包含了 `\r`。
   - 这是**仅影响诊断**的修复：只改变"闭合已找不到之后"选用的错误码 / span，从不影响成功解析的结果。
