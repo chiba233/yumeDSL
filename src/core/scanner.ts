@@ -485,7 +485,10 @@ export const findMalformedWholeLineTokenCandidate = (
 
   while (pos < text.length) {
     const lineEnd = text.indexOf("\n", pos);
-    const end = lineEnd === -1 ? text.length : lineEnd;
+    // 行内容必须复用 getLineEnd 的 CRLF 语义（剥掉行尾 \r），与 isWholeLineToken 同源。
+    // 否则 CRLF 文件里合法的整行闭合（如 "*=\r\n"）会因残留的 \r 被误报成 *_CLOSE_MALFORMED。
+    // 注意：推进游标仍用 \n 的位置（lineEnd），不能用 getLineEnd 的返回值。
+    const end = getLineEnd(text, pos);
     const line = text.slice(pos, end);
     const trimmedStart = line.trimStart();
     const leadingWhitespace = line.length - trimmedStart.length;

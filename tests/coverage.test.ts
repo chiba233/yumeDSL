@@ -40,6 +40,7 @@ import { resolveBaseOptions } from "../src/config/resolveOptions.ts";
 import {
   findBlockClose,
   findInlineClose,
+  findMalformedWholeLineTokenCandidate,
   getTagCloserType,
   getTagCloserTypeWithCache,
   readTagStartInfo,
@@ -1055,6 +1056,31 @@ const cases: GoldenCase[] = [
         resumeParentIndex: -1,
         resumeTagStartI: 0,
         resumeArgStartI: 7,
+      });
+    },
+  },
+  {
+    name: "[Coverage/Scanner] findMalformedWholeLineTokenCandidate treats CRLF whole-line closer as well-formed",
+    run() {
+      // "*=\r\n" 是 CRLF 文件里合法的整行闭合：行尾的 \r 不应让它被误判为 malformed。
+      // 回归 scanner.ts findMalformedWholeLineTokenCandidate 此前保留 \r 的 bug。
+      assert.equal(findMalformedWholeLineTokenCandidate("*=\r\n", 0, "*="), null);
+      // 同样地，单纯 LF 的合法整行闭合也不应被标记。
+      assert.equal(findMalformedWholeLineTokenCandidate("*=\n", 0, "*="), null);
+    },
+  },
+  {
+    name: "[Coverage/Scanner] findMalformedWholeLineTokenCandidate flags genuinely malformed CRLF closer with \\r stripped from length",
+    run() {
+      // 真正畸形的 "*=x\r\n" 仍要被标记，且 length 不含行尾 \r（应为 3 = "*=x"，而非 4）。
+      assert.deepEqual(findMalformedWholeLineTokenCandidate("*=x\r\n", 0, "*="), {
+        index: 0,
+        length: 3,
+      });
+      // 缩进的整行闭合（非列 0）属畸形：length 不含 \r（应为 2 = "*="）。
+      assert.deepEqual(findMalformedWholeLineTokenCandidate("  *=\r\n", 0, "*="), {
+        index: 2,
+        length: 2,
       });
     },
   },
