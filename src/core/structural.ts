@@ -286,15 +286,19 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     const inlineCloseLeadCode = hasInlineCloseToken
       ? frame.inlineCloseToken!.charCodeAt(0)
       : Number.NaN;
-    for (let cursor = from; cursor < frame.textEnd; cursor++) {
-      const currentCode = frame.text.charCodeAt(cursor);
-      if (watchShorthandStart && tagName.isTagStartChar(frame.text[cursor])) return cursor;
+    // 循环内 frame.* 均为不变量（本次扫描只读不改 frame），提到循环外避免每字符的属性链访问。
+    const frameText = frame.text;
+    const frameTextEnd = frame.textEnd;
+    const frameInsideArgs = frame.insideArgs;
+    for (let cursor = from; cursor < frameTextEnd; cursor++) {
+      const currentCode = frameText.charCodeAt(cursor);
+      if (watchShorthandStart && tagName.isTagStartChar(frameText[cursor])) return cursor;
       if (currentCode === tagPrefixLeadCode || currentCode === tagCloseLeadCode) return cursor;
-      if (frame.insideArgs && currentCode === tagDividerLeadCode) return cursor;
+      if (frameInsideArgs && currentCode === tagDividerLeadCode) return cursor;
       if (canReadEscaped && currentCode === escapeLeadCode) return cursor;
       if (hasInlineCloseToken && currentCode === inlineCloseLeadCode) return cursor;
     }
-    return frame.textEnd;
+    return frameTextEnd;
   };
 
   if (!endTag.startsWith(tagClose)) {

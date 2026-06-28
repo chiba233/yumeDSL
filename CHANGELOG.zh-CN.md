@@ -2,6 +2,25 @@
 
 # 更新日志
 
+### 1.5.1
+
+- **Scanner：CRLF 整行闭合标记不再被误报为 malformed**
+  - `findMalformedWholeLineTokenCandidate(...)` 现在通过共享的 `getLineEnd(...)`（会剥掉行尾 `\r`）推导行内容末尾，与权威的 `isWholeLineToken(...)` / `getLineEnd(...)` 语义同源。此前它切片到 `\n` 处并保留了 `\r`，导致在 CRLF 文件里一个合法的整行闭合（如 `*=\r\n`）可能被报成 `BLOCK_CLOSE_MALFORMED` / `RAW_CLOSE_MALFORMED`，而非正确的 `*_NOT_CLOSED`，且候选 span 错误地包含了 `\r`。
+  - 这是**仅影响诊断**的修复：只改变"闭合已找不到之后"选用的错误码 / span，从不影响成功解析的结果。
+  - 已在 `tests/coverage.test.ts` 补充回归用例。
+- **增量：options 指纹中改用确定性字母序排序**
+  - `buildHandlersShapeFingerprint(...)`（handler key 排序）与 `normalizeShorthandList(...)` 现在向 `Array.prototype.sort(...)` 传入显式的 `String.localeCompare` 比较函数，满足静态扫描对"可靠字母序排序"的规则要求。指纹实际使用的规范顺序不变。
+- **性能：热路径常数因子优化（不改变渐进复杂度）**
+  - `structural.ts` `findNextBoundaryChar(...)`：把循环内不变的 `frame.text` / `frame.textEnd` / `frame.insideArgs` 读取提到逐字符边界循环（最热的扫描循环）之外。
+  - `scanner.ts` `readTagHeadAt(...)`：不再在热路径上急切切出 tag 名子串。三个边界扫描器（`findInlineClose` / `findInlineCloseWithCache` / `findBlockClose`）只用 `argStart`；唯一的冷路径消费者 `readTagStartInfo(...)` 改为按 offset 自行切出 tag 名。tag 密集文档里每识别一个 tag head 少分配一个子串。
+  - `incremental.ts` 文档组装：`nextRawZones` 现在以左侧 zone 切片为基底一趟拼装，替代 `[...leftZones, ...dirtyZones, ...rightZones]`，省掉中间 `rightZones` 数组以及对左/右 zone 的一次整段 `O(Z)` 重拷贝。
+  - 三处均为常数因子优化。*线性时间复杂度* 中已证明的全量解析 `Θ(n)` 界、增量 `T_assemble = O(Z)` 与 Theorem U 均不受影响。
+- **文档**
+  - *线性时间复杂度* Appendix L §7（"Document assembly"）已更新（英文 + 中文），改为展示一趟拼装的 zone 组装写法，并注明这是常数因子改动，`T_assemble = O(Z)` 与 Theorem U 保持不变。
+- **测试**
+  - 在 `tests/coverage.test.ts` 新增 scanner CRLF 诊断的覆盖用例（2 个）。
+- 无破坏性公共 API 变更
+
 ### 1.5.0
 
 - **增量 diff dirty range 辅助 API**

@@ -114,7 +114,7 @@ const readTagHeadAt = (
   pos: number,
   syntax: SyntaxConfig,
   tagName: TagNameConfig,
-): TagHead | null => {
+): Omit<TagHead, "tag"> | null => {
   // 注意：这里只负责“语法上像不像 tag 头”，不负责这个 tag 最终是否可解析。
   // 也就是说：这里只看 prefix / tagName / tagOpen，不碰 handler、不碰 form gating。
   // 一旦把职责偷偷扩进来，scanner 和 parser 的边界会直接糊掉。
@@ -136,8 +136,10 @@ const readTagHeadAt = (
     return null;
   }
 
+  // 不再急切切出 tag 名字符串：三个热调用点（findInlineClose / findInlineCloseWithCache /
+  // findBlockClose）只用 argStart；唯一需要 tag 名的是冷路径 readTagStartInfo，由它按 offset 自取。
+  // 这样 tag 密集文档里每识别到一个 tag head 就少分配一个子串。
   return {
-    tag: text.slice(tagStart, tagNameEnd),
     tagStart: pos,
     tagNameEnd,
     argStart: tagNameEnd + tagOpen.length,
@@ -589,7 +591,9 @@ export const readTagStartInfo = (
   if (!head) return null;
 
   return {
-    tag: head.tag,
+    // tag 名只在这唯一需要它的冷路径切出；readTagHeadAt 不再为热路径预切。
+    // head.tagStart 是 prefix 之前的位置，故起点需加上 tagPrefix.length，与原 readTagHeadAt 内切片等价。
+    tag: text.slice(head.tagStart + syntax.tagPrefix.length, head.tagNameEnd),
     tagOpenPos: head.tagStart,
     tagNameEnd: head.tagNameEnd,
     argStart: head.argStart,

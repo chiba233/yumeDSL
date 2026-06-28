@@ -2,6 +2,25 @@
 
 # Changelog
 
+### 1.5.1
+
+- **Scanner: CRLF whole-line closers are no longer misreported as malformed**
+  - `findMalformedWholeLineTokenCandidate(...)` now derives the line-content end through the shared `getLineEnd(...)` helper (which strips a trailing `\r`), matching the authoritative `isWholeLineToken(...)` / `getLineEnd(...)` semantics. It previously sliced up to the `\n` and kept the `\r`, so on CRLF input a well-formed whole-line closer such as `*=\r\n` could be reported as `BLOCK_CLOSE_MALFORMED` / `RAW_CLOSE_MALFORMED` instead of the correct `*_NOT_CLOSED`, with a candidate span that wrongly included the `\r`.
+  - This is **diagnostic-only**: it only affected the error code / span chosen after a close was already not found, and never changed a successful parse.
+  - Regression coverage added in `tests/coverage.test.ts`.
+- **Incremental: deterministic alphabetical sort in the options fingerprint**
+  - `buildHandlersShapeFingerprint(...)` (handler-key ordering) and `normalizeShorthandList(...)` now pass an explicit `String.localeCompare` comparator to `Array.prototype.sort(...)`, satisfying the static-analysis rule for reliable alphabetical sorting. The canonical ordering used by the fingerprint is unchanged in practice.
+- **Performance: constant-factor hot-path optimizations (no asymptotic change)**
+  - `structural.ts` `findNextBoundaryChar(...)`: the invariant `frame.text` / `frame.textEnd` / `frame.insideArgs` reads are hoisted out of the per-character boundary loop (the hottest scan loop).
+  - `scanner.ts` `readTagHeadAt(...)`: no longer eagerly slices the tag-name substring on the hot path. The three boundary scanners (`findInlineClose` / `findInlineCloseWithCache` / `findBlockClose`) only consume `argStart`; the single cold consumer `readTagStartInfo(...)` now derives the tag name by offset. This removes one substring allocation per recognized tag head in tag-dense documents.
+  - `incremental.ts` document assembly: `nextRawZones` is now built in a single pass from the left zone slice instead of `[...leftZones, ...dirtyZones, ...rightZones]`, removing the intermediate `rightZones` array and one full `O(Z)` re-copy of the left/right zones.
+  - All three are constant-factor only. The proven `Θ(n)` full-parse bounds and the incremental `T_assemble = O(Z)` / Theorem U bounds in *Linear-Time Complexity* are unchanged.
+- **Docs**
+  - *Linear-Time Complexity* Appendix L §7 ("Document assembly") updated (English + 中文) to show the single-pass zone assembly and to note that it is a constant-factor change leaving `T_assemble = O(Z)` and Theorem U intact.
+- **Tests**
+  - Added scanner CRLF diagnostic coverage in `tests/coverage.test.ts` (2 cases).
+- No breaking public API changes
+
 ### 1.5.0
 
 - **Incremental diff dirty-range helper**

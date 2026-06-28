@@ -375,7 +375,6 @@ const updateIncrementalInternal = (
   dirtyTo = firstReparse.dirtyTo;
   dirtyZones = firstReparse.dirtyZones;
 
-  const leftZones = prevZones.slice(0, dirty.from);
   const oldRightZones = prevZones.slice(dirtyTo + 1);
   if (oldRightZones.length > 0) {
     const seamOldOffset = oldRightZones[0].startOffset;
@@ -394,7 +393,6 @@ const updateIncrementalInternal = (
   }
   // seam probe 通过之前，右侧一律视为不安全。
   // "看起来没动"不算证据，闭合边界轻微漂移就是最难查的那类增量 bug。
-  const rightZones = oldRightZones.map((zone) => deferShiftZone(zone, delta));
   const diffSourceWindow: InternalDiffSourceWindow = {
     oldRange: {
       startOffset: prevZones[dirty.from].startOffset,
@@ -406,7 +404,14 @@ const updateIncrementalInternal = (
     },
   };
 
-  const nextRawZones = [...leftZones, ...dirtyZones, ...rightZones];
+  // 以左侧切片为基底直接增长成 nextRawZones：避免再单独建 rightZones 数组、再 spread 重拷一遍
+  // （左、右各省一次 O(zones) 拷贝）。左侧 zone 在编辑点之前、偏移不变故原样保留；
+  // deferShiftZone 仍逐个对旧右侧 zone 施加 lazy 位移，顺序与原 .map 一致。
+  const nextRawZones = prevZones.slice(0, dirty.from);
+  for (let k = 0; k < dirtyZones.length; k++) nextRawZones.push(dirtyZones[k]);
+  for (let k = 0; k < oldRightZones.length; k++) {
+    nextRawZones.push(deferShiftZone(oldRightZones[k], delta));
+  }
   // 确定走增量路径，此时才 clone parseOptions（避免 fullRebuild 白做一次）。
   const nextParseOptionsSnapshot = options ? cloneParseOptions(options) : doc.parseOptions;
 
