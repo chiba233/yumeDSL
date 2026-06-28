@@ -141,6 +141,11 @@ const findDirtyRange = (zones: readonly Zone[], edit: IncrementalEdit): { from: 
   let lastOverlap = -1;
   let insertionIndex = zones.length;
   let insertionFound = false;
+  // 编辑左侧最早的 readsPastEnd zone：它的前向扫描读到了文末，依赖编辑区内容，
+  // 编辑后必须从它起重解析，否则原样复用会得到过期结构（doc#53 fuzz case）。
+  // 它读到文末，故最早的那个一旦确定，从它到编辑之间的 zone 都会被纳入。
+  // 在同一趟扫描里顺带求出，不再额外开一个 O(zones) 循环。
+  let earliestLeftReadsPastEnd = -1;
 
   for (let i = 0; i < zones.length; i++) {
     const zone = zones[i];
@@ -151,6 +156,13 @@ const findDirtyRange = (zones: readonly Zone[], edit: IncrementalEdit): { from: 
     if (!insertionFound && zone.startOffset >= edit.startOffset) {
       insertionIndex = i;
       insertionFound = true;
+    }
+    if (
+      earliestLeftReadsPastEnd === -1 &&
+      zone.endOffset <= edit.startOffset &&
+      zoneReadsPastEnd(zone)
+    ) {
+      earliestLeftReadsPastEnd = i;
     }
   }
 
@@ -163,16 +175,10 @@ const findDirtyRange = (zones: readonly Zone[], edit: IncrementalEdit): { from: 
       ? Math.min(zones.length - 1, lastOverlap + 1)
       : Math.min(zones.length - 1, insertionIndex);
 
-  // 左扩：某个完全位于编辑左侧的 zone，若其解析"读到了文末"（readsPastEnd），说明它的前向扫描
-  // 依赖编辑区内容；编辑后必须从它起重解析，否则原样复用会得到过期结构（doc#53 fuzz case）。
-  // 这类 zone 读到文末，所以最早的那个一旦命中，从它到编辑之间的 zone 都要纳入。
-  let from = baseFrom;
-  for (let i = 0; i < baseFrom; i++) {
-    if (zones[i].endOffset <= edit.startOffset && zoneReadsPastEnd(zones[i])) {
-      from = i;
-      break;
-    }
-  }
+  const from =
+    earliestLeftReadsPastEnd !== -1 && earliestLeftReadsPastEnd < baseFrom
+      ? earliestLeftReadsPastEnd
+      : baseFrom;
 
   return { from, to };
 };

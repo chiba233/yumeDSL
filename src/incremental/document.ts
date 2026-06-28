@@ -158,11 +158,20 @@ export const assignZoneReadsPastEnd = (
   zones: readonly Zone[],
   unresolvedScanStarts: readonly number[],
 ): void => {
+  // zones 按 startOffset 升序、互不重叠、连续覆盖：用二分定位包含每个 start 的 zone，
+  // 避免 O(starts × zones) 的嵌套扫描（每次全量解析 / 窗口重解析都会调到这里）。
   for (let s = 0; s < unresolvedScanStarts.length; s++) {
     const start = unresolvedScanStarts[s];
-    for (let i = 0; i < zones.length; i++) {
-      if (start >= zones[i].startOffset && start < zones[i].endOffset) {
-        zoneReadsPastEndCache.set(zones[i], true);
+    let lo = 0;
+    let hi = zones.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >>> 1;
+      if (start < zones[mid].startOffset) {
+        hi = mid - 1;
+      } else if (start >= zones[mid].endOffset) {
+        lo = mid + 1;
+      } else {
+        zoneReadsPastEndCache.set(zones[mid], true);
         break;
       }
     }
