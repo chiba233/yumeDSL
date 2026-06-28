@@ -77,6 +77,7 @@ import {
   supportsInlineForm,
 } from "../config/resolveOptions.js";
 import { emitError } from "../internal/errors.js";
+import { recordUnresolvedScan } from "../internal/lookahead.js";
 import {
   findBlockClose,
   findMalformedWholeLineTokenCandidate,
@@ -1240,6 +1241,9 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     if (frame.i < frame.textEnd) return false;
 
     if (frame.inlineCloseToken !== null) {
+      // 一个 inline/shorthand 帧在 textEnd 处被强制收尾 = 它在（切片）末尾仍未闭合，
+      // 其结构判定依赖更右的上下文：增量窗口须扩窗，且含该帧的 zone 须标记 readsPastEnd（详见 internal/lookahead）。
+      recordUnresolvedScan(frame.tagStartI);
       // EOF 下若连续祖先也都是未闭合 inline/shorthand，
       // 直接整条未闭合链退到第一个非 inline 容器，再只重扫一次。
       return replayMalformedInlineChainAtEof(frame);

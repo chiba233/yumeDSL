@@ -4,6 +4,11 @@
 
 ### 1.5.1
 
+- **增量：修复 `updateIncremental` 的树与全量重解析不一致（incremental == full 不变量）**
+  - 一个属性化 fuzz 测试（`tests/incrementalFuzz.test.ts`，随机文档 × 随机编辑序列）发现某些编辑后 `updateIncremental(...).tree` 不等于 `parseStructural(newSource)`——违反增量核心不变量。根因：脏窗被当作孤立切片解析，而 yumeDSL 文法有**无界前向扫描**（raw/block/arg close 搜索、inline EOF 收尾），它们扫到切片右边界会被静默截断，于是 `reparseDirtyWindowUntilStable(...)` 的 `reparsedEnd === dirtyEndNew` 判据（恒为真）可能接受一个与全文解析不同的窗口。
+  - 现修复四个不同的类：(1) 右边界前向扫描截断——新增 lookahead 记录器（`internal/lookahead.ts`）在扫描读到窗口末尾时打标并扩窗；(2) 编辑左侧被复用 zone 失效——把"解析读到文末"的 zone 标记 `readsPastEnd`，`findDirtyRange(...)` 据此向左扩展脏区；(3) 文末插入未被重解析窗口覆盖——窗口现在始终覆盖到新插入文本；(4) 整行 `*end$$` / `%end$$` close 落在行中间的窗口边界——用真实的 `newSource` 边界字符识别并扩窗。
+  - 由 fuzz 套件 + 全部现有增量/性能护栏/版本行为测试验证。**已知限制**：更重的 fuzz 会暴露更深的尾部病态输入（被复用 zone seam 处"重解析 vs 全量"的文本分段差异）尚未覆盖,committed fuzz 规模据此设定。
+  - 无公共 API 变更；良构编辑的行为不变（仅常数级守卫）。
 - **Scanner：CRLF 整行闭合标记不再被误报为 malformed**
   - `findMalformedWholeLineTokenCandidate(...)` 现在通过共享的 `getLineEnd(...)`（会剥掉行尾 `\r`）推导行内容末尾，与权威的 `isWholeLineToken(...)` / `getLineEnd(...)` 语义同源。此前它切片到 `\n` 处并保留了 `\r`，导致在 CRLF 文件里一个合法的整行闭合（如 `*=\r\n`）可能被报成 `BLOCK_CLOSE_MALFORMED` / `RAW_CLOSE_MALFORMED`，而非正确的 `*_NOT_CLOSED`，且候选 span 错误地包含了 `\r`。
   - 这是**仅影响诊断**的修复：只改变"闭合已找不到之后"选用的错误码 / span，从不影响成功解析的结果。

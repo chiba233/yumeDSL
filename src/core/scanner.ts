@@ -1,5 +1,6 @@
 import type { SyntaxConfig, TagHead, TagNameConfig, TagStartInfo } from "../types";
 import { getLineEnd, isWholeLineToken } from "../config/chars.js";
+import { recordUnresolvedScan } from "../internal/lookahead.js";
 import {
   getArgEscapableTokens,
   getBlockContentEscapableTokens,
@@ -43,6 +44,8 @@ export const findTagArgClose = (text: string, start: number, syntax: SyntaxConfi
     pos++;
   }
 
+  // 扫到切片末尾仍未配平到 close → 结果依赖更右的上下文（增量窗口须扩窗 / 该 zone 标记 readsPastEnd）。
+  recordUnresolvedScan(start);
   return -1;
 };
 
@@ -93,6 +96,8 @@ const fillTagArgCloseCacheFrom = (
     pos++;
   }
 
+  // 仍有未闭合的 open → 扫到切片末尾没配平，结果依赖更右上下文（增量窗口须扩窗 / zone 标记 readsPastEnd）。
+  if (openStack.length > 0) recordUnresolvedScan(openStack[0]);
   for (let i = 0; i < openStack.length; i++) {
     cache.set(openStack[i], -1);
   }
@@ -196,6 +201,8 @@ const scanInlineBoundary = (
     pos++;
   }
 
+  // 扫到切片末尾没找到 inline close → 结果依赖更右上下文（增量窗口须扩窗 / zone 标记 readsPastEnd）。
+  recordUnresolvedScan(start);
   return mode.fallbackToTextEnd ? text.length : -1;
 };
 
@@ -260,6 +267,8 @@ const fillInlineCloseCacheFrom = (
     pos++;
   }
 
+  // 仍有未闭合的 inline open → 扫到切片末尾没配平，结果依赖更右上下文（增量窗口须扩窗 / zone 标记 readsPastEnd）。
+  if (openStack.length > 0) recordUnresolvedScan(openStack[0]);
   for (let i = 0; i < openStack.length; i++) {
     cache.set(openStack[i], -1);
   }
@@ -442,6 +451,8 @@ export const findBlockClose = (
     pos++;
   }
 
+  // 扫到切片末尾没找到 block close → 结果依赖更右上下文（增量窗口须扩窗 / zone 标记 readsPastEnd）。
+  recordUnresolvedScan(start);
   return -1;
 };
 
@@ -467,6 +478,8 @@ export const findRawClose = (text: string, start: number, syntax: SyntaxConfig):
     pos = lineEnd + 1;
   }
 
+  // 扫到切片末尾没找到 raw close → 结果依赖更右上下文（增量窗口须扩窗 / zone 标记 readsPastEnd）。
+  recordUnresolvedScan(start);
   return -1;
 };
 

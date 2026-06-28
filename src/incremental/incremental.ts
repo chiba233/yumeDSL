@@ -15,6 +15,7 @@ import type {
   IncrementalUpdateErrorCode,
   IncrementalUpdateResult,
   PositionTracker,
+  StructuralNode,
   TokenDiffResult,
   Zone,
 } from "../types";
@@ -31,6 +32,7 @@ import {
   normalizeDiffRefinementDepthCap,
 } from "./diff.js";
 import {
+  assignZoneReadsPastEnd,
   getCachedOptionsFingerprint,
   hasUnsafeZoneCoverageTailGap,
   isSafeRightReuse,
@@ -40,9 +42,11 @@ import {
   parseIncrementalInternal,
   parseWithPositions,
   setCachedOptionsFingerprint,
+  zoneReadsPastEnd,
 } from "./document.js";
 import { deferShiftZone, getRawZones, installLazyDocument } from "./lazy.js";
 import { buildParseOptionsFingerprint, cloneParseOptions } from "./options.js";
+import { beginLookaheadRecording, endLookaheadRecording } from "../internal/lookahead.js";
 
 // ═══════════════════════════════════════════════════════════════
 // incremental.ts — 增量解析器入口 / 编排层
@@ -150,17 +154,27 @@ const findDirtyRange = (zones: readonly Zone[], edit: IncrementalEdit): { from: 
     }
   }
 
-  if (firstOverlap !== -1) {
-    return {
-      from: Math.max(0, firstOverlap - LEFT_LOOKBEHIND_ZONES),
-      to: Math.min(zones.length - 1, lastOverlap + 1),
-    };
+  const baseFrom =
+    firstOverlap !== -1
+      ? Math.max(0, firstOverlap - LEFT_LOOKBEHIND_ZONES)
+      : Math.max(0, insertionIndex - LEFT_LOOKBEHIND_ZONES);
+  const to =
+    firstOverlap !== -1
+      ? Math.min(zones.length - 1, lastOverlap + 1)
+      : Math.min(zones.length - 1, insertionIndex);
+
+  // 左扩：某个完全位于编辑左侧的 zone，若其解析"读到了文末"（readsPastEnd），说明它的前向扫描
+  // 依赖编辑区内容；编辑后必须从它起重解析，否则原样复用会得到过期结构（doc#53 fuzz case）。
+  // 这类 zone 读到文末，所以最早的那个一旦命中，从它到编辑之间的 zone 都要纳入。
+  let from = baseFrom;
+  for (let i = 0; i < baseFrom; i++) {
+    if (zones[i].endOffset <= edit.startOffset && zoneReadsPastEnd(zones[i])) {
+      from = i;
+      break;
+    }
   }
 
-  return {
-    from: Math.max(0, insertionIndex - LEFT_LOOKBEHIND_ZONES),
-    to: Math.min(zones.length - 1, insertionIndex),
-  };
+  return { from, to };
 };
 
 // 循环重解析脏窗，直到右边界稳定或超预算。
@@ -196,7 +210,13 @@ const reparseDirtyWindowUntilStable = (
     const dirtyStartOld = zones[dirtyFrom].startOffset;
     const dirtyEndOld = zones[nextDirtyTo].endOffset;
     const dirtyStartNew = mapOldOffsetToNew(edit, delta, dirtyStartOld);
-    const dirtyEndNew = mapOldOffsetToNew(edit, delta, dirtyEndOld);
+    // 末尾插入时（插入点恰好等于脏窗右界，如在文档末尾追加），mapOldOffsetToNew 会把右界
+    // 映回插入点之前，漏掉新插入的文本，而该文本可能改变紧邻左侧结构的闭合（doc#72：追加内容
+    // 使前一个 block 的 *end$$ 不再独占一行）。因此窗口右界至少要覆盖到新文本末尾。
+    const dirtyEndNew = Math.max(
+      mapOldOffsetToNew(edit, delta, dirtyEndOld),
+      edit.startOffset + edit.newText.length,
+    );
     const reparsedWindowSize = dirtyEndNew - dirtyStartNew;
     nextCumulativeReparsedBytes += reparsedWindowSize;
     if (nextCumulativeReparsedBytes > cumulativeBudget) {
@@ -208,17 +228,51 @@ const reparseDirtyWindowUntilStable = (
       };
     }
 
-    const dirtyTree = parseWithPositions(
-      newSource.slice(dirtyStartNew, dirtyEndNew),
-      tracker,
-      parseOptions,
-      dirtyStartNew,
-    );
+    // 窗口被当作孤立切片解析。yumeDSL 文法有无界前向扫描（raw/block/arg close 搜索、
+    // inline 未闭合 EOF 收尾等），它们若扫到切片右边界仍未收敛，就会被静默截断，
+    // 解析结果可能与"该段在整篇里"的解析不同。lookahead 记录器捕捉这种"触达边界"，
+    // 命中则说明窗口依赖更右上下文，必须扩窗（最终扩到文末，必然与全量一致）。
+    beginLookaheadRecording(dirtyStartNew);
+    let dirtyTree: readonly StructuralNode[];
+    let unresolvedScanStarts: number[];
+    try {
+      dirtyTree = parseWithPositions(
+        newSource.slice(dirtyStartNew, dirtyEndNew),
+        tracker,
+        parseOptions,
+        dirtyStartNew,
+      );
+    } finally {
+      unresolvedScanStarts = endLookaheadRecording();
+    }
+    const lookaheadReachedBoundary = unresolvedScanStarts.length > 0;
     nextDirtyZones = buildZonesInternal(dirtyTree, zoneCap);
 
     const reparsedEnd =
       nextDirtyZones.length > 0 ? nextDirtyZones[nextDirtyZones.length - 1].endOffset : dirtyStartNew;
-    if (reparsedEnd === dirtyEndNew || nextDirtyTo === zones.length - 1) {
+
+    // raw/block 的 close 是"整行 token"（%end$$ / *end$$ 必须独占一行）。若窗口的最后一个节点是
+    // 一个 raw/block，且它的 close 恰好落在窗口右边界，而该边界在全文里处于"行中间"
+    // （后面紧跟的不是 \n、也不是文末），那么这个 close 的"整行性"是被切片右界伪造出来的——
+    // 全文里它后面还有内容、并非独占一行，会被降级。这种边界对整行 close 不安全，必须扩窗。
+    // 注意：必须看 newSource[dirtyEndNew]（增量层才知道全文）；scanner 只看切片、无法区分。
+    const boundaryMidLine =
+      dirtyEndNew < newSource.length && newSource.charCodeAt(dirtyEndNew) !== 0x0a; // '\n'
+    const lastNode = dirtyTree.length > 0 ? dirtyTree[dirtyTree.length - 1] : undefined;
+    const lastNodeIsWholeLineClosedAtBoundary =
+      !!lastNode &&
+      (lastNode.type === "raw" || lastNode.type === "block") &&
+      lastNode.position?.end.offset === dirtyEndNew;
+    const wholeLineCloseUnsafe = boundaryMidLine && lastNodeIsWholeLineClosedAtBoundary;
+
+    // 收敛条件：重解析覆盖到窗口末尾，没有前向扫描触达边界，且边界对整行 close 安全。
+    // 仍不收敛但已到最后一个 zone 时停止——此时窗口即全文，必然与全量解析一致。
+    const stableBoundary =
+      reparsedEnd === dirtyEndNew && !lookaheadReachedBoundary && !wholeLineCloseUnsafe;
+    if (stableBoundary || nextDirtyTo === zones.length - 1) {
+      // 给本轮 dirty zones 打 readsPastEnd 标记：若仍有未收敛的前向扫描（已扩到文末的情形），
+      // 这些 zone 也依赖右侧，未来编辑须从它们起重解析。
+      assignZoneReadsPastEnd(nextDirtyZones, unresolvedScanStarts);
       return {
         budgetExceeded: false,
         dirtyTo: nextDirtyTo,

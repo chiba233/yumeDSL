@@ -5,7 +5,13 @@ import type {
   StructuralNode,
   Zone,
 } from "../types";
-import { flattenZones, getCachedZoneSignature, setCachedZoneSignature } from "./document.js";
+import {
+  flattenZones,
+  getCachedZoneSignature,
+  setCachedZoneSignature,
+  setZoneReadsPastEnd,
+  zoneReadsPastEnd,
+} from "./document.js";
 
 // ── 懒 delta 平移（1.2.4+）──
 //
@@ -142,6 +148,9 @@ export const deferShiftZone = (zone: Zone, delta: number): Zone => {
     endOffset: zone.endOffset + delta,
     nodes: zone.nodes,
   };
+  // readsPastEnd 是内容属性、与偏移无关：右侧 zone 平移后须把标记带到新对象上，
+  // 否则后续编辑会以为这个被复用的 zone "不依赖右侧" 而错误复用。
+  if (zoneReadsPastEnd(zone)) setZoneReadsPastEnd(newZone);
   const totalDelta = existingDelta + delta;
   if (totalDelta !== 0) {
     zonePendingDeltaMap.set(newZone, totalDelta);
