@@ -570,6 +570,49 @@ export const skipTagBoundary = (
 };
 
 /**
+ * Cached variant of {@link skipTagBoundary}: shares the arg-close / inline-close scan
+ * results through the same fill-from-position caches the rest of the parser uses, so
+ * repeated degrade decisions over the same suffix (e.g. depth-limit degradation of a
+ * long unclosed chain) don't re-run the unbounded scan each time. Output-identical to
+ * {@link skipTagBoundary}.
+ */
+export const skipTagBoundaryWithCache = (
+  text: string,
+  info: NonNullable<ReturnType<typeof readTagStartInfo>>,
+  syntax: SyntaxConfig,
+  tagName: TagNameConfig,
+  tagArgCloseCache: Map<number, number>,
+  inlineCloseCache: Map<number, number>,
+): number => {
+  const { tagOpen, endTag, rawOpen, rawClose, blockOpen, blockClose } = syntax;
+
+  const closerInfo = getTagCloserTypeWithCache(
+    text,
+    info.tagNameEnd + tagOpen.length,
+    syntax,
+    tagArgCloseCache,
+  );
+  if (!closerInfo) return info.argStart;
+
+  if (closerInfo.closer === endTag) {
+    // findInlineCloseWithCache 返回 -1 等价于 skipDegradedInline 退到 text.length
+    // （同一套 scanInlineBoundary，只是 fallback 策略不同）。
+    const closeStart = findInlineCloseWithCache(text, info.argStart, syntax, tagName, inlineCloseCache);
+    return closeStart === -1 ? text.length : closeStart + endTag.length;
+  }
+
+  if (closerInfo.closer === rawClose) {
+    const contentStart = closerInfo.argClose + rawOpen.length;
+    const closeStart = findRawClose(text, contentStart, syntax);
+    return closeStart === -1 ? contentStart : closeStart + rawClose.length;
+  }
+
+  const contentStart = closerInfo.argClose + blockOpen.length;
+  const closeStart = findBlockClose(text, contentStart, syntax, tagName);
+  return closeStart === -1 ? contentStart : closeStart + blockClose.length;
+};
+
+/**
  * Read minimal tag-start info at cursor for downstream parsing.
  *
  * @example

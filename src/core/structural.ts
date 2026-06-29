@@ -85,6 +85,7 @@ import {
   getTagCloserTypeWithCache,
   readTagStartInfo,
   skipTagBoundary,
+  skipTagBoundaryWithCache,
 } from "./scanner.js";
 import { makePosition, type PositionTracker } from "../internal/positions.js";
 import {
@@ -235,6 +236,95 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
   const rootEscapableTokens = getRootEscapableTokens(syntax);
   const blockContentEscapableTokens = getBlockContentEscapableTokens(syntax);
   let tagArgCloseCache: Map<number, number> | null = null;
+  let inlineCloseCache: Map<number, number> | null = null;
+
+  const isInlineCapable = (tag: string): boolean =>
+    !gating ||
+    supportsInlineForm(gating.handlers[tag], gating.allowInline, gating.registeredTags.has(tag));
+
+  // ── EOF 未闭合链单遍退化的 mini 解析器 ──
+  //
+  // tailResolveEnd(start)：模拟「参数区从 start 起的那个 inline 帧」在自身深度的扫描，返回它最终
+  // 在哪里「收尾」——闭合(`)$$`)、或转 raw/block 后的结束位置；若一路到 text.length 仍不闭合则返回
+  // text.length（= 纯悬挂）。判定只靠可控扫描 + `startsWith` 匹配 + 命中后按 token.length 消费，
+  // 绝不用 indexOf、也绝不用「先算位置再比大小」推断闭合是否存在。
+  //
+  // 与解析器逐字节对齐的关键点：
+  //   · 本层 `)$$` / `)%` / `)*`：分别是闭合 / 转 raw / 转 block，收尾位置与 tryCloseFullInlineFrame 完全一致；
+  //   · 嵌套 inline-capable 的 tag 头：解析器一定把它 push 成 inline 子帧（不看它「像」什么形态），
+  //     故这里递归 tailResolveEnd——子帧悬挂(到 EOF)则外层也悬挂，否则外层在子帧收尾处继续；
+  //   · 嵌套 inline-incapable 的 tag 头：解析器走 skipTagBoundary 退化，这里直接用同一函数取其跳过区间；
+  //   · 其余字符（含裸 `(` `)` `|`、文本）：逐字符推进。
+  // 显式栈（非递归，深嵌套不炸调用栈）+ 按 start 记忆化 → 每个 inline 只算一次，整体 O(n)。
+  // 仅在 frame.textEnd === text.length（根级）时调用，故边界恒为 text.length、记忆化无需带边界键。
+  //
+  // 返回值是该 inline 的「收尾位置」（闭合/转换后外层继续的位置，0..text.length），
+  // 或 TAIL_DANGLE（一路到 EOF 仍未闭合/转换 = 纯悬挂）。注意「文末 `)$$` 闭合」收尾恰好 = text.length，
+  // 与 DANGLE 完全不同，绝不能用「>= text.length」判悬挂。
+  const TAIL_DANGLE = -1;
+  const tailMemo = new Map<number, number>();
+  const tailResolveEnd = (rootStart: number): number => {
+    const cachedRoot = tailMemo.get(rootStart);
+    if (cachedRoot !== undefined) return cachedRoot;
+    const { rawOpen, blockOpen, rawClose, blockClose } = syntax;
+    const stack: { start: number; pos: number }[] = [{ start: rootStart, pos: rootStart }];
+    while (stack.length > 0) {
+      const frame = stack[stack.length - 1];
+      let pos = frame.pos;
+      let result = TAIL_DANGLE; // 默认：内层循环自然扫到 EOF 即悬挂
+      let paused = false;
+      while (pos < text.length) {
+        const [escaped, next] = readEscapedSequence(text, pos, syntax);
+        if (escaped !== null) {
+          pos = next;
+          continue;
+        }
+        if (text.startsWith(endTag, pos)) {
+          result = pos + endTag.length;
+          break;
+        }
+        if (text.startsWith(rawOpen, pos)) {
+          const contentStart = pos + rawOpen.length;
+          const closeStart = findRawClose(text, contentStart, syntax);
+          result = closeStart === -1 ? contentStart : closeStart + rawClose.length;
+          break;
+        }
+        if (text.startsWith(blockOpen, pos)) {
+          const contentStart = pos + blockOpen.length;
+          const closeStart = findBlockClose(text, contentStart, syntax, tagName);
+          result = closeStart === -1 ? contentStart : closeStart + blockClose.length;
+          break;
+        }
+        const info = readTagStartInfo(text, pos, syntax, tagName);
+        if (!info) {
+          pos++;
+          continue;
+        }
+        if (isInlineCapable(info.tag)) {
+          const nested = tailMemo.get(info.argStart);
+          if (nested !== undefined) {
+            if (nested === TAIL_DANGLE) {
+              result = TAIL_DANGLE; // 嵌套子帧悬挂到 EOF → 外层也悬挂
+              break;
+            }
+            pos = nested;
+            continue;
+          }
+          frame.pos = pos;
+          stack.push({ start: info.argStart, pos: info.argStart });
+          paused = true;
+          break;
+        }
+        // inline-incapable：与解析器一致走 skipTagBoundary 退化区间（返回 text.length 即扫到 EOF → 悬挂）
+        pos = skipTagBoundary(text, info, syntax, tagName);
+      }
+      if (paused) continue;
+      tailMemo.set(frame.start, result);
+      stack.pop();
+    }
+    return tailMemo.get(rootStart) ?? TAIL_DANGLE;
+  };
+  const inlineIsPlainDangling = (start: number): boolean => tailResolveEnd(start) === TAIL_DANGLE;
 
   const isRootFrame = (frame: ParseFrame): boolean =>
     frame.parentIndex < 0 &&
@@ -353,6 +443,14 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     // 按需创建，避免每个帧常驻 4 个探测字段。
     shorthandProbe: ShorthandProbeState | null;
     ancestorEndTagOwnerIndex: number;
+
+    // ── EOF 未闭合链单遍退化标记 ──
+    // replay 把根级非 inline 父帧标记 degradeRescan 后，主循环重扫时对「纯悬挂」的 inline
+    // （tailResolveEnd 判定到 text.length 仍不闭合）直接退化为文本，不再 push 子帧 / 触发回退重扫。
+    degradeRescan: boolean;
+    // 单遍退化期间收集的未闭合 inline 错误 (tagStartI, span) 扁平对；该帧 EOF 收尾时倒序发出，
+    // 复刻原 replay 的 innermost-first 顺序。按需创建。
+    degradeTailErr: number[] | null;
   }
 
   const makeFrame = (
@@ -387,6 +485,8 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     contentEndI: 0,
     shorthandProbe: null,
     ancestorEndTagOwnerIndex: -1,
+    degradeRescan: false,
+    degradeTailErr: null,
   });
 
   // ── 缓冲区 ──
@@ -815,6 +915,11 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     // 对应测试: [Coverage/Structural] malformed inline chain at EOF should replay once and degrade to full source text
     appendBuf(parent, replayPlan.resumeTagStartI, replayPlan.resumeArgStartI);
     parent.i = replayPlan.resumeArgStartI;
+    // 仅根级（边界 = text.length）启用单遍退化重扫——tailResolveEnd 的边界恒为 text.length。
+    // 非根级（如 block 正文内）父帧 textEnd < text.length，仍走原 lazy 回退（正确，少见）。
+    if (parent.textEnd >= text.length) {
+      parent.degradeRescan = true;
+    }
     return true;
   };
 
@@ -1088,7 +1193,14 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         info.argStart - info.tagOpenPos,
         emittedErrorKeys,
       );
-      const degradedEnd = skipTagBoundary(frameText, info, syntax, tagName);
+      const degradedEnd = skipTagBoundaryWithCache(
+        frameText,
+        info,
+        syntax,
+        tagName,
+        (tagArgCloseCache ??= new Map<number, number>()),
+        (inlineCloseCache ??= new Map<number, number>()),
+      );
       appendBuf(frame, i, degradedEnd);
       frame.i = degradedEnd;
       return true;
@@ -1117,6 +1229,30 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
             syntax,
             (tagArgCloseCache ??= new Map<number, number>()),
           );
+
+    // ── degradeRescan 单遍退化（根级非 inline 帧；仅 inline 形态、inline-capable、纯悬挂）──
+    //
+    // EOF 未闭合链重扫态下，若该 tag 是 inline 形态（closerInfo 为空=括号不配对的 lazy inline，
+    // 或 closer===endTag）、inline-capable，且 tailResolveEnd 判定它「纯悬挂」（自身深度一路扫到
+    // text.length 仍不闭合、也不转 raw/block），则直接把 tag 头退化成文本、游标推进到 argStart，
+    // 不再 push 一个会在 EOF 触发回退重扫的子帧 —— 整条尾巴单遍线性处理（mini 解析器记忆化 O(n)）。
+    //
+    // 错误顺序：lazy 路径会把这些未闭合 inline push 成嵌套子帧链、EOF 经 replay 自内向外
+    // （innermost-first）报 INLINE_NOT_CLOSED。单遍是从外向内扫，故先收集 (tagStartI, span)，
+    // 待该帧 EOF 收尾时倒序发出，复刻 replay 顺序（emittedErrorKeys 去重）。
+    if (
+      frame.degradeRescan &&
+      (closerInfo === null || closerInfo.closer === endTag) &&
+      isInlineCapable(info.tag) &&
+      inlineIsPlainDangling(info.argStart)
+    ) {
+      (frame.degradeTailErr ??= []).push(i, info.argStart - info.tagOpenPos);
+      flushBuffer(frame);
+      appendBuf(frame, i, info.argStart);
+      frame.i = info.argStart;
+      return true;
+    }
+
     if (!closerInfo) {
       // findTagArgClose 因内容括号不配对返回 -1。
       // 进入 lazy inline 模式：子帧逐字符扫描 endTag，不依赖括号配对。
@@ -1243,6 +1379,15 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       // EOF 下若连续祖先也都是未闭合 inline/shorthand，
       // 直接整条未闭合链退到第一个非 inline 容器，再只重扫一次。
       return replayMalformedInlineChainAtEof(frame);
+    }
+
+    // 单遍退化收集的未闭合 inline 错误：倒序发出（innermost-first），复刻原 replay 顺序。
+    const tailErr = frame.degradeTailErr;
+    if (tailErr !== null) {
+      for (let k = tailErr.length - 2; k >= 0; k -= 2) {
+        emitError(tracker, onError, "INLINE_NOT_CLOSED", frame.text, tailErr[k], tailErr[k + 1], emittedErrorKeys);
+      }
+      frame.degradeTailErr = null;
     }
 
     flushBuffer(frame);
