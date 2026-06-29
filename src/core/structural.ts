@@ -60,7 +60,7 @@ import type {
   TagNameConfig,
 } from "../types";
 import { getDefaultSyntaxInstance, getSyntax } from "../config/syntax.js";
-import { DEFAULT_TAG_NAME, getTagNameConfig } from "../config/chars.js";
+import { DEFAULT_TAG_NAME, getTagNameConfig, isWholeLineToken } from "../config/chars.js";
 import { warnDeprecated } from "../internal/deprecations.js";
 import {
   getArgEscapableTokens,
@@ -80,7 +80,6 @@ import { emitError } from "../internal/errors.js";
 import {
   findBlockClose,
   findMalformedWholeLineTokenCandidate,
-  findRawClose,
   getTagCloserType,
   getTagCloserTypeWithCache,
   readTagStartInfo,
@@ -238,6 +237,45 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
   let tagArgCloseCache: Map<number, number> | null = null;
   let inlineCloseCache: Map<number, number> | null = null;
 
+  // ── 整行 close token 的「下一处」位置表（一次性受控扫描，O(1) 查询） ──
+  //
+  // 未闭合 raw/block 链退化时，`findRawClose` / `findBlockClose` 会按构造数被反复调用、每次扫到 EOF
+  // → 总量 O(n²)。这里用一遍**反向**受控扫描，给每个位置 p 预存「从 p 起第一处整行 rawClose /
+  // blockClose 的起点」（没有则 -1）。判定整行 close 只用行首 + isWholeLineToken：不用 indexOf、不靠
+  // token 长度推断有无（长度只在 isWholeLineToken 内做匹配）。按需触发、只跑一次、O(n) 建表，之后每次
+  // 查 close 都是 O(1) 取值——既消掉了反复扫到 EOF 的二次方，又**不引入二分的 log 因子**，保持整体
+  // Θ(n)。空间与既有的 tagArgClose / inlineClose 缓存同量级（O(n)）。
+  //
+  // raw 正文不嵌套 ⇒ nextRawCloseAt[start] 就是 findRawClose(start)（逐字节一致）。
+  // block 会嵌套跳过内层 raw/block/inline ⇒ 表只用来判「后方有无整行 blockClose」：无则 O(1) 返回 -1
+  //   （覆盖未闭合 block 链这一 DoS 主因），有则回退真正的 findBlockClose（语义不变；各 close 区间互不
+  //   重叠 ⇒ 回退路径总量仍 O(n)）。
+  let nextRawCloseAt: Int32Array | null = null;
+  let nextBlockCloseAt: Int32Array | null = null;
+  const ensureNextCloseTables = (): void => {
+    if (nextRawCloseAt !== null) return;
+    const n = text.length;
+    const raw = new Int32Array(n + 1);
+    const block = new Int32Array(n + 1);
+    raw[n] = -1;
+    block[n] = -1;
+    for (let p = n - 1; p >= 0; p--) {
+      const atLineStart = p === 0 || text[p - 1] === "\n";
+      raw[p] = atLineStart && isWholeLineToken(text, p, syntax.rawClose) ? p : raw[p + 1];
+      block[p] = atLineStart && isWholeLineToken(text, p, syntax.blockClose) ? p : block[p + 1];
+    }
+    nextRawCloseAt = raw;
+    nextBlockCloseAt = block;
+  };
+  const findRawCloseCached = (start: number): number => {
+    ensureNextCloseTables();
+    return nextRawCloseAt![start];
+  };
+  const findBlockCloseCached = (start: number): number => {
+    ensureNextCloseTables();
+    return nextBlockCloseAt![start] === -1 ? -1 : findBlockClose(text, start, syntax, tagName);
+  };
+
   const isInlineCapable = (tag: string): boolean =>
     !gating ||
     supportsInlineForm(gating.handlers[tag], gating.allowInline, gating.registeredTags.has(tag));
@@ -285,13 +323,13 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         }
         if (text.startsWith(rawOpen, pos)) {
           const contentStart = pos + rawOpen.length;
-          const closeStart = findRawClose(text, contentStart, syntax);
+          const closeStart = findRawCloseCached(contentStart);
           result = closeStart === -1 ? contentStart : closeStart + rawClose.length;
           break;
         }
         if (text.startsWith(blockOpen, pos)) {
           const contentStart = pos + blockOpen.length;
-          const closeStart = findBlockClose(text, contentStart, syntax, tagName);
+          const closeStart = findBlockCloseCached(contentStart);
           result = closeStart === -1 ? contentStart : closeStart + blockClose.length;
           break;
         }
@@ -694,6 +732,10 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     malformedCode: "RAW_CLOSE_MALFORMED" | "BLOCK_CLOSE_MALFORMED",
     unclosedCode: "RAW_NOT_CLOSED" | "BLOCK_NOT_CLOSED",
   ): void => {
+    // 无 onError 时整段是纯计算、结果只喂给会被 emitError 直接丢弃的发射；提前返回，省掉
+    // findMalformedWholeLineTokenCandidate 的逐行扫描（未闭合 raw/block 链里它每次 O(remaining) → O(n²)）。
+    // 行为不变：emitError 在 !onError 时本就是 no-op。
+    if (!onError) return;
     const malformed = findMalformedWholeLineTokenCandidate(frameText, contentStart, closeToken);
     emitError(
       tracker,
@@ -1014,7 +1056,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       // )% → raw form
       const argClose = i;
       const contentStart = argClose + rawOpen.length;
-      const closeStart = findRawClose(frameText, contentStart, syntax);
+      const closeStart = findRawCloseCached(contentStart);
       const parent = stack[frame.parentIndex];
       const tagStartI = frame.tagStartI;
 
@@ -1059,7 +1101,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       // )* → block form
       const argClose = i;
       const contentStart = argClose + blockOpen.length;
-      const closeStart = findBlockClose(frameText, contentStart, syntax, tagName);
+      const closeStart = findBlockCloseCached(contentStart);
       const parent = stack[frame.parentIndex];
       const tagStartI = frame.tagStartI;
 
@@ -1200,6 +1242,8 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         tagName,
         (tagArgCloseCache ??= new Map<number, number>()),
         (inlineCloseCache ??= new Map<number, number>()),
+        findRawCloseCached,
+        findBlockCloseCached,
       );
       appendBuf(frame, i, degradedEnd);
       frame.i = degradedEnd;
@@ -1281,7 +1325,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     // 这里 args 还未解析，需要推 rawArgs 子帧；completeChild 负责最终组装。
     if (closerInfo.closer === rawClose) {
       const contentStart = closerInfo.argClose + syntax.rawOpen.length;
-      const closeStart = findRawClose(frameText, contentStart, syntax);
+      const closeStart = findRawCloseCached(contentStart);
 
       if (closeStart === -1) {
         emitCloseNotFoundError(frameText, contentStart, i, syntax.rawClose, "RAW_CLOSE_MALFORMED", "RAW_NOT_CLOSED");
@@ -1327,7 +1371,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     // ── Block 形态 ──
     // 同 raw，args 未解析，先推 blockArgs 子帧；completeChild 续推 blockContent。
     const contentStart = closerInfo.argClose + syntax.blockOpen.length;
-    const closeStart = findBlockClose(frameText, contentStart, syntax, tagName);
+    const closeStart = findBlockCloseCached(contentStart);
 
     if (closeStart === -1) {
       emitCloseNotFoundError(frameText, contentStart, i, syntax.blockClose, "BLOCK_CLOSE_MALFORMED", "BLOCK_NOT_CLOSED");

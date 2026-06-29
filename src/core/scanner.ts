@@ -583,6 +583,11 @@ export const skipTagBoundaryWithCache = (
   tagName: TagNameConfig,
   tagArgCloseCache: Map<number, number>,
   inlineCloseCache: Map<number, number>,
+  // raw/block close 的受控缓存查找（调用方按整篇 text 预计算后注入；显式穿参，不引入模块级状态）。
+  // 语义须与 findRawClose / findBlockClose 完全一致，仅做摊还——否则未闭合 raw/block 链在 depth-limit
+  // 退化时会反复扫到 EOF → O(n²)。
+  findRawCloseAt: (contentStart: number) => number,
+  findBlockCloseAt: (contentStart: number) => number,
 ): number => {
   const { tagOpen, endTag, rawOpen, rawClose, blockOpen, blockClose } = syntax;
 
@@ -603,12 +608,12 @@ export const skipTagBoundaryWithCache = (
 
   if (closerInfo.closer === rawClose) {
     const contentStart = closerInfo.argClose + rawOpen.length;
-    const closeStart = findRawClose(text, contentStart, syntax);
+    const closeStart = findRawCloseAt(contentStart);
     return closeStart === -1 ? contentStart : closeStart + rawClose.length;
   }
 
   const contentStart = closerInfo.argClose + blockOpen.length;
-  const closeStart = findBlockClose(text, contentStart, syntax, tagName);
+  const closeStart = findBlockCloseAt(contentStart);
   return closeStart === -1 ? contentStart : closeStart + blockClose.length;
 };
 
