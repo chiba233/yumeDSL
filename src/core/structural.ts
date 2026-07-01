@@ -299,17 +299,26 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
   // 返回值是该 inline 的「收尾位置」（闭合/转换后外层继续的位置，0..text.length），
   // 或 TAIL_DANGLE（一路到 EOF 仍未闭合/转换 = 纯悬挂）。注意「文末 `)$$` 闭合」收尾恰好 = text.length，
   // 与 DANGLE 完全不同，绝不能用「>= text.length」判悬挂。
+  // 保守版尾部归结：只回答「从 rootStart 起、若作为 inline 子帧解析，这条尾巴是不是**纯 inline** 悬挂」。
+  //   · 一路 inline 标签 + 文本 + 转义 扫到 EOF 未闭合 → TAIL_DANGLE（纯悬挂，可安全单遍降级为文本）。
+  //   · 中途遇到 `)$$` 闭合 → 返回其收尾位置（外层在此继续，不悬挂）。
+  //   · 中途遇到 `)%` / `)*` 转换、或 inline-incapable 的 tag 头 → TAIL_UNSAFE：解析器在这些分支的行为
+  //     （产 raw/block 节点、另发 *_NOT_CLOSED、skipTagBoundary 等）与「整段退化为纯文本」并不等价，
+  //     难以在此保守复刻，故放弃单遍快路、交回旧的 replay 级联（逐字节正确，仅这类少见输入退回二次方）。
+  // 纯 inline 悬挂（含跨 depth-limit）已用差分 oracle 验证与 1.5.1 逐字节一致，因此只对它启用快路。
+  // 显式栈 + 按 start 记忆化 → 每个 inline 只算一次，整体 O(n)。边界恒为 text.length（仅根级调用）。
   const TAIL_DANGLE = -1;
+  const TAIL_UNSAFE = -2;
   const tailMemo = new Map<number, number>();
   const tailResolveEnd = (rootStart: number): number => {
     const cachedRoot = tailMemo.get(rootStart);
     if (cachedRoot !== undefined) return cachedRoot;
-    const { rawOpen, blockOpen, rawClose, blockClose } = syntax;
+    const { rawOpen, blockOpen } = syntax;
     const stack: { start: number; pos: number }[] = [{ start: rootStart, pos: rootStart }];
     while (stack.length > 0) {
       const frame = stack[stack.length - 1];
       let pos = frame.pos;
-      let result = TAIL_DANGLE; // 默认：内层循环自然扫到 EOF 即悬挂
+      let result = TAIL_DANGLE; // 默认：内层循环自然扫到 EOF 即纯悬挂
       let paused = false;
       while (pos < text.length) {
         const [escaped, next] = readEscapedSequence(text, pos, syntax);
@@ -321,16 +330,9 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
           result = pos + endTag.length;
           break;
         }
-        if (text.startsWith(rawOpen, pos)) {
-          const contentStart = pos + rawOpen.length;
-          const closeStart = findRawCloseCached(contentStart);
-          result = closeStart === -1 ? contentStart : closeStart + rawClose.length;
-          break;
-        }
-        if (text.startsWith(blockOpen, pos)) {
-          const contentStart = pos + blockOpen.length;
-          const closeStart = findBlockCloseCached(contentStart);
-          result = closeStart === -1 ? contentStart : closeStart + blockClose.length;
+        // )% / )* 转换：语义与「纯文本降级」不同（产 raw/block 节点或另发 *_NOT_CLOSED），保守退回级联
+        if (text.startsWith(rawOpen, pos) || text.startsWith(blockOpen, pos)) {
+          result = TAIL_UNSAFE;
           break;
         }
         const info = readTagStartInfo(text, pos, syntax, tagName);
@@ -338,23 +340,28 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
           pos++;
           continue;
         }
-        if (isInlineCapable(info.tag)) {
-          const nested = tailMemo.get(info.argStart);
-          if (nested !== undefined) {
-            if (nested === TAIL_DANGLE) {
-              result = TAIL_DANGLE; // 嵌套子帧悬挂到 EOF → 外层也悬挂
-              break;
-            }
-            pos = nested;
-            continue;
-          }
-          frame.pos = pos;
-          stack.push({ start: info.argStart, pos: info.argStart });
-          paused = true;
+        // inline-incapable（raw/block-only、未注册非 inline 等）：解析器走 skipTagBoundary，保守退回级联
+        if (!isInlineCapable(info.tag)) {
+          result = TAIL_UNSAFE;
           break;
         }
-        // inline-incapable：与解析器一致走 skipTagBoundary 退化区间（返回 text.length 即扫到 EOF → 悬挂）
-        pos = skipTagBoundary(text, info, syntax, tagName);
+        const nested = tailMemo.get(info.argStart);
+        if (nested !== undefined) {
+          if (nested === TAIL_DANGLE) {
+            result = TAIL_DANGLE; // 嵌套子帧纯悬挂到 EOF → 外层也纯悬挂
+            break;
+          }
+          if (nested === TAIL_UNSAFE) {
+            result = TAIL_UNSAFE; // 嵌套不安全 → 外层也不安全
+            break;
+          }
+          pos = nested;
+          continue;
+        }
+        frame.pos = pos;
+        stack.push({ start: info.argStart, pos: info.argStart });
+        paused = true;
+        break;
       }
       if (paused) continue;
       tailMemo.set(frame.start, result);
