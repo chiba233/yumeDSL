@@ -390,6 +390,11 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     frame.limitHit ||= child.limitHit;
     frame.hiddenRisk ||=
       child.hiddenRisk ||
+      // limitHit 子帧的闭合/转换事件发生在（或依赖）饱和语境：1.5.1 的相邻深度重扫可翻转该
+      // close/convert token 的归属（深层帧自己吃到 vs 浅出后被嵌套子帧吃掉），两种深度语境
+      // 各发各的帧内键 → 单一深度的推演无法同时守恒两者，退回级联。
+      // （饱和段内无 gating-接受头时 limitHit=false——行为深度无关，RESOLVE 仍可信。）
+      (child.limitHit && child.resolveKind !== 0) ||
       (expectForm !== 0 &&
         !(
           child.resolveKind === expectForm &&
@@ -425,6 +430,26 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     }
     return true;
   };
+  // 推演转义读取（键守恒对照版）：fate 语义按 arg 集合（inline 子帧恒 insideArgs）推进；同时对照
+  // root / blockContent 语境的转义集合——三者对同一位置的消费不一致（识别与否 / 终点）时，父帧
+  // 重扫会以不同分词穿越该区间（如 root 把 `\` + tagOpen 读成转义、吞掉推演悬挂路径上某个 tag 头
+  // 的首字符），帧内发射键无法守恒 → 返回 mismatch 标记（只挡剥离，不改变命运判定）。
+  const walkReadEscape = (p: number): [string | null, number, boolean] => {
+    const [escArg, nextArg] = readEscapedSequenceWithTokens(text, p, syntax, argEscapableTokens);
+    const [escRoot, nextRoot] = readEscapedSequenceWithTokens(text, p, syntax, rootEscapableTokens);
+    const [escBlock, nextBlock] = readEscapedSequenceWithTokens(
+      text,
+      p,
+      syntax,
+      blockContentEscapableTokens,
+    );
+    const consistent =
+      (escArg !== null) === (escRoot !== null) &&
+      (escArg !== null) === (escBlock !== null) &&
+      nextArg === nextRoot &&
+      nextArg === nextBlock;
+    return [escArg, nextArg, consistent];
+  };
   // 饱和帧推演：模拟 depth === depthLimit 的真 inline 帧——所有嵌套头 DEPTH_LIMIT skip、永不 push。
   // 无栈无深度 → 位置命运是纯后缀性质：沿途决策点收尾时统一回填（后缀共享），全局扫描总量 O(n)。
   const satFrameFate = (rootStart: number, boundary: number): WalkEntry => {
@@ -450,7 +475,8 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         break;
       }
       visited.push(pos);
-      const [escaped, nextEsc] = readEscapedSequenceWithTokens(text, pos, syntax, argEscapableTokens);
+      const [escaped, nextEsc, escConsistent] = walkReadEscape(pos);
+      if (!escConsistent) hiddenRisk = true;
       if (escaped !== null) {
         pos = nextEsc;
         continue;
@@ -478,10 +504,15 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
           resolvePos = pos;
           break;
         }
+        // `)`-当-文本：inline 帧一次吃 tagClose.length，而父帧重扫（非 inline）对孤立 tagClose 是
+        // 逐字符推进——多字符 tagClose 下父帧可在被吞区间内识别出推演没见过的头/转义 → 键不守恒。
+        if (tagClose.length !== 1) hiddenRisk = true;
         pos += tagClose.length;
         continue;
       }
       if (text.startsWith(tagDivider, pos)) {
+        // 分隔符：仅 insideArgs 帧消费整个 token；root/blockContent 父帧逐字符——同上，多字符时错位。
+        if (tagDivider.length !== 1) hiddenRisk = true;
         pos += tagDivider.length;
         continue;
       }
@@ -596,12 +627,9 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       let paused = false;
       while (pos < boundary) {
         // 优先级镜像主循环：转义 → inline 关闭/转换 → 管道 → tag 头/文本。
-        const [escaped, nextEsc] = readEscapedSequenceWithTokens(
-          text,
-          pos,
-          syntax,
-          argEscapableTokens,
-        );
+        // 转义按 arg 集合推进（fate 语义），并与 root/blockContent 集合对照（键守恒，见 walkReadEscape）。
+        const [escaped, nextEsc, escConsistent] = walkReadEscape(pos);
+        if (!escConsistent) frame.hiddenRisk = true;
         if (escaped !== null) {
           pos = nextEsc;
           continue;
@@ -631,11 +659,15 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
             resolvePos = pos;
             break;
           }
-          pos += tagClose.length; // `)` 后不是 $$/%/* → 普通文本
+          // `)` 后不是 $$/%/* → 普通文本；多字符 tagClose 下父帧重扫逐字符穿越同区间 → 错位风险。
+          if (tagClose.length !== 1) frame.hiddenRisk = true;
+          pos += tagClose.length;
           continue;
         }
         if (text.startsWith(tagDivider, pos)) {
-          pos += tagDivider.length; // insideArgs 帧的分隔符只推进 cursor
+          // insideArgs 帧的分隔符只推进 cursor；多字符 tagDivider 下非 args 父帧逐字符 → 错位风险。
+          if (tagDivider.length !== 1) frame.hiddenRisk = true;
+          pos += tagDivider.length;
           continue;
         }
         const info = readTagStartInfo(text, pos, syntax, tagName);
