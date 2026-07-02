@@ -508,15 +508,22 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       if (isInlineCapable(info.tag)) {
         // gating 接受的头：真帧在此发 DEPTH_LIMIT 并 skip；1.5.1 的后续重扫会让它逐层浅出真扫。
         limitHit = true;
+      }
+      if (skipped !== info.argStart) {
+        // 「跳过了内容」的 skip：只有 raw/block 形态、且参数区干净时，skip / 根级 form 分发 /
+        // 浅出后的帧内转换三者才同键同续扫位（无论 gating 接受与否——分发的 close-fail /
+        // gating-reject 分支与 skip 的落点逐字节一致）。其余（endTag 形态的 head-balance skip
+        // 与浅出 push / root 单字符推进错位；参数区含帧）在 1.5.1 的相邻深度重扫下会翻转命运
+        // 或把帧内发射吞进不再扫描的区间 → 键无法守恒。
         const expectation = walkExpectationFor(info);
         if (
-          expectation.form !== 0 &&
+          expectation.form === 0 ||
           !satArgSpanClean(info.argStart, expectation.argClose)
         ) {
           hiddenRisk = true;
         }
       }
-      // gating 拒绝的头：任何 scan 任何深度都同样静默 skip，键守恒天然成立。
+      // lazy skip（仅越过 tag 头）：任何 scan 任何深度都同款推进，键守恒天然成立。
       pos = skipped;
       continue;
     }
@@ -642,7 +649,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         }
         if (!isInlineCapable(info.tag)) {
           // gating 拒绝 inline：真分支为 skipTagBoundary(WithCache) 整段静默跳过（与深度无关）。
-          pos = skipTagBoundaryWithCache(
+          const skipped = skipTagBoundaryWithCache(
             text,
             info,
             syntax,
@@ -652,6 +659,15 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
             findRawCloseCached,
             findBlockCloseCached,
           );
+          if (skipped !== info.argStart) {
+            // 「跳过了内容」的 reject-skip：raw/block 形态的根级分发（close-fail / gating-reject
+            // 分支）与 skip 落点逐字节一致 → 安全；endTag 形态的根级 reject 是**单字符推进**，
+            // 与整段 skip 错位——root 可在错位区间撞上重叠 tag 头改走完全不同的消费路径，把
+            // 推演悬挂路径上会真实发射的结构吞进文本 → 键无法守恒。lazy（=argStart）恒安全。
+            const expectation = walkExpectationFor(info);
+            if (expectation.form === 0) frame.hiddenRisk = true;
+          }
+          pos = skipped;
           continue;
         }
         const expectation = walkExpectationFor(info);
