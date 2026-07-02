@@ -280,96 +280,440 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     !gating ||
     supportsInlineForm(gating.handlers[tag], gating.allowInline, gating.registeredTags.has(tag));
 
-  // ── EOF 未闭合链单遍退化的 mini 解析器 ──
+  // ── EOF 未闭合链单遍退化：帧命运推演（frame-fate walk）──
   //
-  // tailResolveEnd(start)：模拟「参数区从 start 起的那个 inline 帧」在自身深度的扫描，返回它最终
-  // 在哪里「收尾」——闭合(`)$$`)、或转 raw/block 后的结束位置；若一路到 text.length 仍不闭合则返回
-  // text.length（= 纯悬挂）。判定只靠可控扫描 + `startsWith` 匹配 + 命中后按 token.length 消费，
-  // 绝不用 indexOf、也绝不用「先算位置再比大小」推断闭合是否存在。
+  // walkInlineFrameFate(start, depth, boundary)：推演「参数区从 start 起、深度为 depth、扫描边界为
+  // boundary 的 full-inline 子帧」最终的命运——闭合 / 转换后父帧续扫的位置，或一路悬挂到 boundary。
+  // 与旧 tailResolveEnd 的本质差别：不再是一个「会漂移的平行 mini 解析器」，每条分支都直接调用
+  // 真解析器同款的判定函数、按主循环同一优先级顺序镜像 cursor 行为（结点构造与错误发射除外）：
+  //   · 转义：readEscapedSequenceWithTokens + argEscapableTokens（inline 子帧恒为 insideArgs）；
+  //   · 关闭/转换：镜像 tryCloseFullInlineFrame——先 tagClose 门槛，再 scanEndTagAt(=boundary 截断语义)
+  //     判 `)$$` 闭合，再 rawOpen/blockOpen 判转换；转换的父帧续扫位置与真分支逐字节一致
+  //     （close 未找到 → contentStart；找到 → closeStart + close.length，gating 接受与否续扫位置相同）；
+  //   · 管道分隔符：insideArgs 帧消费 tagDivider；
+  //   · 嵌套 tag 头：gating 拒绝 inline 时走 skipTagBoundaryWithCache（与 skipTagBoundary 输出一致）；
+  //     否则以 depth+1 递归推演子帧——深度达 depthLimit 的子帧进入「饱和帧」推演（见下），
+  //     子帧悬挂 ⇒ 本帧悬挂（EOF replay 整链剥离），否则在子帧收尾处续扫；
+  //   · shorthand 头（gating.inlineShorthandEnabled 下的 name(...)）：ownership 探测带帧状态，无法无
+  //     副作用推演 → WALK_UNSAFE，整条查询退回 1.5.1 replay 级联（逐字节正确，仅慢）。
   //
-  // 与解析器逐字节对齐的关键点：
-  //   · 本层 `)$$` / `)%` / `)*`：分别是闭合 / 转 raw / 转 block，收尾位置与 tryCloseFullInlineFrame 完全一致；
-  //   · 嵌套 inline-capable 的 tag 头：解析器一定把它 push 成 inline 子帧（不看它「像」什么形态），
-  //     故这里递归 tailResolveEnd——子帧悬挂(到 EOF)则外层也悬挂，否则外层在子帧收尾处继续；
-  //   · 嵌套 inline-incapable 的 tag 头：解析器走 skipTagBoundary 退化，这里直接用同一函数取其跳过区间；
-  //   · 其余字符（含裸 `(` `)` `|`、文本）：逐字符推进。
-  // 显式栈（非递归，深嵌套不炸调用栈）+ 按 start 记忆化 → 每个 inline 只算一次，整体 O(n)。
-  // 仅在 frame.textEnd === text.length（根级）时调用，故边界恒为 text.length、记忆化无需带边界键。
+  // 饱和帧（depth === depthLimit 的真帧）内所有嵌套头都走 DEPTH_LIMIT skip、永不 push——行为与
+  // 具体深度无关、无栈，位置 x 之后的命运是纯后缀性质。satFrameFate 单独推演它：沿途记录决策点、
+  // 收尾时把最终命运回填整条路径（后缀共享），使饱和扫描全局总量 O(n)，深链每头查询摊还 O(depthLimit)。
+  // （回填条目的风险标记带上了段前缀累积值，可能高估 → 只会更保守地退回级联，不影响正确性。）
   //
-  // 返回值是该 inline 的「收尾位置」（闭合/转换后外层继续的位置，0..text.length），
-  // 或 TAIL_DANGLE（一路到 EOF 仍未闭合/转换 = 纯悬挂）。注意「文末 `)$$` 闭合」收尾恰好 = text.length，
-  // 与 DANGLE 完全不同，绝不能用「>= text.length」判悬挂。
-  // 保守版尾部归结：只回答「从 rootStart 起、若作为 inline 子帧解析，这条尾巴是不是**纯 inline** 悬挂」。
-  //   · 一路 inline 标签 + 文本 + 转义 扫到 EOF 未闭合 → TAIL_DANGLE（纯悬挂，可安全单遍降级为文本）。
-  //   · 中途遇到 `)$$` 闭合 → 返回其收尾位置（外层在此继续，不悬挂）。
-  //   · 中途遇到 `)%` / `)*` 转换、或 inline-incapable 的 tag 头 → TAIL_UNSAFE：解析器在这些分支的行为
-  //     （产 raw/block 节点、另发 *_NOT_CLOSED、skipTagBoundary 等）与「整段退化为纯文本」并不等价，
-  //     难以在此保守复刻，故放弃单遍快路、交回旧的 replay 级联（逐字节正确，仅这类少见输入退回二次方）。
-  // 纯 inline 悬挂（含跨 depth-limit）已用差分 oracle 验证与 1.5.1 逐字节一致，因此只对它启用快路。
-  // 显式栈 + 按 start 记忆化 → 每个 inline 只算一次，整体 O(n)。边界恒为 text.length（仅根级调用）。
-  const TAIL_DANGLE = -1;
-  const TAIL_UNSAFE = -2;
-  const tailMemo = new Map<number, number>();
-  const tailResolveEnd = (rootStart: number): number => {
-    const cachedRoot = tailMemo.get(rootStart);
-    if (cachedRoot !== undefined) return cachedRoot;
-    const { rawOpen, blockOpen } = syntax;
-    const stack: { start: number; pos: number }[] = [{ start: rootStart, pos: rootStart }];
+  // 单遍剥离（degradeRescan 快路）只在 DANGLE 且 !hiddenRisk 时启用；其余一律退回级联。
+  // hiddenRisk（错误键守恒）：剥离会跳过「被剥离帧的那次真实扫描」，其帧内发射（嵌套转换失败的
+  // *_NOT_CLOSED、子链 replay 的 INLINE_NOT_CLOSED、depth-limit 后浅出补扫的发射）必须由父帧游标
+  // 后续的真实重扫在同键位重发。嵌套 tag 头以 inline 子帧进入（无条件 push），而父帧重扫按根级
+  // closerInfo 分发——两者仅在以下情形一致：
+  //   · closerInfo 为 null / endTag：重扫同样 push inline 子帧（或对其再次剥离），递归真实；
+  //   · raw/block 形态：该子帧恰好在 closerInfo.argClose 处以同形态转换（分发与转换同键同续扫位，
+  //     路径立即重合），且参数区 [argStart, argClose) 内无任何嵌套帧 / depth-limit 跳过——根级 form
+  //     分发在 close 未找到时把整段（含参数区）直接降级为文本、不再扫描内部，参数区里帧内发射的键
+  //     只存在于被跳过的那次真实扫描。
+  // 其余（form 形态但悬挂 / 在别处转换 / `)$$` 闭合 / 参数区含帧）→ hiddenRisk，退回级联。
+  //
+  // 记忆化：主表按 start 记条目；命中条件：boundary 一致，且（未 limitHit 且 depth+maxRel <
+  //   depthLimit——深度平移不会改变任何分支）或（depth 与条目完全一致）。深度敏感条目进溢出表
+  //   （start:depth:boundary 键）。整体 O(n·depthLimit) 上界、典型 O(n)。显式栈，无递归。
+  // 判定全程只用可控扫描 + startsWith + 确认命中后按 token.length 消费；不用 indexOf、不用长度推断。
+  const WALK_DANGLE = -1;
+  const WALK_UNSAFE = -2;
+  interface WalkEntry {
+    verdict: number; // WALK_DANGLE / WALK_UNSAFE / 父帧续扫位置
+    depth: number; // 条目推演时的帧深度
+    maxRel: number; // 推演内到达的最深嵌套帧相对深度（0 = 无嵌套 push）
+    limitHit: boolean; // 推演内是否发生过 depth-limit 跳过（含饱和段内的头 skip）
+    hiddenRisk: boolean; // 推演内是否存在父帧重扫无法同键重发的帧内发射（见上）
+    resolveKind: 0 | 1 | 2 | 3; // 0=非转换收尾(悬挂/UNSAFE) 1=raw 转换 2=block 转换 3=`)$$` 闭合
+    resolvePos: number; // 转换/闭合 token 的起始位置（resolveKind>0 时有效）
+    boundary: number; // 推演边界（帧的 textEnd）
+  }
+  const walkMemo = new Map<number, WalkEntry>();
+  let walkMemoOverflow: Map<string, WalkEntry> | null = null;
+  const walkMemoLookup = (start: number, depth: number, boundary: number): WalkEntry | null => {
+    const primary = walkMemo.get(start);
+    if (primary && primary.boundary === boundary) {
+      if (!primary.limitHit && depth + primary.maxRel < depthLimit) return primary;
+      if (primary.depth === depth) return primary;
+    }
+    return walkMemoOverflow?.get(`${start}:${depth}:${boundary}`) ?? null;
+  };
+  const walkMemoStore = (start: number, entry: WalkEntry): void => {
+    const primary = walkMemo.get(start);
+    if (!primary) {
+      walkMemo.set(start, entry);
+      return;
+    }
+    if (primary.boundary === entry.boundary && primary.depth === entry.depth) return;
+    (walkMemoOverflow ??= new Map<string, WalkEntry>()).set(
+      `${start}:${entry.depth}:${entry.boundary}`,
+      entry,
+    );
+  };
+  // 根级 form 分发期望：0=无（closerInfo null/endTag）；1/2=raw/block 形态（须恰在 argClose 处同形态转换）。
+  const walkExpectationFor = (
+    info: TagStartInfo,
+  ): { form: 0 | 1 | 2; argClose: number } => {
+    const rootCloser = getTagCloserTypeWithCache(
+      text,
+      info.tagNameEnd + tagOpen.length,
+      syntax,
+      (tagArgCloseCache ??= new Map<number, number>()),
+    );
+    if (rootCloser === null || rootCloser.closer === endTag) return { form: 0, argClose: -1 };
+    return { form: rootCloser.closer === rawClose ? 1 : 2, argClose: rootCloser.argClose };
+  };
+  interface WalkFrame {
+    start: number;
+    pos: number;
+    depth: number;
+    maxRel: number;
+    limitHit: boolean;
+    hiddenRisk: boolean;
+    // 父帧对「刚 push 的子帧」的重扫期望（walkExpectationFor 的暂存，子帧收尾时校验）。
+    pendingExpectForm: 0 | 1 | 2;
+    pendingExpectArgClose: number;
+  }
+  // 消费一个子帧结果（新算 / 记忆化命中 / 饱和推演）：回传标记并做重扫期望校验。
+  // form 期望（expectForm 1/2）要求：恰在 argClose 处同形态转换、参数区无嵌套帧（maxRel===0）、
+  // 且无 depth-limit 跳过（!limitHit——被跳过的头会在 1.5.1 的后续重扫中浅出真扫，其发射同样藏在
+  // form 分发不再扫描的参数区里）。
+  const walkConsumeChild = (
+    frame: WalkFrame,
+    child: WalkEntry,
+    expectForm: 0 | 1 | 2,
+    expectArgClose: number,
+  ): void => {
+    frame.maxRel = Math.max(frame.maxRel, 1 + child.maxRel);
+    frame.limitHit ||= child.limitHit;
+    frame.hiddenRisk ||=
+      child.hiddenRisk ||
+      (expectForm !== 0 &&
+        !(
+          child.resolveKind === expectForm &&
+          child.resolvePos === expectArgClose &&
+          child.maxRel === 0 &&
+          !child.limitHit
+        ));
+  };
+  // 饱和段中被 skip 的 raw/block 形态头的参数区干净性（与 walkConsumeChild 的 form 期望同构的静态版）：
+  // [from, to) 内不得出现任何 tag 头、`)$$` 闭合、`)%`/`)*` 转换——否则该头在 1.5.1 后续重扫浅出时的
+  // 帧内行为（push 子帧 / 提前闭合 / 提前转换）与根级 form 分发不一致，键无法守恒。
+  const satArgSpanClean = (from: number, to: number): boolean => {
+    let p = from;
+    while (p < to) {
+      const [escaped, nextEsc] = readEscapedSequenceWithTokens(text, p, syntax, argEscapableTokens);
+      if (escaped !== null) {
+        p = nextEsc;
+        continue;
+      }
+      if (text.startsWith(tagClose, p)) {
+        if (
+          scanEndTagAt(text, endTag, p, to) === "full" ||
+          text.startsWith(syntax.rawOpen, p) ||
+          text.startsWith(syntax.blockOpen, p)
+        ) {
+          return false;
+        }
+        p += tagClose.length;
+        continue;
+      }
+      if (readTagStartInfo(text, p, syntax, tagName) !== null) return false;
+      p++;
+    }
+    return true;
+  };
+  // 饱和帧推演：模拟 depth === depthLimit 的真 inline 帧——所有嵌套头 DEPTH_LIMIT skip、永不 push。
+  // 无栈无深度 → 位置命运是纯后缀性质：沿途决策点收尾时统一回填（后缀共享），全局扫描总量 O(n)。
+  const satFrameFate = (rootStart: number, boundary: number): WalkEntry => {
+    const cachedRoot = walkMemoLookup(rootStart, depthLimit, boundary);
+    if (cachedRoot !== null) return cachedRoot;
+    const { rawOpen, blockOpen, blockClose } = syntax;
+    let pos = rootStart;
+    let limitHit = false;
+    let hiddenRisk = false;
+    let verdict = WALK_DANGLE;
+    let resolveKind: 0 | 1 | 2 | 3 = 0;
+    let resolvePos = -1;
+    const visited: number[] = [rootStart];
+    while (pos < boundary) {
+      const hit = walkMemoLookup(pos, depthLimit, boundary);
+      if (hit !== null) {
+        // 后缀命中：采用其命运，风险标记向前缀累积。
+        verdict = hit.verdict;
+        resolveKind = hit.resolveKind;
+        resolvePos = hit.resolvePos;
+        limitHit ||= hit.limitHit;
+        hiddenRisk ||= hit.hiddenRisk;
+        break;
+      }
+      visited.push(pos);
+      const [escaped, nextEsc] = readEscapedSequenceWithTokens(text, pos, syntax, argEscapableTokens);
+      if (escaped !== null) {
+        pos = nextEsc;
+        continue;
+      }
+      if (text.startsWith(tagClose, pos)) {
+        if (scanEndTagAt(text, endTag, pos, boundary) === "full") {
+          verdict = pos + endTag.length;
+          resolveKind = 3;
+          resolvePos = pos;
+          break;
+        }
+        if (text.startsWith(rawOpen, pos)) {
+          const contentStart = pos + rawOpen.length;
+          const closeStart = findRawCloseCached(contentStart);
+          verdict = closeStart === -1 ? contentStart : closeStart + rawClose.length;
+          resolveKind = 1;
+          resolvePos = pos;
+          break;
+        }
+        if (text.startsWith(blockOpen, pos)) {
+          const contentStart = pos + blockOpen.length;
+          const closeStart = findBlockCloseCached(contentStart);
+          verdict = closeStart === -1 ? contentStart : closeStart + blockClose.length;
+          resolveKind = 2;
+          resolvePos = pos;
+          break;
+        }
+        pos += tagClose.length;
+        continue;
+      }
+      if (text.startsWith(tagDivider, pos)) {
+        pos += tagDivider.length;
+        continue;
+      }
+      const info = readTagStartInfo(text, pos, syntax, tagName);
+      if (!info) {
+        if (readInlineShorthandStart(text, pos) !== null) {
+          verdict = WALK_UNSAFE;
+          break;
+        }
+        pos++;
+        continue;
+      }
+      // 饱和帧内所有头（gating 接受与否）都走 skipTagBoundary(WithCache) 整段跳过。
+      const skipped = skipTagBoundaryWithCache(
+        text,
+        info,
+        syntax,
+        tagName,
+        (tagArgCloseCache ??= new Map<number, number>()),
+        (inlineCloseCache ??= new Map<number, number>()),
+        findRawCloseCached,
+        findBlockCloseCached,
+      );
+      if (isInlineCapable(info.tag)) {
+        // gating 接受的头：真帧在此发 DEPTH_LIMIT 并 skip；1.5.1 的后续重扫会让它逐层浅出真扫。
+        limitHit = true;
+        const expectation = walkExpectationFor(info);
+        if (
+          expectation.form !== 0 &&
+          !satArgSpanClean(info.argStart, expectation.argClose)
+        ) {
+          hiddenRisk = true;
+        }
+      }
+      // gating 拒绝的头：任何 scan 任何深度都同样静默 skip，键守恒天然成立。
+      pos = skipped;
+      continue;
+    }
+    const entry: WalkEntry = {
+      verdict,
+      depth: depthLimit,
+      maxRel: 0,
+      limitHit,
+      hiddenRisk,
+      resolveKind,
+      resolvePos,
+      boundary,
+    };
+    for (let k = 0; k < visited.length; k++) {
+      walkMemoStore(visited[k], entry);
+    }
+    return entry;
+  };
+  const walkInlineFrameFate = (
+    rootStart: number,
+    rootDepth: number,
+    boundary: number,
+  ): WalkEntry => {
+    if (rootDepth >= depthLimit) return satFrameFate(rootStart, boundary);
+    const cachedRoot = walkMemoLookup(rootStart, rootDepth, boundary);
+    if (cachedRoot !== null) return cachedRoot;
+    const { rawOpen, blockOpen, blockClose } = syntax;
+    const stack: WalkFrame[] = [
+      {
+        start: rootStart,
+        pos: rootStart,
+        depth: rootDepth,
+        maxRel: 0,
+        limitHit: false,
+        hiddenRisk: false,
+        pendingExpectForm: 0,
+        pendingExpectArgClose: -1,
+      },
+    ];
+    let completed: WalkEntry | null = null;
     while (stack.length > 0) {
       const frame = stack[stack.length - 1];
-      let pos = frame.pos;
-      let result = TAIL_DANGLE; // 默认：内层循环自然扫到 EOF 即纯悬挂
-      let paused = false;
-      while (pos < text.length) {
-        const [escaped, next] = readEscapedSequence(text, pos, syntax);
-        if (escaped !== null) {
-          pos = next;
+      // 子帧刚收尾：把命运与标记回传给当前帧（镜像真解析器 completeChild 后父帧续扫）。
+      if (completed !== null) {
+        walkConsumeChild(frame, completed, frame.pendingExpectForm, frame.pendingExpectArgClose);
+        if (completed.verdict === WALK_DANGLE || completed.verdict === WALK_UNSAFE) {
+          // 子帧悬挂 ⇒ EOF replay 整链剥离，本帧同样悬挂；UNSAFE 向外传播。
+          const entry: WalkEntry = {
+            verdict: completed.verdict,
+            depth: frame.depth,
+            maxRel: frame.maxRel,
+            limitHit: frame.limitHit,
+            hiddenRisk: frame.hiddenRisk,
+            resolveKind: 0,
+            resolvePos: -1,
+            boundary,
+          };
+          walkMemoStore(frame.start, entry);
+          stack.pop();
+          completed = entry;
           continue;
         }
-        if (text.startsWith(endTag, pos)) {
-          result = pos + endTag.length;
-          break;
+        frame.pos = completed.verdict;
+        completed = null;
+      }
+      let pos = frame.pos;
+      let result = WALK_DANGLE; // 内层循环自然扫到 boundary 即悬挂
+      let resolveKind: 0 | 1 | 2 | 3 = 0;
+      let resolvePos = -1;
+      let paused = false;
+      while (pos < boundary) {
+        // 优先级镜像主循环：转义 → inline 关闭/转换 → 管道 → tag 头/文本。
+        const [escaped, nextEsc] = readEscapedSequenceWithTokens(
+          text,
+          pos,
+          syntax,
+          argEscapableTokens,
+        );
+        if (escaped !== null) {
+          pos = nextEsc;
+          continue;
         }
-        // )% / )* 转换：语义与「纯文本降级」不同（产 raw/block 节点或另发 *_NOT_CLOSED），保守退回级联
-        if (text.startsWith(rawOpen, pos) || text.startsWith(blockOpen, pos)) {
-          result = TAIL_UNSAFE;
-          break;
+        if (text.startsWith(tagClose, pos)) {
+          if (scanEndTagAt(text, endTag, pos, boundary) === "full") {
+            result = pos + endTag.length; // `)$$` 闭合，父帧在其后续扫
+            resolveKind = 3;
+            resolvePos = pos;
+            break;
+          }
+          if (text.startsWith(rawOpen, pos)) {
+            // `)%` raw 转换：无论 close 是否找到 / gating 是否接受，父帧续扫位置与真分支一致。
+            const contentStart = pos + rawOpen.length;
+            const closeStart = findRawCloseCached(contentStart);
+            result = closeStart === -1 ? contentStart : closeStart + rawClose.length;
+            resolveKind = 1;
+            resolvePos = pos;
+            break;
+          }
+          if (text.startsWith(blockOpen, pos)) {
+            // `)*` block 转换：同上；转换成功时 content 帧独立收尾，父帧直接跳到 close 之后。
+            const contentStart = pos + blockOpen.length;
+            const closeStart = findBlockCloseCached(contentStart);
+            result = closeStart === -1 ? contentStart : closeStart + blockClose.length;
+            resolveKind = 2;
+            resolvePos = pos;
+            break;
+          }
+          pos += tagClose.length; // `)` 后不是 $$/%/* → 普通文本
+          continue;
+        }
+        if (text.startsWith(tagDivider, pos)) {
+          pos += tagDivider.length; // insideArgs 帧的分隔符只推进 cursor
+          continue;
         }
         const info = readTagStartInfo(text, pos, syntax, tagName);
         if (!info) {
+          if (readInlineShorthandStart(text, pos) !== null) {
+            result = WALK_UNSAFE; // shorthand ownership 探测带帧状态，无法无副作用推演
+            break;
+          }
           pos++;
           continue;
         }
-        // inline-incapable（raw/block-only、未注册非 inline 等）：解析器走 skipTagBoundary，保守退回级联
         if (!isInlineCapable(info.tag)) {
-          result = TAIL_UNSAFE;
-          break;
+          // gating 拒绝 inline：真分支为 skipTagBoundary(WithCache) 整段静默跳过（与深度无关）。
+          pos = skipTagBoundaryWithCache(
+            text,
+            info,
+            syntax,
+            tagName,
+            (tagArgCloseCache ??= new Map<number, number>()),
+            (inlineCloseCache ??= new Map<number, number>()),
+            findRawCloseCached,
+            findBlockCloseCached,
+          );
+          continue;
         }
-        const nested = tailMemo.get(info.argStart);
-        if (nested !== undefined) {
-          if (nested === TAIL_DANGLE) {
-            result = TAIL_DANGLE; // 嵌套子帧纯悬挂到 EOF → 外层也纯悬挂
+        const expectation = walkExpectationFor(info);
+        if (frame.depth + 1 >= depthLimit) {
+          // 子帧深度达 depthLimit → 饱和帧推演（后缀共享，见 satFrameFate）。
+          const sat = satFrameFate(info.argStart, boundary);
+          walkConsumeChild(frame, sat, expectation.form, expectation.argClose);
+          if (sat.verdict === WALK_DANGLE || sat.verdict === WALK_UNSAFE) {
+            result = sat.verdict;
             break;
           }
-          if (nested === TAIL_UNSAFE) {
-            result = TAIL_UNSAFE; // 嵌套不安全 → 外层也不安全
+          pos = sat.verdict;
+          continue;
+        }
+        const nested = walkMemoLookup(info.argStart, frame.depth + 1, boundary);
+        if (nested !== null) {
+          walkConsumeChild(frame, nested, expectation.form, expectation.argClose);
+          if (nested.verdict === WALK_DANGLE || nested.verdict === WALK_UNSAFE) {
+            result = nested.verdict;
             break;
           }
-          pos = nested;
+          pos = nested.verdict;
           continue;
         }
         frame.pos = pos;
-        stack.push({ start: info.argStart, pos: info.argStart });
+        frame.pendingExpectForm = expectation.form;
+        frame.pendingExpectArgClose = expectation.argClose;
+        stack.push({
+          start: info.argStart,
+          pos: info.argStart,
+          depth: frame.depth + 1,
+          maxRel: 0,
+          limitHit: false,
+          hiddenRisk: false,
+          pendingExpectForm: 0,
+          pendingExpectArgClose: -1,
+        });
         paused = true;
         break;
       }
       if (paused) continue;
-      tailMemo.set(frame.start, result);
+      const entry: WalkEntry = {
+        verdict: result,
+        depth: frame.depth,
+        maxRel: frame.maxRel,
+        limitHit: frame.limitHit,
+        hiddenRisk: frame.hiddenRisk,
+        resolveKind,
+        resolvePos,
+        boundary,
+      };
+      walkMemoStore(frame.start, entry);
       stack.pop();
+      completed = entry;
     }
-    return tailMemo.get(rootStart) ?? TAIL_DANGLE;
+    return completed!;
   };
-  const inlineIsPlainDangling = (start: number): boolean => tailResolveEnd(start) === TAIL_DANGLE;
+  // 单遍剥离守恒条件（详见上方注释）：悬挂、无 shorthand（UNSAFE）、无帧内发射键丢失风险。
+  const inlineIsPlainDangling = (start: number, childDepth: number, boundary: number): boolean => {
+    const fate = walkInlineFrameFate(start, childDepth, boundary);
+    return fate.verdict === WALK_DANGLE && !fate.hiddenRisk;
+  };
 
   const isRootFrame = (frame: ParseFrame): boolean =>
     frame.parentIndex < 0 &&
@@ -490,8 +834,9 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     ancestorEndTagOwnerIndex: number;
 
     // ── EOF 未闭合链单遍退化标记 ──
-    // replay 把根级非 inline 父帧标记 degradeRescan 后，主循环重扫时对「纯悬挂」的 inline
-    // （tailResolveEnd 判定到 text.length 仍不闭合）直接退化为文本，不再 push 子帧 / 触发回退重扫。
+    // replay 把非 inline 父帧（根 / blockContent / args）标记 degradeRescan 后，主循环重扫时对
+    // 「守恒悬挂」的 inline（walkInlineFrameFate 判定悬挂到 frame.textEnd 且无键丢失风险）直接
+    // 退化为文本，不再 push 子帧 / 触发回退重扫。
     degradeRescan: boolean;
     // 单遍退化期间收集的未闭合 inline 错误 (tagStartI, span) 扁平对；该帧 EOF 收尾时倒序发出，
     // 复刻原 replay 的 innermost-first 顺序。按需创建。
@@ -964,11 +1309,9 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     // 对应测试: [Coverage/Structural] malformed inline chain at EOF should replay once and degrade to full source text
     appendBuf(parent, replayPlan.resumeTagStartI, replayPlan.resumeArgStartI);
     parent.i = replayPlan.resumeArgStartI;
-    // 仅根级（边界 = text.length）启用单遍退化重扫——tailResolveEnd 的边界恒为 text.length。
-    // 非根级（如 block 正文内）父帧 textEnd < text.length，仍走原 lazy 回退（正确，少见）。
-    if (parent.textEnd >= text.length) {
-      parent.degradeRescan = true;
-    }
+    // 所有非 inline 父帧（根 / blockContent / args）都启用单遍退化重扫；
+    // 帧命运推演以 parent.textEnd 为边界，块内 / 参数区内的未闭合链同样单遍线性剥离。
+    parent.degradeRescan = true;
     return true;
   };
 
@@ -1281,12 +1624,13 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
             (tagArgCloseCache ??= new Map<number, number>()),
           );
 
-    // ── degradeRescan 单遍退化（根级非 inline 帧；仅 inline 形态、inline-capable、纯悬挂）──
+    // ── degradeRescan 单遍退化（非 inline 帧；仅 inline 形态、inline-capable、守恒悬挂）──
     //
     // EOF 未闭合链重扫态下，若该 tag 是 inline 形态（closerInfo 为空=括号不配对的 lazy inline，
-    // 或 closer===endTag）、inline-capable，且 tailResolveEnd 判定它「纯悬挂」（自身深度一路扫到
-    // text.length 仍不闭合、也不转 raw/block），则直接把 tag 头退化成文本、游标推进到 argStart，
-    // 不再 push 一个会在 EOF 触发回退重扫的子帧 —— 整条尾巴单遍线性处理（mini 解析器记忆化 O(n)）。
+    // 或 closer===endTag）、inline-capable，且帧命运推演判定它「悬挂到本帧 textEnd 且满足守恒条件」
+    // （walkInlineFrameFate：闭合/转换均镜像真分支；shorthand / 键守恒风险 hiddenRisk 退回级联），
+    // 则直接把 tag 头退化成文本、游标推进到 argStart，不再 push 一个会在 EOF 触发回退重扫的子帧
+    // —— 整条尾巴单遍线性处理（推演记忆化，典型 O(n)）。
     //
     // 错误顺序：lazy 路径会把这些未闭合 inline push 成嵌套子帧链、EOF 经 replay 自内向外
     // （innermost-first）报 INLINE_NOT_CLOSED。单遍是从外向内扫，故先收集 (tagStartI, span)，
@@ -1295,7 +1639,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       frame.degradeRescan &&
       (closerInfo === null || closerInfo.closer === endTag) &&
       isInlineCapable(info.tag) &&
-      inlineIsPlainDangling(info.argStart)
+      inlineIsPlainDangling(info.argStart, frame.depth + 1, frame.textEnd)
     ) {
       (frame.degradeTailErr ??= []).push(i, info.argStart - info.tagOpenPos);
       flushBuffer(frame);
