@@ -305,14 +305,16 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
   // 单遍剥离（degradeRescan 快路）只在 DANGLE 且 !hiddenRisk 时启用；其余一律退回级联。
   // hiddenRisk（错误键守恒）：剥离会跳过「被剥离帧的那次真实扫描」，其帧内发射（嵌套转换失败的
   // *_NOT_CLOSED、子链 replay 的 INLINE_NOT_CLOSED、depth-limit 后浅出补扫的发射）必须由父帧游标
-  // 后续的真实重扫在同键位重发。嵌套 tag 头以 inline 子帧进入（无条件 push），而父帧重扫按根级
-  // closerInfo 分发——两者仅在以下情形一致：
-  //   · closerInfo 为 null / endTag：重扫同样 push inline 子帧（或对其再次剥离），递归真实；
-  //   · raw/block 形态：该子帧恰好在 closerInfo.argClose 处以同形态转换（分发与转换同键同续扫位，
-  //     路径立即重合），且参数区 [argStart, argClose) 内无任何嵌套帧 / depth-limit 跳过——根级 form
-  //     分发在 close 未找到时把整段（含参数区）直接降级为文本、不再扫描内部，参数区里帧内发射的键
-  //     只存在于被跳过的那次真实扫描。
-  // 其余（form 形态但悬挂 / 在别处转换 / `)$$` 闭合 / 参数区含帧）→ hiddenRisk，退回级联。
+  // 后续的真实重扫在同键位重发。守恒判定是**白名单式**的：消费事件的种类（转义 / 闭合 / 转换 /
+  // 文本 / 分隔符 / 标签头）与根级 closer 分类（lazy / inline / raw / block）都是封闭集合，每一格
+  // 要么给构造性论证、要么给机器校验；任何未显式命中安全格的组合（含未来新增分支忘记论证的缺省）
+  // 一律 hiddenRisk → 退回级联，宁慢勿错：
+  //   · 转义：arg / root / blockContent 三集合对照读取一致才安全（walkReadEscape）；
+  //   · 被当文本消费的 tagClose / tagDivider：token 长度为 1 才安全（父帧重扫逐字符推进）；
+  //   · 普通字符 / 帧级 `)$$` 闭合与 `)%``)*` 转换：构造性安全（同函数同位判定，续扫位同真分支）；
+  //   · shorthand 头：ownership 探测带帧状态，恒 WALK_UNSAFE；
+  //   · 入栈推演的嵌套头：按 closer 四分类逐格校验（决策表见 walkConsumeChild）；
+  //   · 整段 skip 的头（gating-reject / 饱和段全部头）：四分类逐格校验（决策表见 walkSkippedHeadRisky）。
   //
   // 记忆化：主表按 start 记条目；命中条件：boundary 一致，且（未 limitHit 且 depth+maxRel <
   //   depthLimit——深度平移不会改变任何分支）或（depth 与条目完全一致）。深度敏感条目进溢出表
@@ -352,18 +354,18 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       entry,
     );
   };
-  // 根级 form 分发期望：0=无（closerInfo null/endTag）；1/2=raw/block 形态（须恰在 argClose 处同形态转换）。
-  const walkExpectationFor = (
-    info: TagStartInfo,
-  ): { form: 0 | 1 | 2; argClose: number } => {
+  // 根级 closer 分类（与 tryConsumeTagOrTextAtCursor 的分发同源；穷尽且封闭的四类）：
+  // 0=lazy（closerInfo null，括号不配对） 1=inline（endTag 形态） 2=raw 形态 3=block 形态。
+  const walkCloserKind = (info: TagStartInfo): { kind: 0 | 1 | 2 | 3; argClose: number } => {
     const rootCloser = getTagCloserTypeWithCache(
       text,
       info.tagNameEnd + tagOpen.length,
       syntax,
       (tagArgCloseCache ??= new Map<number, number>()),
     );
-    if (rootCloser === null || rootCloser.closer === endTag) return { form: 0, argClose: -1 };
-    return { form: rootCloser.closer === rawClose ? 1 : 2, argClose: rootCloser.argClose };
+    if (rootCloser === null) return { kind: 0, argClose: -1 };
+    if (rootCloser.closer === endTag) return { kind: 1, argClose: rootCloser.argClose };
+    return { kind: rootCloser.closer === rawClose ? 2 : 3, argClose: rootCloser.argClose };
   };
   interface WalkFrame {
     start: number;
@@ -372,38 +374,49 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
     maxRel: number;
     limitHit: boolean;
     hiddenRisk: boolean;
-    // 父帧对「刚 push 的子帧」的重扫期望（walkExpectationFor 的暂存，子帧收尾时校验）。
-    pendingExpectForm: 0 | 1 | 2;
-    pendingExpectArgClose: number;
+    // 父帧对「刚 push 的子帧」的根级 closer 分类（walkCloserKind 的暂存，子帧收尾时校验）。
+    pendingCloserKind: 0 | 1 | 2 | 3;
+    pendingArgClose: number;
   }
-  // 消费一个子帧结果（新算 / 记忆化命中 / 饱和推演）：回传标记并做重扫期望校验。
-  // form 期望（expectForm 1/2）要求：恰在 argClose 处同形态转换、参数区无嵌套帧（maxRel===0）、
-  // 且无 depth-limit 跳过（!limitHit——被跳过的头会在 1.5.1 的后续重扫中浅出真扫，其发射同样藏在
-  // form 分发不再扫描的参数区里）。
+  // ── 键守恒白名单・子帧结果消费 ──
+  //
+  // 消费一个「以 inline 子帧入栈推演」的头的结果（新算 / 记忆化命中 / 饱和推演）。安全性按
+  // 根级 closer 分类（封闭的四类）逐格枚举；任何未显式命中安全格的组合一律 hiddenRisk（保守缺省）：
+  //
+  //   closer 分类     │ 子帧结果安全条件（父帧重扫会以同发射键重新处理该头）
+  //   ────────────────┼──────────────────────────────────────────────────────────────
+  //   lazy / inline   │ !child.limitHit：重扫同样 push 真 inline 子帧（或再次剥离），
+  //   (0 / 1)         │ 递归真实；depth<limit 内行为与深度无关。
+  //                   │ child.limitHit && verdict===DANGLE：饱和依赖只出现在悬挂路径上，
+  //                   │ 其每个事件已由饱和推演逐位置校验（hiddenRisk 承载）。
+  //                   │ child.limitHit && RESOLVE(闭合/转换)：不安全——闭合/转换 token 的
+  //                   │ 归属在相邻深度重扫下可翻转（深层帧自己吃到 vs 浅出后被嵌套子帧
+  //                   │ 吃掉），两种深度语境各发各的键，单一深度推演无法同时守恒。
+  //   raw / block     │ 仅当「恰在 argClose 处同形态转换 + 参数区无嵌套帧(maxRel===0) +
+  //   (2 / 3)         │ 无饱和依赖(!limitHit)」：此时根级 form 分发与帧内转换同键同续扫
+  //                   │ 位、路径立即重合；close 未找到时分发把整段（含参数区）降级为文
+  //                   │ 本不再扫描内部，故参数区必须无帧内发射。其余一切 → 不安全。
   const walkConsumeChild = (
     frame: WalkFrame,
     child: WalkEntry,
-    expectForm: 0 | 1 | 2,
-    expectArgClose: number,
+    closerKind: 0 | 1 | 2 | 3,
+    closerArgClose: number,
   ): void => {
     frame.maxRel = Math.max(frame.maxRel, 1 + child.maxRel);
     frame.limitHit ||= child.limitHit;
-    frame.hiddenRisk ||=
-      child.hiddenRisk ||
-      // limitHit 子帧的闭合/转换事件发生在（或依赖）饱和语境：1.5.1 的相邻深度重扫可翻转该
-      // close/convert token 的归属（深层帧自己吃到 vs 浅出后被嵌套子帧吃掉），两种深度语境
-      // 各发各的帧内键 → 单一深度的推演无法同时守恒两者，退回级联。
-      // （饱和段内无 gating-接受头时 limitHit=false——行为深度无关，RESOLVE 仍可信。）
-      (child.limitHit && child.resolveKind !== 0) ||
-      (expectForm !== 0 &&
-        !(
-          child.resolveKind === expectForm &&
-          child.resolvePos === expectArgClose &&
-          child.maxRel === 0 &&
-          !child.limitHit
-        ));
+    let childSafe: boolean;
+    if (closerKind === 0 || closerKind === 1) {
+      childSafe = !child.limitHit || child.verdict === WALK_DANGLE;
+    } else {
+      childSafe =
+        child.resolveKind === closerKind - 1 &&
+        child.resolvePos === closerArgClose &&
+        child.maxRel === 0 &&
+        !child.limitHit;
+    }
+    frame.hiddenRisk ||= child.hiddenRisk || !childSafe;
   };
-  // 饱和段中被 skip 的 raw/block 形态头的参数区干净性（与 walkConsumeChild 的 form 期望同构的静态版）：
+  // 被 skip 的 raw/block 形态头的参数区干净性（与 walkConsumeChild 的 raw/block 格同构的静态版）：
   // [from, to) 内不得出现任何 tag 头、`)$$` 闭合、`)%`/`)*` 转换——否则该头在 1.5.1 后续重扫浅出时的
   // 帧内行为（push 子帧 / 提前闭合 / 提前转换）与根级 form 分发不一致，键无法守恒。
   const satArgSpanClean = (from: number, to: number): boolean => {
@@ -449,6 +462,30 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       nextArg === nextRoot &&
       nextArg === nextBlock;
     return [escArg, nextArg, consistent];
+  };
+  // ── 键守恒白名单・整段 skip 的头 ──
+  //
+  // 「不入栈、整段 skipTagBoundaryWithCache 跳过」的头（非饱和帧的 gating-reject 头、饱和帧的
+  // 全部头）的安全性，按根级 closer 分类逐格枚举；未显式命中安全格的一切分类 → 有风险（保守缺省）：
+  //
+  //   closer 分类   │ skip 与「1.5.1 各深度扫描 / 父帧真实重扫」的对齐情况
+  //   ──────────────┼────────────────────────────────────────────────────────────────
+  //   lazy (0)      │ 安全：skip 恒等于 argStart（只越过头，不跳内容）。reject 头在任何
+  //                 │ 深度、任何语境都走同一函数得到同一落点；accept 头浅出被 push 时，
+  //                 │ 真帧同样从 argStart 起扫——后续每个事件由推演逐位置各自校验。
+  //   raw/block     │ 仅当参数区干净（satArgSpanClean）：skip 落点 / 根级 form 分发落点 /
+  //   (2/3)         │ 浅出后的帧内转换三者由共享实现构造性同键同续扫位；参数区含帧或
+  //                 │ 提前 close/convert 时，分发的 close-fail 分支不再扫描内部 → 风险。
+  //   inline (1)    │ 风险：skip 是 head-balance 语义（findInlineClose），与浅出后真实
+  //                 │ push 的帧语义可翻转 close token 归属；且 root 对 gating-reject 的
+  //                 │ inline 形态头是单字符推进，与整段 skip 在被跳区间内重新分词。
+  const walkSkippedHeadRisky = (info: TagStartInfo): boolean => {
+    const closer = walkCloserKind(info);
+    if (closer.kind === 0) return false;
+    if (closer.kind === 2 || closer.kind === 3) {
+      return !satArgSpanClean(info.argStart, closer.argClose);
+    }
+    return true; // inline 形态；以及未来任何未显式论证的分类
   };
   // 饱和帧推演：模拟 depth === depthLimit 的真 inline 帧——所有嵌套头 DEPTH_LIMIT skip、永不 push。
   // 无栈无深度 → 位置命运是纯后缀性质：沿途决策点收尾时统一回填（后缀共享），全局扫描总量 O(n)。
@@ -540,21 +577,8 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         // gating 接受的头：真帧在此发 DEPTH_LIMIT 并 skip；1.5.1 的后续重扫会让它逐层浅出真扫。
         limitHit = true;
       }
-      if (skipped !== info.argStart) {
-        // 「跳过了内容」的 skip：只有 raw/block 形态、且参数区干净时，skip / 根级 form 分发 /
-        // 浅出后的帧内转换三者才同键同续扫位（无论 gating 接受与否——分发的 close-fail /
-        // gating-reject 分支与 skip 的落点逐字节一致）。其余（endTag 形态的 head-balance skip
-        // 与浅出 push / root 单字符推进错位；参数区含帧）在 1.5.1 的相邻深度重扫下会翻转命运
-        // 或把帧内发射吞进不再扫描的区间 → 键无法守恒。
-        const expectation = walkExpectationFor(info);
-        if (
-          expectation.form === 0 ||
-          !satArgSpanClean(info.argStart, expectation.argClose)
-        ) {
-          hiddenRisk = true;
-        }
-      }
-      // lazy skip（仅越过 tag 头）：任何 scan 任何深度都同款推进，键守恒天然成立。
+      // 键守恒按「整段 skip 的头」白名单逐格判定（见 walkSkippedHeadRisky 的决策表）。
+      if (walkSkippedHeadRisky(info)) hiddenRisk = true;
       pos = skipped;
       continue;
     }
@@ -590,8 +614,8 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         maxRel: 0,
         limitHit: false,
         hiddenRisk: false,
-        pendingExpectForm: 0,
-        pendingExpectArgClose: -1,
+        pendingCloserKind: 0,
+        pendingArgClose: -1,
       },
     ];
     let completed: WalkEntry | null = null;
@@ -599,7 +623,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
       const frame = stack[stack.length - 1];
       // 子帧刚收尾：把命运与标记回传给当前帧（镜像真解析器 completeChild 后父帧续扫）。
       if (completed !== null) {
-        walkConsumeChild(frame, completed, frame.pendingExpectForm, frame.pendingExpectArgClose);
+        walkConsumeChild(frame, completed, frame.pendingCloserKind, frame.pendingArgClose);
         if (completed.verdict === WALK_DANGLE || completed.verdict === WALK_UNSAFE) {
           // 子帧悬挂 ⇒ EOF replay 整链剥离，本帧同样悬挂；UNSAFE 向外传播。
           const entry: WalkEntry = {
@@ -691,22 +715,16 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
             findRawCloseCached,
             findBlockCloseCached,
           );
-          if (skipped !== info.argStart) {
-            // 「跳过了内容」的 reject-skip：raw/block 形态的根级分发（close-fail / gating-reject
-            // 分支）与 skip 落点逐字节一致 → 安全；endTag 形态的根级 reject 是**单字符推进**，
-            // 与整段 skip 错位——root 可在错位区间撞上重叠 tag 头改走完全不同的消费路径，把
-            // 推演悬挂路径上会真实发射的结构吞进文本 → 键无法守恒。lazy（=argStart）恒安全。
-            const expectation = walkExpectationFor(info);
-            if (expectation.form === 0) frame.hiddenRisk = true;
-          }
+          // 键守恒按「整段 skip 的头」白名单逐格判定（见 walkSkippedHeadRisky 的决策表）。
+          if (walkSkippedHeadRisky(info)) frame.hiddenRisk = true;
           pos = skipped;
           continue;
         }
-        const expectation = walkExpectationFor(info);
+        const closer = walkCloserKind(info);
         if (frame.depth + 1 >= depthLimit) {
           // 子帧深度达 depthLimit → 饱和帧推演（后缀共享，见 satFrameFate）。
           const sat = satFrameFate(info.argStart, boundary);
-          walkConsumeChild(frame, sat, expectation.form, expectation.argClose);
+          walkConsumeChild(frame, sat, closer.kind, closer.argClose);
           if (sat.verdict === WALK_DANGLE || sat.verdict === WALK_UNSAFE) {
             result = sat.verdict;
             break;
@@ -716,7 +734,7 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
         }
         const nested = walkMemoLookup(info.argStart, frame.depth + 1, boundary);
         if (nested !== null) {
-          walkConsumeChild(frame, nested, expectation.form, expectation.argClose);
+          walkConsumeChild(frame, nested, closer.kind, closer.argClose);
           if (nested.verdict === WALK_DANGLE || nested.verdict === WALK_UNSAFE) {
             result = nested.verdict;
             break;
@@ -725,8 +743,8 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
           continue;
         }
         frame.pos = pos;
-        frame.pendingExpectForm = expectation.form;
-        frame.pendingExpectArgClose = expectation.argClose;
+        frame.pendingCloserKind = closer.kind;
+        frame.pendingArgClose = closer.argClose;
         stack.push({
           start: info.argStart,
           pos: info.argStart,
@@ -734,8 +752,8 @@ const parseNodesWithFactory = <TNode extends StructuralNode | IndexedStructuralN
           maxRel: 0,
           limitHit: false,
           hiddenRisk: false,
-          pendingExpectForm: 0,
-          pendingExpectArgClose: -1,
+          pendingCloserKind: 0,
+          pendingArgClose: -1,
         });
         paused = true;
         break;
